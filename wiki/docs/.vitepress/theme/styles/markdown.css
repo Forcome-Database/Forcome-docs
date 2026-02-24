@@ -1,0 +1,308 @@
+/**
+ * Markdown 内容样式
+ * Cursor 风格文档平台
+ * 
+ * 为 VitePress 渲染的 Markdown 内容提供样式
+ */
+
+/* ===== 内容容器 ===== */
+
+.content-wrapper :deep(.vp-doc) {
+  /* 继承基础字体设置 */
+}
+
+/* ===== 标题样式 ===== */
+
+.content-wrapper :deep(h1),
+.content-wrapper :deep(h2),
+.content-wrapper :deep(h3),
+.content-wrapper :deep(h4),
+.content-wrapper :deep(h5),
+.content-wrapper :deep(h6) {
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  color: var(--c-text-1);
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.content-wrapper :deep(h1) {
+  font-size: 2rem;
+  margin-top: 0;
+  padding-bottom: 0.5em;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.content-wrapper :deep(h2) {
+  font-size: 1.5rem;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.content-wrapper :deep(h3) {
+  font-size: 1.25rem;
+}
+
+.content-wrapper :deep(h4) {
+  font-size: 1.1rem;
+}
+
+.content-wrapper :deep(h5),
+.content-wrapper :deep(h6) {
+  font-size: 1rem;
+}
+
+/* ===== 段落和文本 ===== */
+
+.content-wrapper :deep(p) {
+  margin: 1em 0;
+  line-height: var(--line-height-relaxed);
+  color: var(--c-text-2);
+}
+
+.content-wrapper :deep(strong) {
+  font-weight: var(--font-weight-semibold);
+  color: var(--c-text-1);
+}
+
+.content-wrapper :deep(em) {
+  font-style: italic;
+}
+
+/* ===== 链接 ===== */
+
+.content-wrapper :deep(a) {
+  color: var(--c-accent);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.content-wrapper :deep(a:hover) {
+  color: var(--c-accent-hover);
+  text-decoration: underline;
+}
+
+/* 覆盖 VitePress vp-doc 默认链接样式 */
+.vp-doc a {
+  color: var(--c-accent) !important;
+  text-decoration: none;
+}
+
+.vp-doc a:hover {
+  color: var(--c-accent-hover) !important;
+  text-decoration: underline;
+}
+
+/* ===== 列表样式 ===== */
+
+.content-wrapper :deep(ul),
+.content-wrapper :deep(ol) {
+  margin: 1em 0;
+  padding-left: 1.5em;
+  color: var(--c-text-2);
+}
+
+.content-wrapper :deep(ul) {
+  list-style-type: disc;
+}
+
+.content-wrapper :deep(ol) {
+  list-style-type: decimal;
+}
+
+.content-wrapper :deep(li) {
+  margin: 0.5em 0;
+  line-height: var(--line-height-relaxed);
+}
+
+.content-wrapper :deep(li > ul),
+.content-wrapper :deep(li > ol) {
+  margin: 0.25em 0;
+}
+
+.content-wrapper :deep(ul ul) {
+  list-style-type: circle;
+}
+
+.content-wrapper :deep(ul ul ul) {
+  list-style-type: square;
+}
+
+/* ===== 代码样式 ===== */
+
+/* 行内代码 */
+.content-wrapper :deep(code) {
+  font-family: var(--font-family-mono);
+  font-size: 0.875em;
+  padding: 0.2em 0.4em;
+  background-color: var(--c-bg-soft);
+  border-radius: var(--radius-sm);
+  color: var(--c-text-1);
+}
+
+/* 代码块 */
+.content-wrapper :deep(pre) {
+  margin: 1em 0;
+  padding: 1em;
+  background-color: var(--c-bg-soft);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  border: 1px solid var(--c-border);
+}
+
+.content-wrapper :deep(pre code) {
+  padding: 0;
+  background-color: transparent;
+  border-radius: 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+/* 代码块语言标签 */
+.content-wrapper :deep(div[class*="language-"]) {
+  position: relative;
+  margin: 1em 0;
+  background-color: var(--c-bg-soft);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--c-border);
+  overflow: hidden;
+}
+
+.content-wrapper :deep(div[class*="language-"] > span.lang) {
+  position: absolute;
+  top: 0.5em;
+  right: 0.75em;
+  font-size: 0.75rem;
+  color: var(--c-text-3);
+  text-transform: uppercase;
+}
+
+.content-wrapper :deep(div[class*="language-"] > pre) {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+/* ===== 表格样式 ===== */
+
+.content-wrapper :deep(table) {
+  width: 100%;
+  margin: 1em 0;
+  border-collapse: collapse;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.content-wrapper :deep(thead) {
+  background-color: var(--c-bg-soft);
+}
+
+.content-wrapper :deep(th),
+.content-wrapper :deep(td) {
+  padding: 0.75em 1em;
+  text-align: left;
+  border: 1px solid var(--c-border);
+}
+
+.content-wrapper :deep(th) {
+  font-weight: var(--font-weight-semibold);
+  color: var(--c-text-1);
+}
+
+.content-wrapper :deep(td) {
+  color: var(--c-text-2);
+}
+
+.content-wrapper :deep(tbody tr:nth-child(even)) {
+  background-color: var(--c-bg-soft);
+}
+
+/* ===== 引用块 ===== */
+
+.content-wrapper :deep(blockquote) {
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  border-left: 4px solid var(--c-accent);
+  background-color: var(--c-bg-soft);
+  color: var(--c-text-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.content-wrapper :deep(blockquote p) {
+  margin: 0.5em 0;
+}
+
+.content-wrapper :deep(blockquote p:first-child) {
+  margin-top: 0;
+}
+
+.content-wrapper :deep(blockquote p:last-child) {
+  margin-bottom: 0;
+}
+
+/* ===== 分隔线 ===== */
+
+.content-wrapper :deep(hr) {
+  margin: 2em 0;
+  border: none;
+  border-top: 1px solid var(--c-border);
+}
+
+/* ===== 图片 ===== */
+
+.content-wrapper :deep(img) {
+  max-width: 100%;
+  height: auto;
+  margin: 1em 0;
+  border-radius: var(--radius-md);
+}
+
+/* ===== 提示容器（VitePress 自定义容器） ===== */
+
+.content-wrapper :deep(.custom-block) {
+  margin: 1em 0;
+  padding: 1em;
+  border-radius: var(--radius-md);
+  border-left: 4px solid;
+}
+
+.content-wrapper :deep(.custom-block-title) {
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: 0.5em;
+}
+
+.content-wrapper :deep(.custom-block.info) {
+  background-color: rgba(0, 102, 255, 0.1);
+  border-color: var(--c-accent);
+}
+
+.content-wrapper :deep(.custom-block.tip) {
+  background-color: rgba(16, 185, 129, 0.1);
+  border-color: #10b981;
+}
+
+.content-wrapper :deep(.custom-block.warning) {
+  background-color: rgba(245, 158, 11, 0.1);
+  border-color: #f59e0b;
+}
+
+.content-wrapper :deep(.custom-block.danger) {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+}
+
+/* ===== 键盘按键 ===== */
+
+.content-wrapper :deep(kbd) {
+  display: inline-block;
+  padding: 0.15em 0.4em;
+  font-family: var(--font-family-mono);
+  font-size: 0.875em;
+  line-height: 1;
+  color: var(--c-text-1);
+  background-color: var(--c-bg-soft);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 0 var(--c-border);
+}

@@ -1,0 +1,239 @@
+/**
+ * 基础样式
+ * Cursor 风格文档平台
+ * 
+ * 包含：字体定义、全局重置、基础字体、焦点样式
+ */
+
+/* ===== 字体定义 ===== */
+
+/* Inter 字体 - 品牌字体，用于所有非代码文本 */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/inter/Inter-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/inter/Inter-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/inter/Inter-SemiBold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/inter/Inter-Bold.woff2') format('woff2');
+}
+
+/* JetBrains Mono 字体 - 代码字体，用于代码块和行内代码 */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono/JetBrainsMono-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono/JetBrainsMono-Bold.woff2') format('woff2');
+}
+
+/* ===== 全局重置 ===== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* 移除列表默认样式 */
+ul,
+ol {
+  list-style: none;
+}
+
+/* 移除链接默认样式 */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* 移除按钮默认样式 */
+button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+/* 图片响应式 */
+img,
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* 表单元素继承字体 */
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* ===== 基础字体 ===== */
+
+html {
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  font-weight: var(--font-weight-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* 防止 iOS 横屏时字体放大 */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--c-bg);
+  color: var(--c-text-1);
+  /* 主题切换时的背景和文字颜色过渡 */
+  transition: 
+    background-color var(--transition-normal),
+    color var(--transition-normal);
+}
+
+/* 代码字体 */
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-family-mono);
+  font-size: 0.9em;
+}
+
+/* ===== 焦点样式 ===== */
+
+/* 默认焦点样式（仅键盘导航时显示） */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 按钮焦点样式 */
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+/* 链接焦点样式 */
+a:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 输入框焦点样式 - 只改变边框颜色，不加阴影 */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: var(--c-accent);
+}
+
+/* 移除所有输入框的原生 outline */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+}
+
+/* ===== 滚动条样式 ===== */
+
+/* Webkit 浏览器滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--c-border);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--c-border-dark);
+}
+
+/* Firefox 滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-border) transparent;
+}
+
+/* ===== 选中文本样式 ===== */
+
+::selection {
+  background-color: var(--c-accent);
+  color: #ffffff;
+}
+
+/* ===== 辅助类 ===== */
+
+/* 视觉隐藏但保留可访问性 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 禁用文本选择 */
+.no-select {
+  user-select: none;
+}
+
+/* 禁用指针事件 */
+.no-pointer {
+  pointer-events: none;
+}

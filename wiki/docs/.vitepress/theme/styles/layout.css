@@ -1,0 +1,310 @@
+/**
+ * 布局样式
+ * Cursor 风格文档平台
+ * 
+ * 包含：三栏布局、响应式断点
+ * 需求: 1.1-1.6, 8.1-8.7
+ */
+
+/* ===== 根布局容器 ===== */
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--c-bg);
+}
+
+/* ===== 主体区域（导航栏下方） ===== */
+
+.layout-main {
+  display: flex;
+  flex: 1;
+  padding-top: var(--navbar-height);
+  width: 100%;
+}
+
+/* ===== 导航栏 ===== */
+
+.navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-navbar);
+  height: var(--navbar-height);
+  background-color: var(--c-bg);
+  border-bottom: 1px solid var(--c-border);
+  /* 主题切换过渡 */
+  transition: 
+    background-color var(--transition-normal),
+    border-color var(--transition-normal);
+}
+
+.navbar-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  max-width: 100%;
+  padding: 0 var(--spacing-4);
+}
+
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+/* ===== 侧边栏 ===== */
+
+.sidebar {
+  position: fixed;
+  top: var(--navbar-height);
+  left: 0;
+  bottom: 0;
+  z-index: var(--z-sidebar);
+  width: var(--sidebar-width);
+  background-color: var(--c-bg);
+  border-right: 1px solid var(--c-border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* 主题切换过渡 */
+  transition: 
+    background-color var(--transition-normal),
+    border-color var(--transition-normal),
+    width var(--transition-fast);
+}
+
+/* 拖拽时禁用宽度过渡 */
+.sidebar.is-dragging {
+  transition: 
+    background-color var(--transition-normal),
+    border-color var(--transition-normal);
+}
+
+.sidebar-content {
+  padding: var(--spacing-4);
+  padding-bottom: var(--spacing-12);
+}
+
+/* 侧边栏拖拽手柄（需求 4.1, 4.2, 4.8） */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  background-color: transparent;
+  opacity: 0;
+  transition: 
+    background-color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.sidebar-resize-handle:hover,
+.sidebar.is-dragging .sidebar-resize-handle {
+  background-color: var(--c-accent);
+  opacity: 1;
+}
+
+/* 侧边栏遮罩层（移动端） */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-sidebar) - 1);
+  background-color: rgba(0, 0, 0, 0.5);
+  opacity: 1;
+  transition: opacity var(--transition-normal);
+}
+
+/* ===== 主内容区 ===== */
+
+.content-container {
+  flex: 1;
+  min-width: 0;
+  margin-left: var(--sidebar-width);
+  padding: var(--spacing-6) var(--content-padding);
+  /* 主题切换过渡 */
+  transition: margin-left var(--transition-fast);
+}
+
+.content-wrapper {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* 为右侧目录预留空间（宽度 > 1280px 时显示目录） */
+@media (min-width: 1281px) {
+  .content-container {
+    /* 右侧目录宽度 180px + 右边距 32px + 安全间距 24px = 236px */
+    padding-right: 236px;
+  }
+}
+
+/* ===== 响应式断点 ===== */
+
+/* 平板端 (< 1024px) - 隐藏侧边栏，显示汉堡菜单（需求 8.2） */
+@media (max-width: 1023px) {
+  .sidebar {
+    transform: translateX(-100%);
+    width: var(--sidebar-width);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .content-container {
+    margin-left: 0;
+  }
+
+  /* 移动端菜单按钮显示 */
+  .menu-button {
+    display: flex;
+  }
+}
+
+/* 桌面端 (>= 1024px) - 显示完整三栏布局（需求 8.1） */
+@media (min-width: 1024px) {
+  .sidebar {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    display: none;
+  }
+
+  /* 移动端菜单按钮隐藏 */
+  .menu-button {
+    display: none;
+  }
+}
+
+/* 小屏幕 (< 640px) - 调整导航栏布局（需求 8.3, 8.4） */
+@media (max-width: 639px) {
+  .navbar-container {
+    padding: 0 var(--spacing-3);
+  }
+
+  .content-container {
+    padding: var(--spacing-4) var(--spacing-3);
+  }
+
+  /* 搜索框文本隐藏，仅显示图标 */
+  .search-text,
+  .search-kbd {
+    display: none;
+  }
+}
+
+/* ===== AI 问答面板 ===== */
+
+.ai-chat-panel {
+  position: fixed;
+  top: var(--navbar-height);
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-modal);
+  width: var(--ai-panel-width);
+  background-color: var(--c-bg);
+  border-left: 1px solid var(--c-border);
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
+  /* 主题切换过渡 */
+  transition: 
+    background-color var(--transition-normal),
+    border-color var(--transition-normal);
+}
+
+.ai-chat-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal) - 1);
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+/* 移动端 AI 面板全屏（需求 8.5） */
+@media (max-width: 639px) {
+  .ai-chat-panel {
+    width: 100%;
+    top: 0;
+  }
+}
+
+/* ===== 搜索模态框 ===== */
+
+.search-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+}
+
+.search-modal {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 var(--spacing-4);
+  background-color: var(--c-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+
+/* 移动端搜索框全屏（需求 8.6） */
+@media (max-width: 639px) {
+  .search-modal-overlay {
+    padding-top: 0;
+    align-items: stretch;
+  }
+
+  .search-modal {
+    max-width: none;
+    margin: 0;
+    border-radius: 0;
+    height: 100%;
+  }
+}
+
+/* ===== 辅助布局类 ===== */
+
+/* 隐藏元素（响应式） */
+.hidden {
+  display: none !important;
+}
+
+/* 大屏显示 */
+@media (min-width: 1024px) {
+  .lg\:flex {
+    display: flex !important;
+  }
+
+  .lg\:hidden {
+    display: none !important;
+  }
+}
+
+/* 小屏显示 */
+@media (min-width: 640px) {
+  .sm\:inline {
+    display: inline !important;
+  }
+
+  .sm\:flex {
+    display: flex !important;
+  }
+}

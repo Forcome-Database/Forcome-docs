@@ -1,0 +1,30 @@
+<script setup lang="ts">
+/**
+ * 月亮图标组件
+ * 用于深色主题切换按钮
+ * 
+ * 可访问性：装饰性图标，使用 aria-hidden 隐藏
+ */
+defineProps<{
+  size?: number
+}>()
+</script>
+
+<template>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    :width="size ?? 18"
+    :height="size ?? 18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    class="icon icon-moon"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+  </svg>
+</template>

@@ -1,0 +1,14 @@
+/**
+ * Tailwind CSS 入口文件
+ * Cursor 风格文档平台
+ * 
+ * Tailwind CSS v4 使用 @import 语法导入
+ * @source 指令用于指定需要扫描的文件路径
+ */
+
+@import "tailwindcss";
+
+/* 指定需要扫描 Tailwind 类名的源文件路径 */
+@source "../../**/*.vue";
+@source "../../**/*.ts";
+@source "../../../**/*.md";

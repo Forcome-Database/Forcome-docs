@@ -1,0 +1,354 @@
+/**
+ * 过渡动画样式
+ * Cursor 风格文档平台
+ * 
+ * 包含：主题切换、侧边栏、模态框过渡动画
+ */
+
+/* ===== 主题切换过渡 ===== */
+
+/* 主题切换时的全局过渡类 */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition: 
+    background-color var(--transition-normal),
+    border-color var(--transition-normal),
+    color var(--transition-normal),
+    fill var(--transition-normal),
+    stroke var(--transition-normal),
+    box-shadow var(--transition-normal) !important;
+}
+
+/* 主题切换按钮图标动画 */
+.theme-toggle-icon {
+  transition: transform var(--transition-normal);
+}
+
+.theme-toggle:hover .theme-toggle-icon {
+  transform: rotate(15deg);
+}
+
+/* ===== 侧边栏过渡 ===== */
+
+/* 侧边栏宽度调整过渡 */
+.sidebar {
+  transition: 
+    width var(--transition-fast),
+    transform var(--transition-normal);
+}
+
+/* 拖拽时禁用过渡 */
+.sidebar.is-dragging {
+  transition: none;
+}
+
+/* 移动端侧边栏滑入动画 */
+.sidebar-mobile-enter-active,
+.sidebar-mobile-leave-active {
+  transition: transform var(--transition-normal);
+}
+
+.sidebar-mobile-enter-from,
+.sidebar-mobile-leave-to {
+  transform: translateX(-100%);
+}
+
+/* 侧边栏遮罩层淡入淡出 */
+.sidebar-overlay {
+  transition: opacity var(--transition-normal);
+}
+
+.sidebar-overlay-enter-from,
+.sidebar-overlay-leave-to {
+  opacity: 0;
+}
+
+/* 侧边栏拖拽手柄悬停效果 */
+.sidebar-resize-handle {
+  transition: 
+    background-color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.sidebar-resize-handle:hover {
+  background-color: var(--c-accent);
+  opacity: 1;
+}
+
+/* 侧边栏项目展开/折叠动画 */
+.sidebar-item-children {
+  overflow: hidden;
+  transition: 
+    max-height var(--transition-normal),
+    opacity var(--transition-normal);
+}
+
+.sidebar-item-children.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* 侧边栏折叠图标旋转 */
+.sidebar-item-arrow {
+  transition: transform var(--transition-fast);
+}
+
+.sidebar-item-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+/* ===== 模态框过渡 ===== */
+
+/* 模态框遮罩层 */
+.modal-overlay {
+  transition: opacity var(--transition-normal);
+}
+
+.modal-overlay-enter-from,
+.modal-overlay-leave-to {
+  opacity: 0;
+}
+
+/* 模态框内容缩放动画 */
+.modal-content {
+  transition: 
+    transform var(--transition-normal),
+    opacity var(--transition-normal);
+}
+
+.modal-content-enter-from,
+.modal-content-leave-to {
+  transform: scale(0.95);
+  opacity: 0;
+}
+
+/* 搜索模态框动画 */
+.search-modal-enter-active,
+.search-modal-leave-active {
+  transition: opacity var(--transition-fast);
+}
+
+.search-modal-enter-active .search-modal-content,
+.search-modal-leave-active .search-modal-content {
+  transition: 
+    transform var(--transition-normal),
+    opacity var(--transition-normal);
+}
+
+.search-modal-enter-from,
+.search-modal-leave-to {
+  opacity: 0;
+}
+
+.search-modal-enter-from .search-modal-content,
+.search-modal-leave-to .search-modal-content {
+  transform: translateY(-20px) scale(0.98);
+  opacity: 0;
+}
+
+/* ===== AI 问答面板过渡 ===== */
+
+/* AI 面板从右侧滑入 */
+.ai-panel-enter-active,
+.ai-panel-leave-active {
+  transition: transform var(--transition-normal);
+}
+
+.ai-panel-enter-from,
+.ai-panel-leave-to {
+  transform: translateX(100%);
+}
+
+/* AI 面板遮罩层 */
+.ai-panel-overlay {
+  transition: opacity var(--transition-normal);
+}
+
+.ai-panel-overlay-enter-from,
+.ai-panel-overlay-leave-to {
+  opacity: 0;
+}
+
+/* AI 消息淡入动画 */
+.ai-message-enter-active {
+  transition: 
+    opacity var(--transition-normal),
+    transform var(--transition-normal);
+}
+
+.ai-message-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+/* ===== 通用交互过渡 ===== */
+
+/* 按钮悬停效果 */
+.btn,
+button {
+  transition: 
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.btn:hover,
+button:hover {
+  background-color: var(--c-hover);
+}
+
+/* 链接悬停效果 */
+a {
+  transition: 
+    color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+/* 输入框聚焦效果 */
+input,
+textarea,
+select {
+  transition: 
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+/* 卡片悬停效果 */
+.card {
+  transition: 
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* ===== 下拉菜单过渡 ===== */
+
+.dropdown-enter-active,
+.dropdown-leave-active {
+  transition: 
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.dropdown-enter-from,
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+/* ===== 工具提示过渡 ===== */
+
+.tooltip-enter-active,
+.tooltip-leave-active {
+  transition: 
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.tooltip-enter-from,
+.tooltip-leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+/* ===== 加载动画 ===== */
+
+/* 加载点动画 */
+@keyframes loading-dots {
+  0%, 80%, 100% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.loading-dot {
+  animation: loading-dots 1.4s ease-in-out infinite both;
+}
+
+.loading-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.loading-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+/* 旋转加载动画 */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* 脉冲动画 */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.loading-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* ===== 打字机效果 ===== */
+
+@keyframes typing-cursor {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.typing-cursor {
+  animation: typing-cursor 1s step-end infinite;
+}
+
+
+/* ===== 移动端菜单过渡 ===== */
+
+/* 移动端菜单从左侧滑入（需求 1.4, 1.5） */
+.mobile-menu-enter-active,
+.mobile-menu-leave-active {
+  transition: transform var(--transition-normal);
+}
+
+.mobile-menu-enter-from,
+.mobile-menu-leave-to {
+  transform: translateX(-100%);
+}
+
+/* 移动端菜单遮罩层淡入淡出 */
+.mobile-menu-overlay-enter-active,
+.mobile-menu-overlay-leave-active {
+  transition: opacity var(--transition-normal);
+}
+
+.mobile-menu-overlay-enter-from,
+.mobile-menu-overlay-leave-to {
+  opacity: 0;
+}
