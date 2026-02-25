@@ -45,6 +45,12 @@ async function bootstrap() {
 
   app.useWebSocketAdapter(redisIoAdapter);
 
+  // CORS 必须在 preHandler 之前注册，确保 OPTIONS 预检请求正确处理
+  app.enableCors({
+    origin: true,
+    credentials: true,
+  });
+
   await app.register(fastifyMultipart);
   await app.register(fastifyCookie);
 
@@ -67,6 +73,7 @@ async function bootstrap() {
         '/api/sso/google',
         '/api/workspace/create',
         '/api/workspace/joined',
+        '/api/public-wiki',
       ];
 
       if (
@@ -90,7 +97,6 @@ async function bootstrap() {
     }),
   );
 
-  app.enableCors();
   app.useGlobalInterceptors(new TransformHttpResponseInterceptor(reflector));
   app.enableShutdownHooks();
 

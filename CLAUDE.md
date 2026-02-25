@@ -16,6 +16,13 @@ Docmost v0.25.3 — 开源协作文档管理系统（类 Notion/Confluence），
 - **[重构细节](docs/ee-refactor-details.md)** — 新建/修改文件清单、设计决策、环境变量配置
 - **[踩坑记录](docs/ee-refactor-pitfalls.md)** — TypeScript 编译、数据库迁移、PostgreSQL 扩展、AI SDK 行为等问题及解决方案
 
+## Wiki × Docmost 深度集成
+
+VitePress 知识库（`wiki/`）已深度集成 Docmost，作为公开只读前端。详细文档：
+
+- **[集成细节](docs/wiki-integration-details.md)** — 架构设计、API 端点、新建/修改文件清单、数据流、部署方案
+- **[踩坑记录](docs/wiki-integration-pitfalls.md)** — VitePress 路由拦截、CORS、SSR 兼容、Vue 响应式、API 响应格式等问题及解决方案
+
 ## 开发环境启动
 
 ```bash

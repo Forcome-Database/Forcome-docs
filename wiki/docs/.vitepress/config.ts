@@ -13,9 +13,10 @@ import { zhSidebar, enSidebar, viSidebar } from './sidebar'
 export default withMermaid(defineConfig({
   vite: {
     plugins: [tailwindcss() as any],
-    envDir: '../',
+    envDir: process.cwd(),
     optimizeDeps: { include: ['mermaid', 'dayjs'] },
-    ssr: { noExternal: ['mermaid'] }
+    ssr: { noExternal: ['mermaid'] },
+    server: { port: 5175 }
   },
 
   title: 'FORCOME 知识库',
@@ -42,22 +43,24 @@ export default withMermaid(defineConfig({
           { text: '首页', link: '/zh/', activeMatch: '^/zh/$' },
           {
             text: '企业应用',
-            activeMatch: '^/zh/enterprise/',
+            activeMatch: '^/zh/docs/(kingdee|crm|oa)',
             items: [
-              { text: '金蝶 ERP', link: '/zh/enterprise/kingdee/' },
-              { text: 'CRM 系统', link: '/zh/enterprise/crm/' },
-              { text: 'OA 办公', link: '/zh/enterprise/oa/' }
+              { text: '金蝶 ERP', link: '/zh/docs/kingdee/' },
+              { text: 'CRM 系统', link: '/zh/docs/crm/' },
+              { text: 'OA 办公', link: '/zh/docs/oa/' }
             ]
           },
           {
             text: 'AI应用',
-            activeMatch: '^/zh/ai-apps/',
+            activeMatch: '^/zh/docs/(finance|ppt)',
             items: [
-              { text: '智能财务', link: '/zh/ai-apps/finance/' },
-              { text: '智能PPT', link: '/zh/ai-apps/ppt/' }
+              { text: '智能财务', link: '/zh/docs/finance/' },
+              { text: '智能PPT', link: '/zh/docs/ppt/' }
             ]
           },
-          { text: '知识学习', link: '/zh/learning/', activeMatch: '^/zh/learning/' }
+          { text: '知识学习', link: '/zh/docs/learning/', activeMatch: '^/zh/docs/learning' },
+          { text: '文档中心', link: '/zh/docs/general/', activeMatch: '^/zh/docs/general' },
+          { text: 'IBU文档', link: '/zh/docs/ibu/', activeMatch: '^/zh/docs/ibu' }
         ],
         sidebar: zhSidebar,
         outline: { label: '本页目录' },
@@ -76,22 +79,22 @@ export default withMermaid(defineConfig({
           { text: 'Home', link: '/en/', activeMatch: '^/en/$' },
           {
             text: 'Enterprise',
-            activeMatch: '^/en/enterprise/',
+            activeMatch: '^/en/docs/(kingdee|crm|oa)',
             items: [
-              { text: 'Kingdee ERP', link: '/en/enterprise/kingdee/' },
-              { text: 'CRM System', link: '/en/enterprise/crm/' },
-              { text: 'OA System', link: '/en/enterprise/oa/' }
+              { text: 'Kingdee ERP', link: '/en/docs/kingdee/' },
+              { text: 'CRM System', link: '/en/docs/crm/' },
+              { text: 'OA System', link: '/en/docs/oa/' }
             ]
           },
           {
             text: 'AI Apps',
-            activeMatch: '^/en/ai-apps/',
+            activeMatch: '^/en/docs/(finance|ppt)',
             items: [
-              { text: 'Smart Finance', link: '/en/ai-apps/finance/' },
-              { text: 'Smart PPT', link: '/en/ai-apps/ppt/' }
+              { text: 'Smart Finance', link: '/en/docs/finance/' },
+              { text: 'Smart PPT', link: '/en/docs/ppt/' }
             ]
           },
-          { text: 'Learning', link: '/en/learning/', activeMatch: '^/en/learning/' }
+          { text: 'Learning', link: '/en/docs/learning/', activeMatch: '^/en/docs/learning' }
         ],
         sidebar: enSidebar,
         outline: { label: 'On this page' },
@@ -110,22 +113,22 @@ export default withMermaid(defineConfig({
           { text: 'Trang chủ', link: '/vi/', activeMatch: '^/vi/$' },
           {
             text: 'Doanh nghiệp',
-            activeMatch: '^/vi/enterprise/',
+            activeMatch: '^/vi/docs/(kingdee|crm|oa)',
             items: [
-              { text: 'Kingdee ERP', link: '/vi/enterprise/kingdee/' },
-              { text: 'Hệ thống CRM', link: '/vi/enterprise/crm/' },
-              { text: 'Hệ thống OA', link: '/vi/enterprise/oa/' }
+              { text: 'Kingdee ERP', link: '/vi/docs/kingdee/' },
+              { text: 'Hệ thống CRM', link: '/vi/docs/crm/' },
+              { text: 'Hệ thống OA', link: '/vi/docs/oa/' }
             ]
           },
           {
             text: 'Ứng dụng AI',
-            activeMatch: '^/vi/ai-apps/',
+            activeMatch: '^/vi/docs/(finance|ppt)',
             items: [
-              { text: 'Tài chính thông minh', link: '/vi/ai-apps/finance/' },
-              { text: 'PPT thông minh', link: '/vi/ai-apps/ppt/' }
+              { text: 'Tài chính thông minh', link: '/vi/docs/finance/' },
+              { text: 'PPT thông minh', link: '/vi/docs/ppt/' }
             ]
           },
-          { text: 'Học tập', link: '/vi/learning/', activeMatch: '^/vi/learning/' }
+          { text: 'Học tập', link: '/vi/docs/learning/', activeMatch: '^/vi/docs/learning' }
         ],
         sidebar: viSidebar,
         outline: { label: 'Mục lục' },

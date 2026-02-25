@@ -10,7 +10,9 @@ import { Bubble, Sender, XProvider } from 'ant-design-x-vue'
 import { theme } from 'ant-design-vue'
 import { getAIChatModifierKey, getDifyMode, getDifyEmbedUrl, isEmbedConfigured } from '../composables/useAIChat'
 import { useTheme } from '../composables/useTheme'
+import { useRoute } from 'vitepress'
 import { createDifyService } from '../services/dify'
+import { createDocmostService } from '../services/docmost'
 import { storage } from '../services/storage'
 import type { ChatMessage, StoredChatHistory } from '../types'
 import { StorageKey } from '../types'
@@ -50,7 +52,13 @@ const inputText = ref('')
 
 // Dify 服务
 let difyService = createDifyService()
-const isConfigured = computed(() => difyService?.isConfigured() ?? false)
+// Docmost AI 服务
+const docmostService = createDocmostService()
+const useDocmostAI = computed(() => !!docmostService)
+const isConfigured = computed(() => {
+  if (docmostService) return true
+  return difyService?.isConfigured() ?? false
+})
 const hasMessages = computed(() => messages.value.length > 0)
 const canSend = computed(() => inputText.value.trim().length > 0 && !isLoading.value)
 
@@ -133,18 +141,29 @@ const saveHistory = () => {
 }
 
 
+// AI 来源引用
+const aiSources = ref<{ title: string; slugId: string; spaceSlug: string }[]>([])
+
+// 获取当前语言
+const route = useRoute()
+const getCurrentLang = (): string => {
+  const match = route.path.match(/^\/(zh|en|vi)\//)
+  return match ? match[1] : 'zh'
+}
+
 // ===== 发送消息 =====
 const sendMessage = async (content: string) => {
   const messageContent = content.trim()
   if (!messageContent) return
-  
-  if (!difyService) {
+
+  if (!docmostService && !difyService) {
     error.value = 'AI 服务未配置，请检查环境变量'
     return
   }
 
   inputText.value = ''
   error.value = null
+  aiSources.value = []
 
   // 添加用户消息
   const userMessage: ChatMessage = {
@@ -168,40 +187,71 @@ const sendMessage = async (content: string) => {
   isLoading.value = true
 
   try {
-    // 获取助手消息在数组中的索引
     const assistantIndex = messages.value.length - 1
-    
-    for await (const event of difyService.sendMessage(
-      messageContent,
-      conversationId.value || undefined
-    )) {
-      if ((event.event === 'message' || event.event === 'agent_message') && event.answer) {
-        // 通过替换整个对象来触发响应式更新
-        const currentMsg = messages.value[assistantIndex]
-        messages.value[assistantIndex] = {
-          ...currentMsg,
-          content: currentMsg.content + event.answer
+
+    if (docmostService) {
+      // Docmost AI 流式问答
+      for await (const event of docmostService.aiAnswers(messageContent)) {
+        if (event.sources) {
+          aiSources.value = event.sources
         }
-      } else if (event.event === 'message_end') {
-        // 更新流式状态
+        if (event.content) {
+          const currentMsg = messages.value[assistantIndex]
+          messages.value[assistantIndex] = {
+            ...currentMsg,
+            content: currentMsg.content + event.content
+          }
+        }
+        if (event.error) {
+          throw new Error(event.error)
+        }
+      }
+      // 追加来源引用到消息末尾
+      if (aiSources.value.length > 0) {
+        const lang = getCurrentLang()
+        const sourcesText = '\n\n---\n**相关文档：**\n' +
+          aiSources.value.map(s => `- [${s.title}](/${lang}/docs/${s.spaceSlug}/${s.slugId})`).join('\n')
         const currentMsg = messages.value[assistantIndex]
         messages.value[assistantIndex] = {
           ...currentMsg,
+          content: currentMsg.content + sourcesText,
           isStreaming: false
         }
-        if (event.conversation_id) {
-          conversationId.value = event.conversation_id
+      } else {
+        const currentMsg = messages.value[assistantIndex]
+        messages.value[assistantIndex] = { ...currentMsg, isStreaming: false }
+      }
+    } else if (difyService) {
+      // Dify API 流式问答（原有逻辑）
+      for await (const event of difyService.sendMessage(
+        messageContent,
+        conversationId.value || undefined
+      )) {
+        if ((event.event === 'message' || event.event === 'agent_message') && event.answer) {
+          const currentMsg = messages.value[assistantIndex]
+          messages.value[assistantIndex] = {
+            ...currentMsg,
+            content: currentMsg.content + event.answer
+          }
+        } else if (event.event === 'message_end') {
+          const currentMsg = messages.value[assistantIndex]
+          messages.value[assistantIndex] = {
+            ...currentMsg,
+            isStreaming: false
+          }
+          if (event.conversation_id) {
+            conversationId.value = event.conversation_id
+          }
+        } else if (event.event === 'error') {
+          throw new Error('AI 服务返回错误')
         }
-      } else if (event.event === 'error') {
-        throw new Error('AI 服务返回错误')
       }
     }
     saveHistory()
   } catch (e) {
     const errorMessage = e instanceof Error ? e.message : '发送失败，请重试'
     error.value = errorMessage
-    
-    // 移除失败的助手消息（最后一条）
+
     if (messages.value.length > 0 && messages.value[messages.value.length - 1].role === 'assistant') {
       messages.value.pop()
     }
@@ -241,6 +291,7 @@ const retry = () => {
 }
 
 const abort = () => {
+  docmostService?.abort()
   difyService?.abort()
   isLoading.value = false
   const streamingIndex = messages.value.findIndex(m => m.isStreaming)

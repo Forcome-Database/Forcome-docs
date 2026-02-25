@@ -18,15 +18,25 @@ import MobileMenu from './components/MobileMenu.vue'
 import SearchModal from './components/SearchModal.vue'
 import AIChat from './components/AIChat.vue'
 import NotFound from './components/NotFound.vue'
+import DocmostContent from './components/DocmostContent.vue'
+import { useDocmostSidebar } from './composables/useDocmostSidebar'
 
 // 获取 VitePress 数据
 const { frontmatter, page } = useData()
 const route = useRoute()
 
+// Docmost 数据预加载
+const { loadSpaces, isAvailable: hasDocmost, isDocmostRoute: checkDocmostRoute } = useDocmostSidebar()
+
 /**
- * 是否为 404 页面
+ * 是否为 Docmost 路由
  */
-const is404 = computed(() => page.value.isNotFound)
+const isDocmostRoute = computed(() => checkDocmostRoute(route.path))
+
+/**
+ * 是否为 404 页面（Docmost 路由不算 404）
+ */
+const is404 = computed(() => page.value.isNotFound && !isDocmostRoute.value)
 
 // 主题状态（初始化主题）
 useTheme()
@@ -129,6 +139,10 @@ provide('layout', {
 
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
+  // 初始化 Docmost 数据（在 Layout 层确保最早加载）
+  if (hasDocmost.value) {
+    loadSpaces()
+  }
 })
 
 onUnmounted(() => {
@@ -180,9 +194,11 @@ onUnmounted(() => {
         tabindex="-1"
       >
         <article class="content-wrapper vp-doc">
-          <!-- 404 页面（需求 14.5） -->
+          <!-- 404 页面 -->
           <NotFound v-if="is404" />
-          <!-- 正常内容 -->
+          <!-- Docmost 动态内容 -->
+          <DocmostContent v-else-if="isDocmostRoute" />
+          <!-- 正常 VitePress 内容 -->
           <Content v-else />
         </article>
       </main>

@@ -5,10 +5,11 @@
  * 
  * 需求: 3.1-3.7, 4.1-4.8
  */
-import { computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useData, useRoute } from 'vitepress'
 import SideBarItem from './SideBarItem.vue'
 import type { SidebarItem } from '../types'
+import { useDocmostSidebar } from '../composables/useDocmostSidebar'
 
 const props = defineProps<{
   /** 侧边栏宽度（桌面端） */
@@ -34,39 +35,54 @@ const emit = defineEmits<{
 const { theme } = useData()
 const route = useRoute()
 
+// Docmost 动态侧边栏
+const { isAvailable: hasDocmost, loadSpaces, sidebarData, spaces: docmostSpaces, buildSidebarForRoute, isDocmostRoute, isLoaded: docmostLoaded } = useDocmostSidebar()
+
+// 初始化时加载 Docmost 数据
+onMounted(() => {
+  if (hasDocmost.value) {
+    loadSpaces()
+  }
+})
+
 /**
- * 获取当前页面的侧边栏配置
- * VitePress 的 sidebar 可以是数组或对象（按路径分组）
+ * 侧边栏数据
  */
-const sidebarGroups = computed(() => {
+const sidebarGroups = ref<SidebarItem[]>([])
+
+/**
+ * 构建静态侧边栏（VitePress 原生）
+ */
+function getStaticSidebar(path: string): SidebarItem[] {
   const sidebar = theme.value.sidebar
-  
   if (!sidebar) return []
-  
-  // 如果是数组，直接返回
-  if (Array.isArray(sidebar)) {
-    return sidebar as SidebarItem[]
-  }
-  
-  // 如果是对象，根据当前路径匹配
-  const path = route.path
-  
-  // 按路径长度降序排序，优先匹配更精确的路径
-  // 例如 /zh/erp/ 应该优先于 /zh/ 匹配
+  if (Array.isArray(sidebar)) return sidebar as SidebarItem[]
+
   const sortedKeys = Object.keys(sidebar).sort((a, b) => b.length - a.length)
-  
   for (const key of sortedKeys) {
-    if (path.startsWith(key)) {
-      return sidebar[key] as SidebarItem[]
-    }
+    if (path.startsWith(key)) return sidebar[key] as SidebarItem[]
   }
-  
-  // 默认返回根路径配置
-  if (sidebar['/']) {
-    return sidebar['/'] as SidebarItem[]
+  return sidebar['/'] ? sidebar['/'] as SidebarItem[] : []
+}
+
+/**
+ * 更新侧边栏内容
+ */
+function updateSidebar() {
+  const path = route.path
+  if (hasDocmost.value && isDocmostRoute(path) && docmostLoaded.value) {
+    sidebarGroups.value = buildSidebarForRoute(path)
+  } else if (!isDocmostRoute(path)) {
+    sidebarGroups.value = getStaticSidebar(path)
   }
-  
-  return []
+}
+
+// 路由变化时更新
+watch(() => route.path, updateSidebar, { immediate: true })
+
+// Docmost 数据加载完成时更新（关键：显式监听 isLoaded 变化）
+watch(docmostLoaded, (loaded) => {
+  if (loaded) updateSidebar()
 })
 
 /**

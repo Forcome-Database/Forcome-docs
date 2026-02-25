@@ -6,10 +6,11 @@
  * 需求: 5.1-5.10, 8.6
  */
 import { ref, watch, onMounted, onUnmounted, nextTick, shallowRef, markRaw } from 'vue'
-import { useRouter, useData } from 'vitepress'
+import { useRouter, useData, useRoute } from 'vitepress'
 import MiniSearch from 'minisearch'
 import SearchIcon from './icons/SearchIcon.vue'
 import CloseIcon from './icons/CloseIcon.vue'
+import { createDocmostService } from '../services/docmost'
 
 // 定义事件
 const emit = defineEmits<{
@@ -28,6 +29,18 @@ interface SearchResultItem {
 // 获取 VitePress 数据和路由
 const { localeIndex } = useData()
 const router = useRouter()
+const route = useRoute()
+
+// Docmost 搜索服务
+const docmostService = createDocmostService()
+
+/**
+ * 获取当前语言
+ */
+const getCurrentLang = (): string => {
+  const match = route.path.match(/^\/(zh|en|vi)\//)
+  return match ? match[1] : 'zh'
+}
 
 // 搜索状态
 const query = ref('')
@@ -78,9 +91,10 @@ const initSearchIndex = async () => {
 
 /**
  * 执行搜索（需求 5.4）
+ * 同时搜索 VitePress 本地索引和 Docmost API
  */
-const performSearch = () => {
-  if (!searchIndex.value || !query.value.trim()) {
+const performSearch = async () => {
+  if (!query.value.trim()) {
     results.value = []
     selectedIndex.value = -1
     showNoResults.value = false
@@ -90,16 +104,42 @@ const performSearch = () => {
   isLoading.value = true
 
   try {
-    const searchResults = searchIndex.value.search(query.value).slice(0, 16)
-    
-    results.value = searchResults.map((result: any) => ({
-      id: result.id,
-      title: result.title || '',
-      titles: result.titles || [],
-      text: result.text,
-      link: result.id
-    }))
+    const allResults: SearchResultItem[] = []
 
+    // VitePress 本地搜索
+    if (searchIndex.value) {
+      const localResults = searchIndex.value.search(query.value).slice(0, 8)
+      allResults.push(
+        ...localResults.map((result: any) => ({
+          id: result.id,
+          title: result.title || '',
+          titles: result.titles || [],
+          text: result.text,
+          link: result.id,
+        }))
+      )
+    }
+
+    // Docmost API 搜索
+    if (docmostService) {
+      try {
+        const lang = getCurrentLang()
+        const docmostResults = await docmostService.search(query.value, undefined, 8)
+        allResults.push(
+          ...docmostResults.map((r) => ({
+            id: r.slugId || r.id,
+            title: r.title || '',
+            titles: r.space ? [r.space.name] : [],
+            text: r.highlight || '',
+            link: `/${lang}/docs/${r.spaceSlug || r.space?.slug}/${r.slugId}`,
+          }))
+        )
+      } catch (err) {
+        console.warn('[SearchModal] Docmost 搜索失败:', err)
+      }
+    }
+
+    results.value = allResults.slice(0, 16)
     selectedIndex.value = results.value.length > 0 ? 0 : -1
     showNoResults.value = query.value.length > 0 && results.value.length === 0
   } catch (error) {

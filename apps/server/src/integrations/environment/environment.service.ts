@@ -277,4 +277,9 @@ export class EnvironmentService {
       'http://localhost:11434',
     );
   }
+
+  getWikiPublicSpaceSlugs(): string[] {
+    const slugs = this.configService.get<string>('WIKI_PUBLIC_SPACE_SLUGS');
+    return slugs ? slugs.split(',').map((s) => s.trim()) : [];
+  }
 }

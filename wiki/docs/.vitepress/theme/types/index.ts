@@ -279,6 +279,60 @@ export interface AppError {
   cause?: Error
 }
 
+// ===== Docmost 集成类型 =====
+
+/** Docmost 空间 */
+export interface DocmostSpace {
+  id: string
+  name: string
+  slug: string
+  description?: string
+}
+
+/** Docmost 侧边栏页面节点 */
+export interface DocmostSidebarNode {
+  id: string
+  slugId: string
+  title: string
+  icon?: string
+  position: string
+  hasChildren: boolean
+  children: DocmostSidebarNode[]
+}
+
+/** Docmost 页面 */
+export interface DocmostPage {
+  id: string
+  slugId: string
+  title: string
+  icon?: string
+  content: string
+  breadcrumbs?: { id: string; title: string; slugId: string }[]
+  spaceSlug: string
+  spaceName: string
+  updatedAt: string
+  createdAt: string
+  creator?: { id: string; name: string; avatarUrl?: string }
+}
+
+/** Docmost 搜索结果项 */
+export interface DocmostSearchResult {
+  id: string
+  slugId: string
+  title: string
+  icon?: string
+  highlight?: string
+  spaceSlug?: string
+  space?: { id: string; name: string; slug: string }
+}
+
+/** Docmost AI 流式事件 */
+export interface DocmostAiStreamEvent {
+  sources?: { title: string; slugId: string; spaceSlug: string }[]
+  content?: string
+  error?: string
+}
+
 // ===== 组件 Props 类型 =====
 
 /** NavBar 组件事件 */
