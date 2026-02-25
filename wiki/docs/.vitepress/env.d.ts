@@ -17,3 +17,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+/** Vite define 注入的版本号 */
+declare const __APP_VERSION__: string

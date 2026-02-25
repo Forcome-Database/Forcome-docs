@@ -29,14 +29,10 @@
 .content-wrapper :deep(h1) {
   font-size: 2rem;
   margin-top: 0;
-  padding-bottom: 0.5em;
-  border-bottom: 1px solid var(--c-border);
 }
 
 .content-wrapper :deep(h2) {
   font-size: 1.5rem;
-  padding-bottom: 0.3em;
-  border-bottom: 1px solid var(--c-border);
 }
 
 .content-wrapper :deep(h3) {
@@ -80,6 +76,12 @@
 .content-wrapper :deep(a:hover) {
   color: var(--c-accent-hover);
   text-decoration: underline;
+}
+
+/* 覆盖 VitePress vp-doc h2 默认 border-top（避免与 hr 产生双线） */
+.vp-doc h2 {
+  border-top: none;
+  padding-top: 0;
 }
 
 /* 覆盖 VitePress vp-doc 默认链接样式 */

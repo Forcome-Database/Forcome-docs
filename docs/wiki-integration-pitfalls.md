@@ -462,3 +462,66 @@ const getChatStorageKey = (): string => {
 }
 ```
 同时添加 `watch(route.path)` 监听页面切换，自动加载对应会话。`loadHistory()` 新增 else 分支清空状态，确保新页面显示干净的欢迎界面。
+
+---
+
+## 16. Docmost 页面 Footer 与样式对齐
+
+### 16.1 VitePress `.vp-doc h2` 自带 `border-top` 导致双线
+**现象**：所有 h2 标题前面出现两条紧挨着的横线，静态 .md 和 Docmost 动态页面均受影响
+**原因**：VitePress 默认主题 `vp-doc.css` 给 `.vp-doc h2` 定义了 `border-top: 1px solid var(--vp-c-divider); padding-top: 24px;`。同时 Docmost TipTap 在标题前输出 `<hr>` 分隔线，两者叠加产生双线。即便静态 .md 页面，如果 markdown.css 中对 h1/h2 也有 `border-bottom`，也会与相邻元素叠加
+**修复**：在 `markdown.css` 中覆盖：
+```css
+.vp-doc h2 {
+  border-top: none;
+  padding-top: 0;
+}
+```
+**文件**：`wiki/docs/.vitepress/theme/styles/markdown.css`
+
+### 16.2 Docmost HTML 行高/间距与原版 .md 不一致
+**现象**：Docmost 渲染的表格行高明显高于原版 .md 的表格，列表项间距也更大
+**原因**：TipTap 编辑器输出的 HTML 结构与 VitePress markdown 渲染不同——TipTap 在 `<td>`、`<th>`、`<li>` 内部自动包裹 `<p>` 标签：
+```html
+<!-- TipTap 输出 -->
+<td><p>mermaid</p></td>
+
+<!-- VitePress markdown 输出 -->
+<td>mermaid</td>
+```
+`.vp-doc p` 有 `margin: 16px 0; line-height: 28px;`，导致每个内嵌 `<p>` 额外增加 32px margin + 更大行高
+**修复**：在 `DocmostContent.vue` 全局样式中消除嵌套 `<p>` 的多余间距：
+```css
+.docmost-html-content td p,
+.docmost-html-content th p {
+  margin: 0;
+  line-height: inherit;
+}
+
+.docmost-html-content li > p {
+  margin: 0;
+}
+```
+**同时删除** `.docmost-html-content` 中与 `.vp-doc` 重复的通用元素样式（table、th/td、pre、code、hr、blockquote、img），让这些元素直接继承 `.vp-doc` 的样式，确保两套渲染一致
+**文件**：`wiki/docs/.vitepress/theme/components/DocmostContent.vue`
+
+### 16.3 Docmost 页面 Footer 增强
+**需求**：原版仅显示"最后更新"日期，需要增加作者、编辑链接、上/下页导航
+**实现**：
+- **作者**：API 已返回 `creator` 字段（`includeCreator: true`），前端展示 `👤 作者: xxx`
+- **编辑链接**：从 `VITE_DOCMOST_API_URL` 提取 origin，拼接 `/s/{spaceSlug}/p/{slugId}` 跳转 Docmost 编辑器
+- **更新日期**：精确到秒（`YYYY/MM/DD HH:mm:ss`）
+- **上/下页导航**：展平侧边栏树为有序列表，根据当前 slugId 找前后页，VitePress DocFooter 风格卡片式布局
+- **多语言**：中/英/越南语标签支持
+
+**布局**：
+```
+───────────────────────────────────────────
+👤 作者: Leo   最后更新: 2026/02/25 14:51:13    ✏️ 编辑此页
+───────────────────────────────────────────
+┌──────────────┐      ┌──────────────┐
+│ 上一页        │      │        下一页 │
+│ VPN配置指南   │      │  图表使用指南 │
+└──────────────┘      └──────────────┘
+```
+**文件**：`wiki/docs/.vitepress/theme/components/DocmostContent.vue`

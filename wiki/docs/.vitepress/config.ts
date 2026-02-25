@@ -2,6 +2,10 @@ import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 import tailwindcss from '@tailwindcss/vite'
 import { zhSidebar, enSidebar, viSidebar } from './sidebar'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8'))
 
 /**
  * VitePress 配置文件
@@ -13,6 +17,7 @@ import { zhSidebar, enSidebar, viSidebar } from './sidebar'
 export default withMermaid(defineConfig({
   vite: {
     plugins: [tailwindcss() as any],
+    define: { __APP_VERSION__: JSON.stringify(pkg.version) },
     envDir: process.cwd(),
     optimizeDeps: { include: ['mermaid', 'dayjs'] },
     ssr: { noExternal: ['mermaid'] },
