@@ -109,13 +109,13 @@ export class AiSearchService {
     const embeddingStr = `[${queryEmbedding.join(',')}]`;
 
     const results = await sql`
-      SELECT pe.*, p.title, p."slugId", s.slug as "spaceSlug",
+      SELECT pe.*, p.title, p.slug_id as "slugId", s.slug as "spaceSlug",
              pe.embedding <=> ${embeddingStr}::vector AS distance
       FROM page_embeddings pe
       JOIN pages p ON p.id = pe."pageId"
       JOIN spaces s ON s.id = pe."spaceId"
       WHERE pe."workspaceId" = ${workspaceId}
-        AND p."deletedAt" IS NULL
+        AND p.deleted_at IS NULL
       ORDER BY distance ASC
       LIMIT ${limit}
     `.execute(this.db);
