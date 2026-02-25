@@ -109,7 +109,8 @@ export class AiSearchService {
     const embeddingStr = `[${queryEmbedding.join(',')}]`;
 
     const results = await sql`
-      SELECT pe.*, p.title, p.slug_id as "slugId", s.slug as "spaceSlug",
+      SELECT pe.*, p.title, p.slug_id as "slugId", p.text_content as "textContent",
+             s.slug as "spaceSlug",
              pe.embedding <=> ${embeddingStr}::vector AS distance
       FROM page_embeddings pe
       JOIN pages p ON p.id = pe."pageId"
@@ -125,6 +126,7 @@ export class AiSearchService {
       title: row.title,
       slugId: row.slugId,
       spaceSlug: row.spaceSlug,
+      textContent: row.textContent,
       distance: row.distance,
     }));
   }
@@ -136,8 +138,11 @@ export class AiSearchService {
     const sources = await this.searchSimilarPages(query, workspaceId);
 
     const context = sources
-      .map((s, i) => `[${i + 1}] ${s.title || 'Untitled'}: (Page ID: ${s.pageId})`)
-      .join('\n');
+      .map((s, i) => {
+        const content = (s.textContent || '').slice(0, 2000);
+        return `[${i + 1}] ${s.title || 'Untitled'}:\n${content}`;
+      })
+      .join('\n\n');
 
     const prompt = `Answer the following question based on the provided context from documentation pages.
 
