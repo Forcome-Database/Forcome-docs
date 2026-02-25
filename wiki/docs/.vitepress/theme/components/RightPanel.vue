@@ -137,14 +137,21 @@ watch(() => page.value.relativePath, () => {
   setTimeout(buildOutline, 100)
 }, { immediate: true })
 
+// Docmost 内容加载完成后重建目录
+const onDocmostContentLoaded = () => {
+  setTimeout(buildOutline, 50)
+}
+
 onMounted(() => {
   setTimeout(buildOutline, 100)
   window.addEventListener('scroll', updateActiveId, { passive: true })
+  window.addEventListener('docmost-content-loaded', onDocmostContentLoaded)
   updateActiveId()
 })
 
 onUnmounted(() => {
   window.removeEventListener('scroll', updateActiveId)
+  window.removeEventListener('docmost-content-loaded', onDocmostContentLoaded)
 })
 </script>
 
