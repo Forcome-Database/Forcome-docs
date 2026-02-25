@@ -135,6 +135,7 @@ export class AiSearchService {
     query: string,
     workspaceId: string,
     pageSlugId?: string,
+    images?: { data: string; mimeType: string }[],
   ): AsyncGenerator<string> {
     // 1. 如果指定了当前页面，优先获取该页面内容作为主要上下文
     let currentPage: { title: string; slugId: string; spaceSlug: string; textContent: string } | null = null;
@@ -187,7 +188,33 @@ Question: ${query}
 Provide a helpful and concise answer. If the context doesn't contain enough information, say so.`;
 
     const model = this.getCompletionModel();
-    const result = streamText({ model, prompt });
+
+    let result: any;
+    if (images?.length) {
+      // 多模态模式：使用 messages 格式携带图片
+      const systemPrompt = `Answer the following question based on the provided context from documentation pages.${currentPage ? ' The user is currently viewing the page marked as (当前页面), prioritize its content when answering.' : ''}
+
+Context:
+${context}
+
+Provide a helpful and concise answer. If the context doesn't contain enough information, say so.`;
+
+      const userContent: any[] = [
+        ...images.map((img) => ({
+          type: 'image' as const,
+          image: `data:${img.mimeType};base64,${img.data}`,
+        })),
+        { type: 'text' as const, text: query },
+      ];
+
+      result = streamText({
+        model,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userContent }],
+      });
+    } else {
+      result = streamText({ model, prompt });
+    }
 
     // 构建 sources 列表（当前页面放第一位）
     const allSources: { title: string; slugId: string; spaceSlug: string }[] = [];
@@ -201,8 +228,19 @@ Provide a helpful and concise answer. If the context doesn't contain enough info
 
     yield JSON.stringify({ sources: allSources });
 
-    for await (const chunk of result.textStream) {
-      yield JSON.stringify({ content: chunk });
+    try {
+      for await (const chunk of result.textStream) {
+        yield JSON.stringify({ content: chunk });
+      }
+    } catch (streamError: any) {
+      const msg = streamError?.message || '';
+      if (images?.length && (msg.includes('vision') || msg.includes('image') || msg.includes('multimodal'))) {
+        yield JSON.stringify({
+          error: '当前 AI 模型不支持图片理解，请使用支持视觉的模型',
+        });
+      } else {
+        throw streamError;
+      }
     }
   }
 }

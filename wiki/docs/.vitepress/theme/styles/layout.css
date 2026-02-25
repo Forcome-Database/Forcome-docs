@@ -145,8 +145,8 @@
 /* 为右侧目录预留空间（宽度 > 1280px 时显示目录） */
 @media (min-width: 1281px) {
   .content-container {
-    /* 右侧目录宽度 180px + 右边距 32px + 安全间距 24px = 236px */
-    padding-right: 236px;
+    /* 右侧目录宽度 220px + 右边距 20px + 安全间距 16px = 256px */
+    padding-right: 256px;
   }
 }
 

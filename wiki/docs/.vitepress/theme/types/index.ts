@@ -104,6 +104,16 @@ export interface SidebarRouteConfig {
 /** 消息角色 */
 export type MessageRole = 'user' | 'assistant'
 
+/** 聊天消息附带的图片 */
+export interface ChatMessageImage {
+  /** 唯一 ID */
+  id: string
+  /** 本地预览 URL（blob URL，不持久化） */
+  previewUrl: string
+  /** MIME 类型 */
+  mimeType: string
+}
+
 /** 聊天消息 */
 export interface ChatMessage {
   /** 消息 ID */
@@ -116,6 +126,8 @@ export interface ChatMessage {
   timestamp: number
   /** 是否正在流式输出 */
   isStreaming?: boolean
+  /** 附带的图片列表 */
+  images?: ChatMessageImage[]
 }
 
 /** 对话状态 */

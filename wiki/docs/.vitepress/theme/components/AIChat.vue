@@ -11,15 +11,18 @@ import { theme } from 'ant-design-vue'
 import { getAIChatModifierKey, getDifyMode, getDifyEmbedUrl, isEmbedConfigured } from '../composables/useAIChat'
 import { useTheme } from '../composables/useTheme'
 import { useCodeCopy } from '../composables/useCodeCopy'
-import { useRoute } from 'vitepress'
+import { useRoute, useRouter } from 'vitepress'
 import { createDifyService } from '../services/dify'
 import { createDocmostService } from '../services/docmost'
 import { storage } from '../services/storage'
 import { renderMarkdownToHtml } from '../utils/markdown'
-import type { ChatMessage, StoredChatHistory } from '../types'
+import { useDocmostSidebar } from '../composables/useDocmostSidebar'
+import type { ChatMessage, ChatMessageImage, StoredChatHistory, DocmostSidebarNode } from '../types'
 import { StorageKey } from '../types'
 import CloseIcon from './icons/CloseIcon.vue'
 import TrashIcon from './icons/TrashIcon.vue'
+import HistoryIcon from './icons/HistoryIcon.vue'
+import ChevronIcon from './icons/ChevronIcon.vue'
 
 // 获取主题状态
 const { isDark } = useTheme()
@@ -66,7 +69,128 @@ const isConfigured = computed(() => {
   return difyService?.isConfigured() ?? false
 })
 const hasMessages = computed(() => messages.value.length > 0)
-const canSend = computed(() => inputText.value.trim().length > 0 && !isLoading.value)
+
+// ===== 图片上传状态 =====
+interface PendingImage {
+  id: string
+  file: File
+  previewUrl: string
+  mimeType: string
+}
+const pendingImages = ref<PendingImage[]>([])
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const MAX_IMAGE_SIZE = 4 * 1024 * 1024 // 4MB
+const MAX_IMAGES = 3
+
+const canSend = computed(() =>
+  (inputText.value.trim().length > 0 || pendingImages.value.length > 0) && !isLoading.value
+)
+
+// 文件转 base64
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      // 去掉 data:...;base64, 前缀
+      resolve(result.split(',')[1])
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+// 压缩图片（超过 MAX_IMAGE_SIZE 时使用）
+function compressImage(file: File): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const canvas = document.createElement('canvas')
+      // 限制最大尺寸
+      let { width, height } = img
+      const maxDim = 1920
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height)
+        width = Math.round(width * ratio)
+        height = Math.round(height * ratio)
+      }
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0, width, height)
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) return reject(new Error('压缩失败'))
+          resolve(new File([blob], file.name, { type: 'image/jpeg' }))
+        },
+        'image/jpeg',
+        0.8
+      )
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('图片加载失败'))
+    }
+    img.src = url
+  })
+}
+
+async function addImageAttachment(file: File) {
+  if (pendingImages.value.length >= MAX_IMAGES) {
+    error.value = `最多上传 ${MAX_IMAGES} 张图片`
+    return
+  }
+  if (!file.type.startsWith('image/')) return
+
+  let processedFile = file
+  if (file.size > MAX_IMAGE_SIZE) {
+    try {
+      processedFile = await compressImage(file)
+    } catch {
+      error.value = '图片压缩失败，请选择更小的图片'
+      return
+    }
+  }
+
+  const previewUrl = URL.createObjectURL(processedFile)
+  pendingImages.value.push({
+    id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    file: processedFile,
+    previewUrl,
+    mimeType: processedFile.type
+  })
+}
+
+function removeImage(id: string) {
+  const idx = pendingImages.value.findIndex(img => img.id === id)
+  if (idx !== -1) {
+    URL.revokeObjectURL(pendingImages.value[idx].previewUrl)
+    pendingImages.value.splice(idx, 1)
+  }
+}
+
+function handleFileSelect(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (!input.files) return
+  for (const file of Array.from(input.files)) {
+    addImageAttachment(file)
+  }
+  input.value = '' // reset so same file can be re-selected
+}
+
+function handlePaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (const item of Array.from(items)) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault()
+      const file = item.getAsFile()
+      if (file) addImageAttachment(file)
+    }
+  }
+}
 
 // ===== Markdown 渲染 =====
 const renderMarkdown = (content: string) => {
@@ -78,19 +202,42 @@ const renderMarkdown = (content: string) => {
   })
 }
 
+// ===== 用户消息渲染（含图片） =====
+const renderUserMessage = (images: ChatMessageImage[]) => (content: string) => {
+  const children: any[] = []
+  if (images.length > 0) {
+    children.push(h('div', { class: 'user-msg-images' },
+      images.map(img =>
+        h('img', { key: img.id, src: img.previewUrl, class: 'user-msg-thumb', alt: '附件图片' })
+      )
+    ))
+  }
+  if (content) {
+    children.push(h('span', content))
+  }
+  return h('div', children)
+}
+
 // ===== Bubble.List 数据转换 =====
 const bubbleItems = computed(() => {
-  return messages.value.map(msg => ({
-    key: msg.id,
-    role: msg.role,
-    content: msg.content,
-    loading: msg.isStreaming && !msg.content,
-    typing: msg.isStreaming ? { step: 2, interval: 50 } : undefined,
-    messageRender: msg.role === 'assistant' ? renderMarkdown : undefined,
-    classNames: msg.isStreaming && msg.role === 'assistant'
-      ? { content: 'is-streaming' }
-      : undefined
-  }))
+  return messages.value.map(msg => {
+    const hasImages = msg.role === 'user' && msg.images && msg.images.length > 0
+    return {
+      key: msg.id,
+      role: msg.role,
+      content: msg.content,
+      loading: msg.isStreaming && !msg.content,
+      typing: msg.isStreaming ? { step: 2, interval: 50 } : undefined,
+      messageRender: msg.role === 'assistant'
+        ? renderMarkdown
+        : hasImages
+          ? renderUserMessage(msg.images!)
+          : undefined,
+      classNames: msg.isStreaming && msg.role === 'assistant'
+        ? { content: 'is-streaming' }
+        : undefined
+    }
+  })
 })
 
 // Bubble 角色配置
@@ -132,9 +279,19 @@ const loadHistory = () => {
 
 const saveHistory = () => {
   const key = getChatStorageKey()
+  // 持久化时去掉图片 blob URL 数据，避免 localStorage 溢出
+  const cleanMessages = messages.value
+    .filter(m => !m.isStreaming)
+    .map(m => {
+      if (m.images?.length) {
+        const { images, ...rest } = m
+        return rest
+      }
+      return m
+    })
   const history: StoredChatHistory = {
     conversationId: conversationId.value || '',
-    messages: messages.value.filter(m => !m.isStreaming),
+    messages: cleanMessages,
     updatedAt: Date.now()
   }
   storage.set(key, history)
@@ -158,30 +315,38 @@ const getChatStorageKey = (): string => {
 
 // 从路由提取当前页面 slugId（用于 AI 上下文定位）
 const getCurrentPageSlugId = (): string | undefined => {
-  const match = route.path.match(/^\/(zh|en|vi)\/docs\/[^/]+\/([^/]+)/)
+  const path = route.path.replace(/#.*$/, '')
+  const match = path.match(/^\/(zh|en|vi)\/docs\/[^/]+\/([^/]+)/)
   return match ? match[2] : undefined
 }
 
 // ===== 发送消息 =====
 const sendMessage = async (content: string) => {
   const messageContent = content.trim()
-  if (!messageContent) return
+  const hasImages = pendingImages.value.length > 0
+  if (!messageContent && !hasImages) return
 
   if (!docmostService && !difyService) {
     error.value = 'AI 服务未配置，请检查环境变量'
     return
   }
 
+  // 捕获待发送的图片
+  const imagesToSend = [...pendingImages.value]
+  pendingImages.value = []
   inputText.value = ''
   error.value = null
   aiSources.value = []
 
-  // 添加用户消息
+  // 添加用户消息（含图片预览）
   const userMessage: ChatMessage = {
     id: generateMessageId('user'),
     role: 'user',
     content: messageContent,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    images: imagesToSend.length > 0
+      ? imagesToSend.map(img => ({ id: img.id, previewUrl: img.previewUrl, mimeType: img.mimeType }))
+      : undefined
   }
   messages.value.push(userMessage)
 
@@ -201,8 +366,19 @@ const sendMessage = async (content: string) => {
     const assistantIndex = messages.value.length - 1
 
     if (docmostService) {
-      // Docmost AI 流式问答（传递当前页面 slugId 作为上下文）
-      for await (const event of docmostService.aiAnswers(messageContent, getCurrentPageSlugId())) {
+      // 准备图片 base64 数据
+      let imagePayload: { data: string; mimeType: string }[] | undefined
+      if (imagesToSend.length > 0) {
+        imagePayload = await Promise.all(
+          imagesToSend.map(async (img) => ({
+            data: await fileToBase64(img.file),
+            mimeType: img.mimeType,
+          }))
+        )
+      }
+
+      // Docmost AI 流式问答（传递当前页面 slugId 和图片作为上下文）
+      for await (const event of docmostService.aiAnswers(messageContent, getCurrentPageSlugId(), imagePayload)) {
         if (event.sources) {
           aiSources.value = event.sources
         }
@@ -324,17 +500,141 @@ watch(() => route.path, () => {
   if (!isLoading.value) {
     loadHistory()
   }
+  updatePageTitle()
+  closeHistory()
 })
+
+// ===== 历史记录功能 =====
+const router = useRouter()
+const { sidebarData } = useDocmostSidebar()
+
+interface HistoryEntry {
+  routePath: string
+  pageTitle: string
+  lastMessage: string
+  messageCount: number
+  updatedAt: number
+}
+
+const showHistory = ref(false)
+const historyEntries = ref<HistoryEntry[]>([])
+
+// 从 sidebar 数据中根据 slugId 递归查找页面标题
+function findNodeBySlugId(nodes: DocmostSidebarNode[], slugId: string): string | null {
+  for (const node of nodes) {
+    if (node.slugId === slugId) return node.title
+    if (node.children?.length) {
+      const found = findNodeBySlugId(node.children, slugId)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function resolvePageTitle(routePath: string): string {
+  // 从路由路径提取 slugId
+  const match = routePath.match(/^\/(zh|en|vi)\/docs\/([^/]+)\/([^/]+)/)
+  if (!match) return routePath
+  const spaceSlug = match[2]
+  const slugId = match[3]
+
+  // 从 sidebar 缓存中查找
+  const spaceNodes = sidebarData.value[spaceSlug]
+  if (spaceNodes) {
+    const title = findNodeBySlugId(spaceNodes, slugId)
+    if (title) return title
+  }
+  return slugId
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now()
+  const diff = now - timestamp
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes}分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}小时前`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}天前`
+  const months = Math.floor(days / 30)
+  return `${months}个月前`
+}
+
+function loadHistoryEntries() {
+  if (typeof localStorage === 'undefined') return
+  const prefix = `${StorageKey.ChatHistory}:`
+  const entries: HistoryEntry[] = []
+
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (!key || !key.startsWith(prefix)) continue
+
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) continue
+      const history: StoredChatHistory = JSON.parse(raw)
+      if (!history.messages || history.messages.length === 0) continue
+
+      const routePath = key.slice(prefix.length)
+      const lastMsg = history.messages[history.messages.length - 1]
+      entries.push({
+        routePath,
+        pageTitle: resolvePageTitle(routePath),
+        lastMessage: lastMsg.content.slice(0, 80),
+        messageCount: history.messages.length,
+        updatedAt: history.updatedAt || lastMsg.timestamp
+      })
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  entries.sort((a, b) => b.updatedAt - a.updatedAt)
+  historyEntries.value = entries
+}
+
+function openHistory() {
+  loadHistoryEntries()
+  showHistory.value = true
+}
+
+function closeHistory() {
+  showHistory.value = false
+}
+
+function navigateToHistory(entry: HistoryEntry) {
+  closeHistory()
+  router.go(entry.routePath)
+}
+
+// ===== 当前页面标题标签 =====
+const pageTitle = ref('')
+
+const updatePageTitle = () => {
+  if (typeof document === 'undefined') return
+  const title = document.title || ''
+  // 去掉站点后缀（如 " | FORCOME 知识库"）
+  pageTitle.value = title.replace(/\s*[|·–—]\s*[^|·–—]+$/, '').trim()
+}
+
+const onContentLoaded = () => updatePageTitle()
 
 // ===== 生命周期 =====
 onMounted(() => {
   loadHistory()
+  updatePageTitle()
   document.addEventListener('keydown', handleKeydown)
+  window.addEventListener('docmost-content-loaded', onContentLoaded)
 })
 
 onUnmounted(() => {
   abort()
   document.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('docmost-content-loaded', onContentLoaded)
+  // 清理图片 blob URLs
+  pendingImages.value.forEach(img => URL.revokeObjectURL(img.previewUrl))
+  messages.value.forEach(m => m.images?.forEach(img => URL.revokeObjectURL(img.previewUrl)))
 })
 </script>
 
@@ -356,10 +656,19 @@ onUnmounted(() => {
       <header class="ai-chat-header">
         <div class="ai-chat-title-wrapper">
           <img src="/images/logo/logo.png" alt="Logo" class="ai-chat-logo" />
-          <h2 class="ai-chat-title" id="ai-chat-title">IT智能助手</h2>
+          <h2 class="ai-chat-title" id="ai-chat-title">智能助手康康</h2>
         </div>
         <div class="ai-chat-actions">
-          <button 
+          <button
+            v-if="!isEmbedMode"
+            class="ai-chat-action-btn"
+            type="button"
+            aria-label="历史记录"
+            @click="openHistory"
+          >
+            <HistoryIcon :size="16" />
+          </button>
+          <button
             v-if="!isEmbedMode"
             class="ai-chat-action-btn"
             type="button"
@@ -402,7 +711,7 @@ onUnmounted(() => {
       <template v-else>
         <XProvider :theme="antTheme">
           <!-- 消息列表 -->
-          <div class="ai-chat-messages" ref="messagesContainerRef">
+          <div v-if="!showHistory" class="ai-chat-messages" ref="messagesContainerRef">
             <!-- 欢迎信息 -->
             <div v-if="!hasMessages" class="ai-chat-welcome">
               <img src="/images/logo/logo.png" alt="Logo" class="welcome-logo" />
@@ -430,8 +739,64 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <!-- 历史记录面板 -->
+          <div v-else class="ai-chat-history-panel">
+            <div class="history-header">
+              <button class="history-back-btn" type="button" @click="closeHistory">
+                <ChevronIcon :size="16" direction="left" />
+              </button>
+              <span class="history-header-title">历史记录</span>
+            </div>
+            <div v-if="historyEntries.length === 0" class="history-empty">
+              暂无历史记录
+            </div>
+            <div v-else class="history-list">
+              <button
+                v-for="entry in historyEntries"
+                :key="entry.routePath"
+                class="history-item"
+                :class="{ 'is-current': entry.routePath === route.path }"
+                type="button"
+                @click="navigateToHistory(entry)"
+              >
+                <div class="history-item-header">
+                  <span class="history-item-title">{{ entry.pageTitle }}</span>
+                  <span class="history-item-time">{{ formatRelativeTime(entry.updatedAt) }}</span>
+                </div>
+                <div class="history-item-preview">{{ entry.lastMessage }}</div>
+                <div class="history-item-count">{{ entry.messageCount }} 条消息</div>
+              </button>
+            </div>
+          </div>
+
           <!-- 输入区域 -->
-          <footer class="ai-chat-footer">
+          <footer class="ai-chat-footer" @paste="handlePaste">
+            <!-- 当前页面上下文标签 -->
+            <div v-if="pageTitle" class="ai-chat-context-tag" :title="pageTitle">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              <span>{{ pageTitle }}</span>
+            </div>
+
+            <!-- 图片预览条 -->
+            <div v-if="pendingImages.length > 0" class="ai-chat-image-preview">
+              <div v-for="img in pendingImages" :key="img.id" class="image-preview-item">
+                <img :src="img.previewUrl" alt="待发送图片" class="image-preview-thumb" />
+                <button class="image-preview-remove" type="button" @click="removeImage(img.id)" aria-label="移除图片">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- 隐藏的文件选择器 -->
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept="image/*"
+              multiple
+              style="display: none"
+              @change="handleFileSelect"
+            />
+
             <Sender
               v-model:value="inputText"
               placeholder="输入你的问题..."
@@ -440,9 +805,21 @@ onUnmounted(() => {
               class="ai-chat-sender"
               @submit="handleSubmit"
               @cancel="abort"
-            />
+            >
+              <template #prefix>
+                <button
+                  class="ai-chat-upload-btn"
+                  type="button"
+                  aria-label="上传图片"
+                  :disabled="pendingImages.length >= MAX_IMAGES"
+                  @click="fileInputRef?.click()"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                </button>
+              </template>
+            </Sender>
             <p class="ai-chat-input-hint">
-              <kbd>Enter</kbd> 发送 · <kbd>Shift+Enter</kbd> 换行 · <kbd>ESC</kbd> 关闭
+              <kbd>Enter</kbd> 发送 · <kbd>Shift+Enter</kbd> 换行 · <kbd>ESC</kbd> 关闭 · 可粘贴图片
             </p>
           </footer>
         </XProvider>
@@ -986,6 +1363,32 @@ onUnmounted(() => {
   color: white;
 }
 
+/* 当前页面上下文标签 */
+.ai-chat-context-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  margin-bottom: var(--spacing-2);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--c-text-3);
+  background-color: var(--c-bg-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.ai-chat-context-tag svg {
+  flex-shrink: 0;
+}
+
+.ai-chat-context-tag span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 输入区域 */
 .ai-chat-footer {
   padding: var(--spacing-3) var(--spacing-4);
@@ -1052,6 +1455,211 @@ onUnmounted(() => {
   text-align: center;
   padding: var(--spacing-8) var(--spacing-4);
   height: 100%;
+}
+
+/* ===== 图片上传相关 ===== */
+.ai-chat-image-preview {
+  display: flex;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-2);
+}
+
+.image-preview-item {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+}
+
+.image-preview-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-preview-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.6);
+  color: white;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.image-preview-remove:hover {
+  background-color: rgba(220, 38, 38, 0.9);
+}
+
+.ai-chat-upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--c-text-3);
+  cursor: pointer;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.ai-chat-upload-btn:hover:not(:disabled) {
+  color: var(--c-text-1);
+  background-color: var(--c-hover);
+}
+
+.ai-chat-upload-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 用户消息中的图片缩略图 */
+:deep(.user-msg-images) {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+:deep(.user-msg-thumb) {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+
+/* ===== 历史记录面板 ===== */
+.ai-chat-history-panel {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3) var(--spacing-4);
+  border-bottom: 1px solid var(--c-border);
+  flex-shrink: 0;
+}
+
+.history-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--c-text-2);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.history-back-btn:hover {
+  background-color: var(--c-hover);
+  color: var(--c-text-1);
+}
+
+.history-header-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--c-text-1);
+}
+
+.history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-2);
+}
+
+.history-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--spacing-3);
+  margin-bottom: var(--spacing-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.history-item:hover {
+  background-color: var(--c-bg-soft);
+  border-color: var(--c-border);
+}
+
+.history-item.is-current {
+  background-color: var(--c-bg-soft);
+  border-color: var(--c-accent);
+}
+
+.history-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-2);
+  margin-bottom: 4px;
+}
+
+.history-item-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--c-text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.history-item-time {
+  font-size: var(--font-size-xs);
+  color: var(--c-text-4);
+  flex-shrink: 0;
+}
+
+.history-item-preview {
+  font-size: var(--font-size-xs);
+  color: var(--c-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 2px;
+}
+
+.history-item-count {
+  font-size: 10px;
+  color: var(--c-text-4);
+}
+
+.history-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-sm);
+  color: var(--c-text-4);
 }
 
 /* 移动端适配 */

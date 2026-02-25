@@ -503,7 +503,7 @@ const getChatStorageKey = (): string => {
 }
 ```
 **同时删除** `.docmost-html-content` 中与 `.vp-doc` 重复的通用元素样式（table、th/td、pre、code、hr、blockquote、img），让这些元素直接继承 `.vp-doc` 的样式，确保两套渲染一致
-**文件**：`wiki/docs/.vitepress/theme/components/DocmostContent.vue`
+**文件**：`wiki/docs/.vitepress/theme/components/DocmostContent.vue`（样式部分）
 
 ### 16.3 Docmost 页面 Footer 增强
 **需求**：原版仅显示"最后更新"日期，需要增加作者、编辑链接、上/下页导航
@@ -524,4 +524,105 @@ const getChatStorageKey = (): string => {
 │ VPN配置指南   │      │  图表使用指南 │
 └──────────────┘      └──────────────┘
 ```
-**文件**：`wiki/docs/.vitepress/theme/components/DocmostContent.vue`
+**文件**：`wiki/docs/.vitepress/theme/components/DocmostContent.vue`（模板 + 脚本部分）
+
+---
+
+## 17. 右侧导航面板重构与滚动定位修复
+
+### 17.1 样式重构为 FastGPT 文档风格
+**需求**：原版右侧导航为无边框、文字截断、无活跃指示器的简易目录，需重构为带边框容器 + 标题头 + 蓝色活跃指示器的风格
+**修改**（`RightPanel.vue`）：
+- **标题头**：新增 `.outline-header`，包含列表图标 SVG + "本页导航" 文字，下方细分割线
+- **边框容器**：`.outline-wrapper` 添加 `border: 1px solid var(--c-border)` + `border-radius: var(--radius-lg)` + `background-color: var(--c-bg)`
+- **活跃指示器**：`.outline-link` 添加 `border-left: 3px solid transparent` 占位，`.is-active` 时变为 `#2563eb` 蓝色（暗色模式 `#60a5fa`）
+- **文字换行**：去掉 `white-space: nowrap` / `text-overflow: ellipsis`，允许长标题自然换行
+- **层级缩进**：h3 的 `padding-left` 从 12px 增加到 28px
+- **面板宽度**：200px → 220px
+- **字体大小**：14px → 13px，行高 1.4，更紧凑
+- **隐藏滚动条**（全浏览器覆盖）：`scrollbar-width: none`（Firefox）+ `-ms-overflow-style: none`（IE/Edge）+ `::-webkit-scrollbar { display: none }`（Chrome/Safari）
+
+**联动修改**：
+- `layout.css`：`padding-right` 从 236px 调整为 256px（220px 面板 + 36px 间距）
+- `vars.css`：`--content-max-width` 从 768px 增加到 860px
+
+### 17.2 scrollToHeader 使用 offsetTop 导致定位偏差
+**现象**：点击目录第 4 项，页面滚动到第 3 项的位置
+**原因**：`element.offsetTop` 返回相对于最近定位祖先（`offsetParent`）的偏移，而非文档绝对位置。嵌套在有 `position` 属性的容器内时，计算值偏小
+**修复**：改用 `getBoundingClientRect().top + window.scrollY`
+```typescript
+// 错误：offsetTop 相对于 offsetParent
+const top = element.offsetTop - 80
+
+// 正确：getBoundingClientRect 相对于视口 + scrollY = 文档绝对位置
+const top = element.getBoundingClientRect().top + window.scrollY - 80
+```
+`updateActiveId` 同理改为 `rect.top <= offset` 直接与视口偏移比较。
+
+### 17.3 Scroll spy 在平滑滚动期间覆盖点击的激活项
+**现象**：点击最后几项时，蓝色指示器短暂显示后跳回上一项
+**原因**：`scrollToHeader` 触发平滑滚动 → 期间 `scroll` 事件不断触发 `updateActiveId` → 如果目标标题无法滚到 `offset` 阈值以内（页面底部标题，后面内容不足），scroll spy 会检测到上一个标题并覆盖 `activeId`
+**修复**：引入 `isClickScrolling` 锁定机制 + scroll 事件静默检测：
+```typescript
+// 点击时立即锁定
+const scrollToHeader = (id: string) => {
+  activeId.value = id       // 立即设置
+  isClickScrolling = true   // 锁定 scroll spy
+  window.scrollTo({ top, behavior: 'smooth' })
+  // 注意：不用固定 setTimeout 解锁（不可靠）
+}
+
+// scroll 事件处理：锁定期间只做静默检测
+const onScroll = () => {
+  if (isClickScrolling) {
+    // 每次 scroll 重置计时器，直到滚动真正停止
+    clearTimeout(scrollSettleTimer)
+    scrollSettleTimer = setTimeout(() => {
+      isClickScrolling = false
+    }, 150)  // 150ms 无 scroll 事件 = 滚动结束
+    return
+  }
+  updateActiveId()
+}
+```
+**为什么固定 800ms 超时不可靠**：平滑滚动时长取决于滚动距离，长页面可能超过 800ms。超时后若滚动未完成，`updateActiveId` 会立即检测到错误的标题。
+
+### 17.4 scrollIntoView 冒泡滚动页面
+**现象**：滚动页面时激活项更新，面板自动滚动以保持可见，但页面会突然跳动
+**原因**：`element.scrollIntoView()` 不仅滚动直接滚动容器（面板），还沿 DOM 树向上冒泡滚动所有可滚动祖先（包括 `window`），导致页面位置被篡改
+**修复**：改为直接操作 `panel.scrollTop`，不触碰页面滚动：
+```typescript
+// 错误：冒泡滚动整个页面
+activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+
+// 正确：只操作面板自身的 scrollTop
+const panelRect = panel.getBoundingClientRect()
+const elRect = activeEl.getBoundingClientRect()
+if (elRect.top < panelRect.top) {
+  panel.scrollTop += elRect.top - panelRect.top - 8
+} else if (elRect.bottom > panelRect.bottom) {
+  panel.scrollTop += elRect.bottom - panelRect.bottom + 8
+}
+```
+**文件**：`wiki/docs/.vitepress/theme/components/RightPanel.vue`、`wiki/docs/.vitepress/theme/styles/layout.css`、`wiki/docs/.vitepress/theme/styles/vars.css`
+
+---
+
+## 18. 带锚点 URL 刷新导致页面 404
+
+### 18.1 route.path 包含 hash 片段导致 API 404
+**现象**：在带 `#anchor` 的 URL 上刷新页面（如 `/zh/docs/ibucos/RnLd8d8dbR#vhjiowxszysj`），报 `Docmost API 错误: 404 Not Found`。不带 hash 时正常
+**原因**：VitePress 的 `route.path` 在页面刷新时可能包含 URL 的 `#hash` 片段。正则 `([^/]+)` 匹配除 `/` 外的所有字符（包括 `#`），导致 `slugId` 被解析为 `RnLd8d8dbR#vhjiowxszysj`，API 找不到此 ID 返回 404
+**修复**：在所有 `route.path` 解析前剥离 hash：
+```typescript
+// DocmostContent.vue — routeParams 计算
+const path = route.path.replace(/#.*$/, '')
+const match = path.match(/^\/(zh|en|vi)\/docs\/([^/]+)\/([^/]+)/)
+
+// DocmostContent.vue — watch 监听（避免 hash 变化触发重载）
+watch(() => route.path.replace(/#.*$/, ''), () => { loadPage() })
+
+// AIChat.vue — getCurrentPageSlugId
+const path = route.path.replace(/#.*$/, '')
+```
+**影响文件**：`DocmostContent.vue`（routeParams + watch）、`AIChat.vue`（getCurrentPageSlugId）

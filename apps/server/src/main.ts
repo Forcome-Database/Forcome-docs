@@ -18,6 +18,7 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter({
       trustProxy: true,
+      bodyLimit: 10 * 1024 * 1024, // 10MB for image uploads
       routerOptions: {
         maxParamLength: 1000,
         ignoreTrailingSlash: true,

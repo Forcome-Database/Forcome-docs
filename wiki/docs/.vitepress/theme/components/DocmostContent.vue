@@ -31,12 +31,14 @@ const processedContent = computed(() => {
  * 从路由中解析空间 slug 和页面 slugId
  */
 const routeParams = computed(() => {
-  const match = route.path.match(/^\/(zh|en|vi)\/docs\/([^/]+)\/([^/]+)/)
+  // 去掉可能混入的 hash 片段（页面刷新时 route.path 可能包含 #anchor）
+  const path = route.path.replace(/#.*$/, '')
+  const match = path.match(/^\/(zh|en|vi)\/docs\/([^/]+)\/([^/]+)/)
   if (match) {
     return { lang: match[1], spaceSlug: match[2], slugId: match[3] }
   }
   // 可能是空间根路径 /{lang}/docs/{spaceSlug}/
-  const spaceMatch = route.path.match(/^\/(zh|en|vi)\/docs\/([^/]+)\/?$/)
+  const spaceMatch = path.match(/^\/(zh|en|vi)\/docs\/([^/]+)\/?$/)
   if (spaceMatch) {
     return { lang: spaceMatch[1], spaceSlug: spaceMatch[2], slugId: null }
   }
@@ -183,8 +185,8 @@ async function loadPage() {
   }
 }
 
-// 监听路由变化重新加载
-watch(() => route.path, () => {
+// 监听路由变化重新加载（去掉 hash 避免锚点变化触发重载）
+watch(() => route.path.replace(/#.*$/, ''), () => {
   loadPage()
 }, { immediate: true })
 

@@ -1,4 +1,12 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class PublicSidebarDto {
   @IsNotEmpty()
@@ -34,6 +42,14 @@ export class PublicSearchDto {
   limit?: number;
 }
 
+class AiImageDto {
+  @IsString()
+  data: string;
+
+  @IsString()
+  mimeType: string;
+}
+
 export class PublicAiAnswerDto {
   @IsNotEmpty()
   @IsString()
@@ -42,4 +58,10 @@ export class PublicAiAnswerDto {
   @IsOptional()
   @IsString()
   pageSlugId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AiImageDto)
+  images?: AiImageDto[];
 }

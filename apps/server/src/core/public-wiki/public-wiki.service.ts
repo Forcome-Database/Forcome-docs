@@ -280,6 +280,7 @@ export class PublicWikiService {
     query: string,
     workspaceId: string,
     pageSlugId?: string,
+    images?: { data: string; mimeType: string }[],
   ): AsyncGenerator<string> {
     let AiSearchService: any;
     try {
@@ -298,6 +299,7 @@ export class PublicWikiService {
       query,
       workspaceId,
       pageSlugId,
+      images,
     )) {
       yield chunk;
     }
