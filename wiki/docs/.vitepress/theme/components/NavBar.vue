@@ -6,11 +6,12 @@
  * 需求: 2.1-2.8
  */
 import { ref, computed } from 'vue'
-import { useData } from 'vitepress'
+import { useData, useRoute } from 'vitepress'
 import MenuIcon from './icons/MenuIcon.vue'
 import SearchIcon from './icons/SearchIcon.vue'
 import ThemeToggle from './ThemeToggle.vue'
 import LangSwitch from './LangSwitch.vue'
+import { useDocmostSidebar } from '../composables/useDocmostSidebar'
 
 // 定义事件
 const emit = defineEmits<{
@@ -20,14 +21,58 @@ const emit = defineEmits<{
 }>()
 
 // 获取 VitePress 数据
-const { theme, page } = useData()
+const { theme } = useData()
+const route = useRoute()
+const { spaces: docmostSpaces } = useDocmostSidebar()
 
 // 当前打开的下拉菜单
 const openDropdown = ref<string | null>(null)
 
-// 导航项
+// 从路由路径中提取当前语言
+const currentLang = computed(() => {
+  const match = route.path.match(/^\/(zh|en|vi)\//)
+  return match ? match[1] : 'zh'
+})
+
+// 从静态导航中提取已覆盖的空间 slug 集合
+function extractStaticSlugs(navItems: any[]): Set<string> {
+  const slugs = new Set<string>()
+  for (const item of navItems) {
+    if (item.link) {
+      const match = item.link.match(/\/(?:zh|en|vi)\/docs\/([^/]+)/)
+      if (match) slugs.add(match[1])
+    }
+    if (item.items) {
+      for (const child of item.items) {
+        if (child.link) {
+          const match = child.link.match(/\/(?:zh|en|vi)\/docs\/([^/]+)/)
+          if (match) slugs.add(match[1])
+        }
+      }
+    }
+  }
+  return slugs
+}
+
+// 导航项：静态配置 + 动态发现的空间
 const navItems = computed(() => {
-  return theme.value.nav || []
+  const staticNav = theme.value.nav || []
+  const coveredSlugs = extractStaticSlugs(staticNav)
+  const lang = currentLang.value
+
+  // 筛选未被静态导航覆盖的空间，生成动态导航项
+  const dynamicItems = docmostSpaces.value
+    .filter((space) => !coveredSlugs.has(space.slug))
+    .map((space) => ({
+      text: space.name,
+      link: `/${lang}/docs/${space.slug}/`,
+      activeMatch: `^/${lang}/docs/${space.slug}`,
+    }))
+
+  if (dynamicItems.length === 0) return staticNav
+
+  // 动态项追加到静态项末尾
+  return [...staticNav, ...dynamicItems]
 })
 
 // 检查导航项是否有子菜单
@@ -45,11 +90,9 @@ const closeDropdown = () => {
   openDropdown.value = null
 }
 
-// 检查链接是否激活
+// 检查链接是否激活（使用 route.path 支持 Docmost 动态路由）
 const isActive = (link: string, activeMatch?: string) => {
-  if (!page.value.relativePath) return false
-
-  const currentPath = '/' + page.value.relativePath.replace(/\.md$/, '').replace(/index$/, '')
+  const currentPath = route.path
 
   // 如果有 activeMatch 正则，使用正则匹配
   if (activeMatch) {

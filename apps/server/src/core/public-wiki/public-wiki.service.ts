@@ -42,31 +42,32 @@ export class PublicWikiService {
   }
 
   private isSpacePublic(slug: string): boolean {
-    return this.getPublicSpaceSlugs()
-      .map((s) => s.toLowerCase())
-      .includes(slug.toLowerCase());
+    const slugs = this.getPublicSpaceSlugs();
+    // 空列表 = 所有空间公开
+    if (slugs.length === 0) return true;
+    return slugs.map((s) => s.toLowerCase()).includes(slug.toLowerCase());
   }
 
   async getPublicSpaces(workspaceId: string) {
     const slugs = this.getPublicSpaceSlugs();
-    if (slugs.length === 0) {
-      return { items: [] };
-    }
 
-    const spaces = await this.db
+    let query = this.db
       .selectFrom('spaces')
       .select(['id', 'name', 'slug', 'description'])
-      .where('workspaceId', '=', workspaceId)
-      .where(
-        (eb) =>
-          eb.or(
-            slugs.map((slug) =>
-              eb(eb.fn('LOWER', ['slug']), '=', slug.toLowerCase()),
-            ),
-          ),
-      )
-      .execute();
+      .where('workspaceId', '=', workspaceId);
 
+    // 有白名单时只返回指定空间，否则返回所有空间
+    if (slugs.length > 0) {
+      query = query.where((eb) =>
+        eb.or(
+          slugs.map((slug) =>
+            eb(eb.fn('LOWER', ['slug']), '=', slug.toLowerCase()),
+          ),
+        ),
+      );
+    }
+
+    const spaces = await query.execute();
     return { items: spaces };
   }
 
@@ -233,19 +234,23 @@ export class PublicWikiService {
 
     // Get public space IDs
     const slugs = spaceSlug ? [spaceSlug] : this.getPublicSpaceSlugs();
-    const spaces = await this.db
+
+    let spaceQuery = this.db
       .selectFrom('spaces')
       .select(['id', 'slug'])
-      .where('workspaceId', '=', workspaceId)
-      .where(
-        (eb) =>
-          eb.or(
-            slugs.map((slug) =>
-              eb(eb.fn('LOWER', ['slug']), '=', slug.toLowerCase()),
-            ),
+      .where('workspaceId', '=', workspaceId);
+
+    if (slugs.length > 0) {
+      spaceQuery = spaceQuery.where((eb) =>
+        eb.or(
+          slugs.map((slug) =>
+            eb(eb.fn('LOWER', ['slug']), '=', slug.toLowerCase()),
           ),
-      )
-      .execute();
+        ),
+      );
+    }
+
+    const spaces = await spaceQuery.execute();
 
     if (spaces.length === 0) {
       return { items: [] };

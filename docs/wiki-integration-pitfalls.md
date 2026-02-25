@@ -262,7 +262,7 @@ vite: {
 ## 9. 关键注意事项
 
 ### 9.1 安全性
-- 所有公开 API 数据仅限于 `WIKI_PUBLIC_SPACE_SLUGS` 配置的空间
+- `WIKI_PUBLIC_SPACE_SLUGS` 为空时所有空间公开（自动发现模式），填值时仅公开白名单中的空间
 - 附件 token 有时效性，过期后需重新加载页面
 - 搜索和 AI 问答也严格限制在公开空间范围内
 - `@AuthWorkspace()` 仍然有效，确保多工作区隔离
@@ -283,3 +283,39 @@ vite: {
 - 依赖 `PageRepo`、`SpaceRepo`、`TokenService`、`SearchService` 的内部 API
 - `TransformHttpResponseInterceptor` 的响应包装格式需保持一致
 - EE 模块的 `AiSearchService` 通过 `ModuleRef` 动态获取，非强依赖
+
+---
+
+## 10. 自动发现空间与动态导航
+
+### 10.1 searchPublicPages 变量名冲突
+**现象**：TypeScript 编译报 `Duplicate identifier 'query'`
+**原因**：`searchPublicPages(query: string, ...)` 的参数名 `query` 与方法内的 Kysely 查询变量 `let query = this.db.selectFrom(...)` 同名
+**修复**：将内部查询变量重命名为 `spaceQuery`
+```typescript
+// 错误：与方法参数 query: string 冲突
+let query = this.db.selectFrom('spaces')...
+
+// 正确
+let spaceQuery = this.db.selectFrom('spaces')...
+```
+
+### 10.2 NavBar isActive 在 Docmost 路由不工作
+**现象**：点击 Docmost 空间的导航项后，导航高亮不显示
+**原因**：`isActive` 使用 `page.value.relativePath`（VitePress 静态 `.md` 文件路径），Docmost 动态路由没有对应的 `.md` 文件，`relativePath` 是路由拦截时伪造的值，不匹配实际 URL
+**修复**：改用 `useRoute().path`（实际浏览器 URL 路径）
+```typescript
+// 错误：依赖 VitePress 静态文件路径
+const currentPath = '/' + page.value.relativePath.replace(/\.md$/, '').replace(/index$/, '')
+
+// 正确：使用实际 URL 路径
+import { useRoute } from 'vitepress'
+const route = useRoute()
+const currentPath = route.path
+```
+
+### 10.3 WIKI_PUBLIC_SPACE_SLUGS 为空时的行为变更
+**变更前**：slugs 为空 → `getPublicSpaces()` 返回空数组，`isSpacePublic()` 返回 `false`，所有空间不公开
+**变更后**：slugs 为空 → 查询所有空间（自动发现模式），`isSpacePublic()` 返回 `true`
+**影响范围**：`getPublicSpaces()`、`isSpacePublic()`、`searchPublicPages()` 三个方法
+**注意**：如果需要不公开任何空间，不能简单留空 `WIKI_PUBLIC_SPACE_SLUGS`，需要设置为不存在的 slug（如 `WIKI_PUBLIC_SPACE_SLUGS=__none__`）

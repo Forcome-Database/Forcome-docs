@@ -17,7 +17,8 @@
       "Bash(cd \"E:/test/Docmost/wiki\" && npx vitepress dev docs --host 2>&1)",
       "Bash(cd \"E:/test/Docmost\" && pnpm dev 2>&1)",
       "Bash(taskkill:*)",
-      "WebFetch(domain:vitepress.dev)"
+      "WebFetch(domain:vitepress.dev)",
+      "Bash(find:*)"
     ]
   }
 }

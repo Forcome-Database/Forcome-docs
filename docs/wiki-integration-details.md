@@ -35,8 +35,10 @@
 
 ### Docmost 后端 `.env`
 ```env
-# 逗号分隔的公开空间 slug，不配置则不暴露任何空间
-WIKI_PUBLIC_SPACE_SLUGS=general,kingdee,crm,oa
+# 逗号分隔的公开空间 slug
+# 留空 = 自动公开所有空间（自动发现模式）
+# 填值 = 白名单模式，只公开指定空间
+WIKI_PUBLIC_SPACE_SLUGS=
 ```
 
 ### Wiki 前端 `.env`（位于 `wiki/docs/.env`）
@@ -85,7 +87,7 @@ VITE_DOCMOST_API_URL=http://localhost:3000/api/public-wiki
 
 **`PublicWikiService`** 主要方法：
 
-- **`getPublicSpaces()`** — 查询 `spaces` 表，slug 在 `WIKI_PUBLIC_SPACE_SLUGS` 中的空间（大小写不敏感）
+- **`getPublicSpaces()`** — 查询 `spaces` 表。slugs 为空时返回所有空间（自动发现），有值时按白名单过滤（大小写不敏感）
 - **`getSidebarTree()`** — 查询空间全部页面，`buildTree()` 递归构建树结构（按 `position` 排序）
 - **`getPage()`** — 查找页面并验证属于公开空间，处理附件公开 URL，生成 HTML/Markdown
 - **`searchPublicPages()`** — 遍历公开空间调用 `SearchService.searchPage()`，合并排序
@@ -116,13 +118,14 @@ VITE_DOCMOST_API_URL=http://localhost:3000/api/public-wiki
 | `wiki/docs/.vitepress/theme/composables/useDocmostSidebar.ts` | 动态侧边栏 composable |
 | `wiki/docs/.vitepress/theme/components/DocmostContent.vue` | 动态内容渲染组件 |
 
-### 修改文件清单（6 个）
+### 修改文件清单（7 个）
 
 | 文件 | 修改内容 |
 |------|---------|
 | `wiki/docs/.vitepress/theme/index.ts` | 添加 `router.onBeforePageLoad` 路由拦截 |
 | `wiki/docs/.vitepress/theme/Layout.vue` | 添加 Docmost 路由检测 + DocmostContent 渲染 |
 | `wiki/docs/.vitepress/theme/components/SideBar.vue` | 融合静态+动态侧边栏数据源 |
+| `wiki/docs/.vitepress/theme/components/NavBar.vue` | 动态合并静态导航+API空间；`isActive` 改用 `route.path` |
 | `wiki/docs/.vitepress/theme/components/SearchModal.vue` | 集成 Docmost 搜索 API |
 | `wiki/docs/.vitepress/theme/components/AIChat.vue` | 集成 Docmost AI 问答 |
 | `wiki/docs/.vitepress/theme/types/index.ts` | 新增 Docmost 相关类型定义 |
@@ -172,6 +175,17 @@ const isLoaded = ref(false)
 `SideBar.vue` 通过 `watch` 监听路由和数据变化：
 - 静态路由 → 读取 `theme.sidebar` 配置
 - Docmost 路由 → 调用 `buildSidebarForRoute()` 从 API 数据构建
+
+### 动态导航栏（自动发现空间）
+
+`NavBar.vue` 通过 `useDocmostSidebar` 获取 API 返回的空间列表，与静态 `theme.nav` 配置合并：
+
+1. 从静态 nav 所有 `link` 中提取已覆盖的 spaceSlug（匹配 `/{lang}/docs/{slug}/` 模式，包括下拉菜单子项）
+2. 筛选出 API 空间中未被静态 nav 覆盖的空间
+3. 为每个新空间生成导航项：`{ text: space.name, link: /{lang}/docs/{slug}/, activeMatch: ... }`
+4. 动态项追加到静态项末尾
+
+`isActive` 使用 `useRoute().path`（实际 URL 路径）替代 `page.value.relativePath`（VitePress 静态 .md 路径），解决 Docmost 动态路由导航高亮不工作的问题。
 
 ### API 服务层
 
