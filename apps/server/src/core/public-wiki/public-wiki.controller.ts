@@ -80,10 +80,13 @@ export class PublicWikiController {
     @AuthWorkspace() workspace: Workspace,
     @Res() res: FastifyReply,
   ) {
+    const origin = (res.request?.headers as any)?.origin || '*';
     res.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Credentials': 'true',
     });
 
     try {
