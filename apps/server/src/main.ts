@@ -10,6 +10,7 @@ import { TransformHttpResponseInterceptor } from './common/interceptors/http-res
 import { WsRedisIoAdapter } from './ws/adapter/ws-redis.adapter';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyCookie from '@fastify/cookie';
+import fastifyCors from '@fastify/cors';
 import { InternalLogFilter } from './common/logger/internal-log-filter';
 
 async function bootstrap() {
@@ -45,8 +46,10 @@ async function bootstrap() {
 
   app.useWebSocketAdapter(redisIoAdapter);
 
-  // CORS 必须在 preHandler 之前注册，确保 OPTIONS 预检请求正确处理
-  app.enableCors({
+  // 直接在 Fastify 实例上注册 @fastify/cors 并 await，确保 CORS 的 onRequest
+  // 钩子最先注册，OPTIONS 预检请求在任何中间件/守卫之前就能正确响应
+  const fastifyInstance = app.getHttpAdapter().getInstance();
+  await fastifyInstance.register(fastifyCors, {
     origin: true,
     credentials: true,
   });

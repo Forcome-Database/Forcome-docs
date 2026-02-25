@@ -55,33 +55,19 @@ if (typeof document !== 'undefined') {
 
 ## 2. CORS 跨域问题
 
-### 2.1 预检请求被 preHandler 拦截
+### 2.1 预检请求被 preHandler 拦截（初始问题）
 **现象**：浏览器控制台报 `No 'Access-Control-Allow-Origin' header` 错误
 **原因**：Docmost 的 `main.ts` 中 `app.enableCors()` 在 Fastify `preHandler` hook 之后注册。`preHandler` 检查 `req.raw.workspaceId`，OPTIONS 预检请求没有此字段，抛出 `NotFoundException`，导致预检失败且无 CORS 头
-**修复**：两步修复——
-1. 将 `app.enableCors()` 提前到 `preHandler` 之前注册
-2. 将 `/api/public-wiki` 加入 `excludedPaths` 列表
-
-```typescript
-// apps/server/src/main.ts
-
-// 1. CORS 必须在 preHandler 之前注册
-app.enableCors({ origin: true, credentials: true });
-
-// 2. preHandler 中排除公开 API 路径
-const excludedPaths = [
-  '/api/auth/setup',
-  '/api/health',
-  // ...
-  '/api/public-wiki',   // ← 新增
-];
-```
+**初始修复**：将 `app.enableCors()` 提前 + `/api/public-wiki` 加入 `excludedPaths`
+**最终修复**：发现 `app.enableCors()` 仍有时序不稳定问题（见第 13 节），改为直接 `await fastifyInstance.register(fastifyCors, ...)`
 
 **Fastify 执行顺序**：
 ```
 onRequest（CORS 插件） → preParsing → preValidation → preHandler（workspaceId 检查） → handler
 ```
 CORS 必须在 `onRequest` 阶段完成，否则 `preHandler` 的错误会导致预检失败。
+
+> **另见**：第 13 节详述了 `app.enableCors()` 在 Fastify 下的根本时序问题及最终解决方案。
 
 ---
 
@@ -319,3 +305,160 @@ const currentPath = route.path
 **变更后**：slugs 为空 → 查询所有空间（自动发现模式），`isSpacePublic()` 返回 `true`
 **影响范围**：`getPublicSpaces()`、`isSpacePublic()`、`searchPublicPages()` 三个方法
 **注意**：如果需要不公开任何空间，不能简单留空 `WIKI_PUBLIC_SPACE_SLUGS`，需要设置为不存在的 slug（如 `WIKI_PUBLIC_SPACE_SLUGS=__none__`）
+
+---
+
+## 11. 特殊内容块渲染
+
+### 11.1 processSpecialBlocks 首次导航不执行
+**现象**：SPA 导航到 Docmost 页面时，Mermaid/KaTeX/Embed 不渲染，显示为原始文本或链接。手动刷新页面后正常。
+**原因**：`loadPage()` 中 `isLoading.value = false` 放在 `finally` 块中，导致 `processSpecialBlocks()` 执行时 `isLoading` 仍为 `true`。模板中 `v-if="isLoading"` 优先级最高，页面内容块 `v-else-if="page"` 未渲染，`contentRef.value` 为 `null`。
+```
+执行顺序：
+page.value = result     ← 数据已赋值
+await nextTick()        ← 但 isLoading=true，内容块未渲染
+processSpecialBlocks()  ← contentRef 为 null，跳过处理
+finally: isLoading=false ← 内容块现在才渲染，但处理已结束
+```
+**修复**：将 `isLoading.value = false` 移到 `await nextTick()` 之前
+```typescript
+// 错误：isLoading 在 finally 中才变 false
+try {
+  page.value = result
+  await nextTick()
+  processSpecialBlocks(contentRef.value) // contentRef 为 null!
+} finally {
+  isLoading.value = false
+}
+
+// 正确：先关闭加载状态再处理 DOM
+try {
+  page.value = result
+  isLoading.value = false  // ← 先让内容块渲染
+  await nextTick()         // ← 等待 DOM 更新
+  processSpecialBlocks(contentRef.value) // ← contentRef 有值
+} catch {
+  isLoading.value = false
+}
+```
+**手动刷新能正常的原因**：`watch({ immediate: true })` 和 `onMounted` 同时触发两次 `loadPage()`。第一次的 `finally` 将 `isLoading` 设为 `false`，第二次执行时内容块已渲染，`contentRef` 有值。
+
+### 11.2 Embed 嵌入内容只显示为链接
+**现象**：Docmost 后台嵌入的 YouTube 视频、Google Sheets 在 Wiki 前台只显示为纯文本链接
+**原因**：后端 `jsonToHtml()` 将 embed 节点序列化为 `<div data-type="embed"><a href="...">链接文本</a></div>`。Docmost 前端使用 React NodeView（`embed-view.tsx`）动态渲染为 `<iframe>`，但 Wiki 前台通过 `v-html` 直接注入 HTML，无法运行 React 组件
+**修复**：在 `useContentProcessor.ts` 的 `processSpecialBlocks` 中添加 `processEmbeds()`，查找 `div[data-type="embed"]`，提取 `data-src` 属性，通过 provider URL 映射表转换为 iframe URL，创建 `<iframe>` 替换原 `<a>` 链接
+```typescript
+// embed provider URL 映射表需与 packages/editor-ext/src/lib/embed-provider.ts 保持同步
+// 如果 Docmost 新增 embed provider，需同步更新 useContentProcessor.ts
+```
+
+---
+
+## 12. Docmost 前端配置问题
+
+### 12.1 getConfigValue 空字符串不回退到默认值
+**现象**：Draw.io 编辑器双击后整个页面崩溃（"页面加载失败。发生了一个错误。"）；上传图片报错"文件超出了 0.0 KB 类型附件限制"
+**原因**：`apps/client/src/lib/config.ts` 的 `getConfigValue` 使用 `??`（nullish coalescing）运算符。`.env` 文件中 `DRAWIO_URL=`、`FILE_UPLOAD_SIZE_LIMIT=` 等空值被 Vite `loadEnv` 读取为空字符串 `""`。空字符串不是 `null`/`undefined`，`??` 不触发回退到默认值。
+```typescript
+// 问题代码
+return rawValue ?? defaultValue;
+// "" ?? "50mb" → ""（空字符串不触发回退）
+// "" ?? "https://embed.diagrams.net" → ""
+
+// 修复
+return rawValue || defaultValue;
+// "" || "50mb" → "50mb"（空字符串触发回退）
+```
+**影响范围**：所有在 `.env` 中声明但留空的配置项：
+| 配置项 | 默认值 | 空值导致的问题 |
+|--------|--------|--------------|
+| `DRAWIO_URL` | `https://embed.diagrams.net` | `react-drawio` 收到空 baseUrl，React 渲染崩溃 |
+| `FILE_UPLOAD_SIZE_LIMIT` | `50mb` | `bytes("")` → `0`，所有文件上传被拒绝 |
+| `FILE_IMPORT_SIZE_LIMIT` | `200mb` | 文件导入大小限制为 0 |
+
+**根本修复**：将 `getConfigValue` 的 `??` 改为 `||`，一次性解决所有空字符串配置项问题。
+**文件**：`apps/client/src/lib/config.ts:106`
+
+---
+
+## 13. CORS：`app.enableCors()` 在 Fastify 下的时序问题
+
+### 13.1 删除空间后重新添加，Wiki 前台 CORS 报错
+**现象**：删除空间后再添加新空间，打开 Wiki 前台控制台报错：
+```
+Access to fetch at 'http://localhost:3000/api/public-wiki/spaces' from origin 'http://localhost:5175'
+has been blocked by CORS policy: Response to preflight request doesn't pass access control check:
+No 'Access-Control-Allow-Origin' header is present on the requested resource.
+```
+**原因**：`app.enableCors()` 在 NestJS + Fastify 下内部调用 `this.register(@fastify/cors, options)` **没有 `await`**。CORS 插件的 `onRequest` 钩子注册时序可能晚于 `DomainMiddleware` 等中间件，导致 OPTIONS 预检请求在 CORS 头设置之前就被处理。
+**修复**：直接在 Fastify 实例上 `await` 注册 `@fastify/cors`，确保 CORS 插件优先注册：
+```typescript
+// apps/server/src/main.ts
+import fastifyCors from '@fastify/cors';
+
+// 替换 app.enableCors({ origin: true, credentials: true })
+const fastifyInstance = app.getHttpAdapter().getInstance();
+await fastifyInstance.register(fastifyCors, {
+  origin: true,
+  credentials: true,
+});
+```
+**关键点**：`await` 确保 CORS 插件的 `onRequest` 钩子在所有后续中间件之前注册。`ai/answers` SSE 端点仍需保留手动 CORS 头，因为它用 `res.raw.writeHead()` 绕过了 Fastify 响应管线。
+
+---
+
+## 14. AI 问答上下文问题
+
+### 14.1 AI 回答不针对当前页面
+**现象**：用户在页面 A 问"简要总结文档"，AI 回答的是页面 B 的内容
+**原因**：前端 `aiAnswers(query)` 只发送 `{ query }` 给后端，后端用向量搜索匹配最相似的页面。泛化查询（如"总结文档"、"这篇文章讲了什么"）没有足够的语义信息定位到用户当前正在查看的页面
+**修复**：前后端联动传递当前页面上下文——
+1. **前端**：从 `route.path` 提取 `pageSlugId`（正则 `^\/(zh|en|vi)\/docs\/[^/]+\/([^/]+)`），传给 `aiAnswers(query, pageSlugId)`
+2. **后端 DTO**：`PublicAiAnswerDto` 添加可选 `pageSlugId?: string`
+3. **后端 Service**：`answerWithContext(query, workspaceId, pageSlugId?)` 先查当前页面 `text_content` 作为主上下文（4000字符），再用向量搜索补充上下文（去重当前页面），prompt 标注当前页面优先级
+
+**修改文件链**：
+```
+前端: AIChat.vue → docmost.ts → { query, pageSlugId }
+后端: public-wiki.dto.ts → public-wiki.controller.ts → public-wiki.service.ts → ai-search.service.ts
+```
+
+### 14.2 pages 表与 page_embeddings 表列名风格不同
+**现象**：AI 回答报错 `column p.spaceId does not exist`
+**原因**：`pages` 表使用 **snake_case** 列名（`space_id`, `workspace_id`, `slug_id`, `text_content`, `deleted_at`），而 `page_embeddings` 表使用 **camelCase** 列名（`"spaceId"`, `"workspaceId"`, `"pageId"`）。在手写 SQL 时容易混淆
+**修复**：`ai-search.service.ts` 中对 `pages` 表使用 snake_case：
+```sql
+-- 错误（camelCase）
+JOIN spaces s ON s.id = p."spaceId"
+WHERE p."workspaceId" = ${workspaceId}
+
+-- 正确（snake_case）
+JOIN spaces s ON s.id = p.space_id
+WHERE p.workspace_id = ${workspaceId}
+```
+**速查表**：
+
+| 表 | 列名风格 | 示例 |
+|---|---------|------|
+| `pages` | snake_case | `space_id`, `workspace_id`, `slug_id`, `text_content`, `deleted_at`, `parent_page_id` |
+| `spaces` | camelCase | `"workspaceId"` |
+| `page_embeddings` | camelCase | `"pageId"`, `"spaceId"`, `"workspaceId"` |
+| `users` | camelCase | `"workspaceId"` |
+
+> **经验教训**：Docmost 数据库列名风格不统一。`pages` 表因历史迁移使用了 snake_case，其他大多数表使用 camelCase。写原始 SQL 时**务必先确认目标表的列名风格**，可通过 `\d table_name` 或查看对应的迁移文件确认。
+
+---
+
+## 15. AI 聊天会话隔离
+
+### 15.1 所有页面共享同一个对话历史
+**现象**：在文档 A 的 AI 聊天中问过问题，切换到文档 B 打开 AI 聊天，看到的仍然是文档 A 的对话
+**原因**：`StorageKey.ChatHistory = 'cursor-docs-chat-history'` 是固定字符串，`loadHistory()` / `saveHistory()` 始终读写同一个 localStorage key，没有页面维度区分
+**修复**：以路由路径构造动态 storage key：
+```typescript
+const getChatStorageKey = (): string => {
+  return `${StorageKey.ChatHistory}:${route.path}`
+  // 例：cursor-docs-chat-history:/zh/docs/general/abc123
+}
+```
+同时添加 `watch(route.path)` 监听页面切换，自动加载对应会话。`loadHistory()` 新增 else 分支清空状态，确保新页面显示干净的欢迎界面。

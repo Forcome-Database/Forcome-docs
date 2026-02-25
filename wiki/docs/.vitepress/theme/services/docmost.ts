@@ -85,18 +85,23 @@ export class DocmostService {
 
   /**
    * AI 问答（SSE 流式响应）
+   * @param query 用户问题
+   * @param pageSlugId 当前页面 slugId（可选，用于上下文定位）
    */
-  async *aiAnswers(query: string): AsyncGenerator<DocmostAiStreamEvent> {
+  async *aiAnswers(query: string, pageSlugId?: string): AsyncGenerator<DocmostAiStreamEvent> {
     this.abort()
     this.abortController = new AbortController()
 
     let response: Response
 
     try {
+      const body: Record<string, string> = { query }
+      if (pageSlugId) body.pageSlugId = pageSlugId
+
       response = await fetch(`${this.config.baseUrl}/ai/answers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify(body),
         signal: this.abortController.signal,
       })
     } catch (error) {

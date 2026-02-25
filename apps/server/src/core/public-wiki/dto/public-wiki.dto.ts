@@ -38,4 +38,8 @@ export class PublicAiAnswerDto {
   @IsNotEmpty()
   @IsString()
   query: string;
+
+  @IsOptional()
+  @IsString()
+  pageSlugId?: string;
 }

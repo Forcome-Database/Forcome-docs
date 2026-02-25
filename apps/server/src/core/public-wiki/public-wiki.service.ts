@@ -279,6 +279,7 @@ export class PublicWikiService {
   async *aiAnswers(
     query: string,
     workspaceId: string,
+    pageSlugId?: string,
   ): AsyncGenerator<string> {
     let AiSearchService: any;
     try {
@@ -296,6 +297,7 @@ export class PublicWikiService {
     for await (const chunk of AiSearchService.answerWithContext(
       query,
       workspaceId,
+      pageSlugId,
     )) {
       yield chunk;
     }

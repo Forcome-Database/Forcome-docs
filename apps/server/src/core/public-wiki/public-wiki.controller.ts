@@ -93,6 +93,7 @@ export class PublicWikiController {
       for await (const chunk of this.publicWikiService.aiAnswers(
         dto.query,
         workspace.id,
+        dto.pageSlugId,
       )) {
         res.raw.write(`data: ${chunk}\n\n`);
       }

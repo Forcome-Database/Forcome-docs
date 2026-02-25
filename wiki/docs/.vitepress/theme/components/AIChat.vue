@@ -5,15 +5,17 @@
  * 
  * 需求: 6.1-6.12, 8.5
  */
-import { ref, watch, onMounted, onUnmounted, nextTick, computed, h } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed, h } from 'vue'
 import { Bubble, Sender, XProvider } from 'ant-design-x-vue'
 import { theme } from 'ant-design-vue'
 import { getAIChatModifierKey, getDifyMode, getDifyEmbedUrl, isEmbedConfigured } from '../composables/useAIChat'
 import { useTheme } from '../composables/useTheme'
+import { useCodeCopy } from '../composables/useCodeCopy'
 import { useRoute } from 'vitepress'
 import { createDifyService } from '../services/dify'
 import { createDocmostService } from '../services/docmost'
 import { storage } from '../services/storage'
+import { renderMarkdownToHtml } from '../utils/markdown'
 import type { ChatMessage, StoredChatHistory } from '../types'
 import { StorageKey } from '../types'
 import CloseIcon from './icons/CloseIcon.vue'
@@ -21,6 +23,10 @@ import TrashIcon from './icons/TrashIcon.vue'
 
 // 获取主题状态
 const { isDark } = useTheme()
+
+// 消息列表容器 ref（用于代码复制事件委托）
+const messagesContainerRef = ref<HTMLElement | null>(null)
+useCodeCopy(messagesContainerRef)
 
 // 计算 ant-design-x-vue 主题配置
 const antTheme = computed(() => ({
@@ -65,28 +71,10 @@ const canSend = computed(() => inputText.value.trim().length > 0 && !isLoading.v
 // ===== Markdown 渲染 =====
 const renderMarkdown = (content: string) => {
   if (!content) return h('span')
-  
-  let html = content
-    // 转义 HTML
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    // 代码块
-    .replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
-    // 行内代码
-    .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-    // 链接
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    // 粗体
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    // 斜体
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    // 换行
-    .replace(/\n/g, '<br>')
-  
-  return h('div', { 
-    class: 'markdown-content',
-    innerHTML: html 
+
+  return h('div', {
+    class: 'ai-chat-markdown',
+    innerHTML: renderMarkdownToHtml(content)
   })
 }
 
@@ -98,7 +86,10 @@ const bubbleItems = computed(() => {
     content: msg.content,
     loading: msg.isStreaming && !msg.content,
     typing: msg.isStreaming ? { step: 2, interval: 50 } : undefined,
-    messageRender: msg.role === 'assistant' ? renderMarkdown : undefined
+    messageRender: msg.role === 'assistant' ? renderMarkdown : undefined,
+    classNames: msg.isStreaming && msg.role === 'assistant'
+      ? { content: 'is-streaming' }
+      : undefined
   }))
 })
 
@@ -112,8 +103,11 @@ const roles = {
   },
   assistant: {
     placement: 'start' as const,
-    variant: 'outlined' as const,
-    avatar: { style: { display: 'none' } }
+    variant: 'borderless' as const,
+    avatar: {
+      src: '/images/logo/logo.png',
+      style: { width: '28px', height: '28px', borderRadius: '50%', flexShrink: '0' }
+    }
   }
 }
 
@@ -122,33 +116,50 @@ function generateMessageId(role: 'user' | 'assistant'): string {
   return `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
-// ===== 历史记录管理 =====
+// ===== 历史记录管理（按页面隔离） =====
 const loadHistory = () => {
-  const history = storage.get<StoredChatHistory>(StorageKey.ChatHistory)
+  const key = getChatStorageKey()
+  const history = storage.get<StoredChatHistory>(key)
   if (history) {
     messages.value = history.messages
     conversationId.value = history.conversationId || null
+  } else {
+    messages.value = []
+    conversationId.value = null
   }
+  error.value = null
 }
 
 const saveHistory = () => {
+  const key = getChatStorageKey()
   const history: StoredChatHistory = {
     conversationId: conversationId.value || '',
     messages: messages.value.filter(m => !m.isStreaming),
     updatedAt: Date.now()
   }
-  storage.set(StorageKey.ChatHistory, history)
+  storage.set(key, history)
 }
 
 
 // AI 来源引用
 const aiSources = ref<{ title: string; slugId: string; spaceSlug: string }[]>([])
 
-// 获取当前语言
+// 获取当前语言和路由
 const route = useRoute()
 const getCurrentLang = (): string => {
   const match = route.path.match(/^\/(zh|en|vi)\//)
   return match ? match[1] : 'zh'
+}
+
+// 按页面隔离会话：以路由路径为 key
+const getChatStorageKey = (): string => {
+  return `${StorageKey.ChatHistory}:${route.path}`
+}
+
+// 从路由提取当前页面 slugId（用于 AI 上下文定位）
+const getCurrentPageSlugId = (): string | undefined => {
+  const match = route.path.match(/^\/(zh|en|vi)\/docs\/[^/]+\/([^/]+)/)
+  return match ? match[2] : undefined
 }
 
 // ===== 发送消息 =====
@@ -190,8 +201,8 @@ const sendMessage = async (content: string) => {
     const assistantIndex = messages.value.length - 1
 
     if (docmostService) {
-      // Docmost AI 流式问答
-      for await (const event of docmostService.aiAnswers(messageContent)) {
+      // Docmost AI 流式问答（传递当前页面 slugId 作为上下文）
+      for await (const event of docmostService.aiAnswers(messageContent, getCurrentPageSlugId())) {
         if (event.sources) {
           aiSources.value = event.sources
         }
@@ -267,11 +278,11 @@ const handleSubmit = (value: string) => {
 }
 
 const handleClearHistory = () => {
-  if (confirm('确定要清空所有对话历史吗？')) {
+  if (confirm('确定要清空当前页面的对话历史吗？')) {
     messages.value = []
     conversationId.value = null
     error.value = null
-    storage.remove(StorageKey.ChatHistory)
+    storage.remove(getChatStorageKey())
   }
 }
 
@@ -307,6 +318,13 @@ const handleKeydown = (e: KeyboardEvent) => {
     handleClose()
   }
 }
+
+// ===== 路由变化：切换页面时加载对应会话 =====
+watch(() => route.path, () => {
+  if (!isLoading.value) {
+    loadHistory()
+  }
+})
 
 // ===== 生命周期 =====
 onMounted(() => {
@@ -384,7 +402,7 @@ onUnmounted(() => {
       <template v-else>
         <XProvider :theme="antTheme">
           <!-- 消息列表 -->
-          <div class="ai-chat-messages">
+          <div class="ai-chat-messages" ref="messagesContainerRef">
             <!-- 欢迎信息 -->
             <div v-if="!hasMessages" class="ai-chat-welcome">
               <img src="/images/logo/logo.png" alt="Logo" class="welcome-logo" />
@@ -527,13 +545,9 @@ onUnmounted(() => {
   padding: var(--spacing-4);
 }
 
-/* Bubble.List 样式覆盖 */
+/* ===== Bubble.List 样式覆盖 ===== */
 .bubble-list {
   height: 100%;
-}
-
-:deep(.ant-bubble) {
-  max-width: 85%;
 }
 
 :deep(.ant-bubble-content) {
@@ -541,47 +555,338 @@ onUnmounted(() => {
   line-height: var(--line-height-relaxed);
 }
 
-/* Markdown 内容样式 */
-:deep(.markdown-content) {
-  word-break: break-word;
+/* 用户气泡：filled 橙色 */
+:deep(.ant-bubble[class*="end"]) {
+  max-width: 85%;
 }
 
-:deep(.markdown-content .code-block) {
+/* 助手气泡：borderless，全宽，无背景 */
+:deep(.ant-bubble[class*="start"]) {
+  max-width: 100%;
+}
+
+:deep(.ant-bubble[class*="start"] .ant-bubble-content) {
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+/* ===== AI Markdown 渲染样式 ===== */
+:deep(.ai-chat-markdown) {
+  word-break: break-word;
+  color: var(--c-text-1);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+}
+
+/* 首末元素 margin 消除 */
+:deep(.ai-chat-markdown > *:first-child) {
+  margin-top: 0 !important;
+}
+
+:deep(.ai-chat-markdown > *:last-child) {
+  margin-bottom: 0 !important;
+}
+
+/* 段落 */
+:deep(.ai-chat-markdown p) {
+  margin: 0.5em 0;
+}
+
+/* 标题（缩小比例适配 400px 面板） */
+:deep(.ai-chat-markdown h1) {
+  font-size: 1.4em;
+  font-weight: var(--font-weight-bold);
+  margin: 1em 0 0.5em;
+  color: var(--c-text-1);
+  border-bottom: 1px solid var(--c-border);
+  padding-bottom: 0.3em;
+}
+
+:deep(.ai-chat-markdown h2) {
+  font-size: 1.25em;
+  font-weight: var(--font-weight-semibold);
+  margin: 0.8em 0 0.4em;
+  color: var(--c-text-1);
+}
+
+:deep(.ai-chat-markdown h3) {
+  font-size: 1.1em;
+  font-weight: var(--font-weight-semibold);
+  margin: 0.7em 0 0.3em;
+  color: var(--c-text-1);
+}
+
+:deep(.ai-chat-markdown h4),
+:deep(.ai-chat-markdown h5),
+:deep(.ai-chat-markdown h6) {
+  font-size: 1em;
+  font-weight: var(--font-weight-semibold);
+  margin: 0.6em 0 0.3em;
+  color: var(--c-text-2);
+}
+
+/* 列表（恢复 list-style，因 base.css 全局重置了） */
+:deep(.ai-chat-markdown ul) {
+  list-style: disc;
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+:deep(.ai-chat-markdown ol) {
+  list-style: decimal;
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+:deep(.ai-chat-markdown li) {
+  margin: 0.2em 0;
+}
+
+:deep(.ai-chat-markdown li > ul),
+:deep(.ai-chat-markdown li > ol) {
+  margin: 0.1em 0;
+}
+
+/* 引用（左侧橙色边框 + 背景） */
+:deep(.ai-chat-markdown blockquote) {
+  margin: 0.5em 0;
+  padding: 0.5em 0.8em;
+  border-left: 3px solid var(--c-accent);
+  background-color: var(--c-bg-soft);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--c-text-2);
+}
+
+:deep(.ai-chat-markdown blockquote p) {
+  margin: 0.25em 0;
+}
+
+/* 表格 */
+:deep(.ai-chat-markdown table) {
   display: block;
-  margin: 8px 0;
-  padding: 12px;
+  width: 100%;
+  overflow-x: auto;
+  margin: 0.5em 0;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+:deep(.ai-chat-markdown th),
+:deep(.ai-chat-markdown td) {
+  padding: 6px 10px;
+  border: 1px solid var(--c-border);
+  text-align: left;
+}
+
+:deep(.ai-chat-markdown th) {
+  background-color: var(--c-bg-mute);
+  font-weight: var(--font-weight-semibold);
+}
+
+:deep(.ai-chat-markdown tr:nth-child(even)) {
+  background-color: var(--c-bg-soft);
+}
+
+/* 代码块 wrapper */
+:deep(.ai-chat-markdown .code-block-wrapper) {
+  margin: 0.5em 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
   background-color: var(--c-bg-alt);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--c-border);
+}
+
+:deep(.ai-chat-markdown .code-block-header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  background-color: var(--c-bg-mute);
+  border-bottom: 1px solid var(--c-border);
+}
+
+:deep(.ai-chat-markdown .code-lang-label) {
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  color: var(--c-text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+:deep(.ai-chat-markdown .code-copy-btn) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--c-text-3);
+  cursor: pointer;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+:deep(.ai-chat-markdown .code-copy-btn:hover) {
+  color: var(--c-text-1);
+  background-color: var(--c-hover);
+}
+
+:deep(.ai-chat-markdown .code-block-body) {
+  margin: 0;
+  padding: 12px;
   overflow-x: auto;
   font-family: var(--font-family-mono);
   font-size: 12px;
   line-height: 1.6;
-  white-space: pre-wrap;
+  background: transparent;
 }
 
-:deep(.markdown-content .inline-code) {
+:deep(.ai-chat-markdown .code-block-body code) {
+  font-size: inherit;
+  background: none;
+  padding: 0;
+}
+
+/* 行内代码 */
+:deep(.ai-chat-markdown code) {
   padding: 2px 6px;
   background-color: var(--c-bg-alt);
   border-radius: var(--radius-sm);
   font-family: var(--font-family-mono);
-  font-size: 0.9em;
+  font-size: 0.85em;
+  color: var(--c-accent);
 }
 
-:deep(.markdown-content a) {
+/* 链接 */
+:deep(.ai-chat-markdown a) {
   color: var(--c-accent);
   text-decoration: none;
 }
 
-:deep(.markdown-content a:hover) {
+:deep(.ai-chat-markdown a:hover) {
   text-decoration: underline;
 }
 
-:deep(.markdown-content strong) {
-  font-weight: 600;
+/* 粗体、斜体 */
+:deep(.ai-chat-markdown strong) {
+  font-weight: var(--font-weight-semibold);
 }
 
-:deep(.markdown-content em) {
+:deep(.ai-chat-markdown em) {
   font-style: italic;
+}
+
+/* 分割线 */
+:deep(.ai-chat-markdown hr) {
+  margin: 0.8em 0;
+  border: none;
+  border-top: 1px solid var(--c-border);
+}
+
+/* 图片 */
+:deep(.ai-chat-markdown img) {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+  margin: 0.5em 0;
+}
+
+/* ===== highlight.js 语法高亮 token 颜色 ===== */
+
+/* Light 主题 */
+:deep(.ai-chat-markdown .hljs) {
+  color: var(--c-text-1);
+}
+:deep(.ai-chat-markdown .hljs-comment),
+:deep(.ai-chat-markdown .hljs-quote) {
+  color: #6a737d;
+  font-style: italic;
+}
+:deep(.ai-chat-markdown .hljs-keyword),
+:deep(.ai-chat-markdown .hljs-selector-tag),
+:deep(.ai-chat-markdown .hljs-built_in) {
+  color: #d73a49;
+}
+:deep(.ai-chat-markdown .hljs-string),
+:deep(.ai-chat-markdown .hljs-attr),
+:deep(.ai-chat-markdown .hljs-addition) {
+  color: #22863a;
+}
+:deep(.ai-chat-markdown .hljs-number),
+:deep(.ai-chat-markdown .hljs-literal) {
+  color: #005cc5;
+}
+:deep(.ai-chat-markdown .hljs-title),
+:deep(.ai-chat-markdown .hljs-section) {
+  color: #6f42c1;
+}
+:deep(.ai-chat-markdown .hljs-type),
+:deep(.ai-chat-markdown .hljs-name) {
+  color: #e36209;
+}
+:deep(.ai-chat-markdown .hljs-deletion) {
+  color: #b31d28;
+  background-color: #ffeef0;
+}
+:deep(.ai-chat-markdown .hljs-meta) {
+  color: #735c0f;
+}
+
+/* Dark 主题 */
+.dark :deep(.ai-chat-markdown .hljs) {
+  color: #e1e4e8;
+}
+.dark :deep(.ai-chat-markdown .hljs-comment),
+.dark :deep(.ai-chat-markdown .hljs-quote) {
+  color: #6a737d;
+  font-style: italic;
+}
+.dark :deep(.ai-chat-markdown .hljs-keyword),
+.dark :deep(.ai-chat-markdown .hljs-selector-tag),
+.dark :deep(.ai-chat-markdown .hljs-built_in) {
+  color: #f97583;
+}
+.dark :deep(.ai-chat-markdown .hljs-string),
+.dark :deep(.ai-chat-markdown .hljs-attr),
+.dark :deep(.ai-chat-markdown .hljs-addition) {
+  color: #85e89d;
+}
+.dark :deep(.ai-chat-markdown .hljs-number),
+.dark :deep(.ai-chat-markdown .hljs-literal) {
+  color: #79b8ff;
+}
+.dark :deep(.ai-chat-markdown .hljs-title),
+.dark :deep(.ai-chat-markdown .hljs-section) {
+  color: #b392f0;
+}
+.dark :deep(.ai-chat-markdown .hljs-type),
+.dark :deep(.ai-chat-markdown .hljs-name) {
+  color: #ffab70;
+}
+.dark :deep(.ai-chat-markdown .hljs-deletion) {
+  color: #fdaeb7;
+  background-color: #86181d;
+}
+.dark :deep(.ai-chat-markdown .hljs-meta) {
+  color: #dbab09;
+}
+
+/* ===== 流式打字光标 ===== */
+:deep(.is-streaming .ai-chat-markdown > *:last-child::after) {
+  content: '▍';
+  display: inline;
+  color: var(--c-accent);
+  animation: blink-cursor 1s step-end infinite;
+  font-weight: 100;
+  margin-left: 1px;
+}
+
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 /* 欢迎信息 */

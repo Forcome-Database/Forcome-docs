@@ -134,17 +134,50 @@ export class AiSearchService {
   async *answerWithContext(
     query: string,
     workspaceId: string,
+    pageSlugId?: string,
   ): AsyncGenerator<string> {
+    // 1. 如果指定了当前页面，优先获取该页面内容作为主要上下文
+    let currentPage: { title: string; slugId: string; spaceSlug: string; textContent: string } | null = null;
+    if (pageSlugId) {
+      const rows = await sql`
+        SELECT p.title, p.slug_id as "slugId", p.text_content as "textContent",
+               s.slug as "spaceSlug"
+        FROM pages p
+        JOIN spaces s ON s.id = p.space_id
+        WHERE p.slug_id = ${pageSlugId}
+          AND p.workspace_id = ${workspaceId}
+          AND p.deleted_at IS NULL
+        LIMIT 1
+      `.execute(this.db);
+      if (rows.rows.length > 0) {
+        currentPage = rows.rows[0] as any;
+      }
+    }
+
+    // 2. 向量搜索补充上下文
     const sources = await this.searchSimilarPages(query, workspaceId);
 
-    const context = sources
-      .map((s, i) => {
-        const content = (s.textContent || '').slice(0, 2000);
-        return `[${i + 1}] ${s.title || 'Untitled'}:\n${content}`;
-      })
-      .join('\n\n');
+    // 3. 构建上下文：当前页面优先 + 向量搜索补充（去重）
+    const contextParts: string[] = [];
+    let idx = 1;
 
-    const prompt = `Answer the following question based on the provided context from documentation pages.
+    if (currentPage) {
+      const content = (currentPage.textContent || '').slice(0, 4000);
+      contextParts.push(`[${idx}] (当前页面) ${currentPage.title || 'Untitled'}:\n${content}`);
+      idx++;
+    }
+
+    for (const s of sources) {
+      // 去重：跳过当前页面
+      if (currentPage && s.slugId === currentPage.slugId) continue;
+      const content = (s.textContent || '').slice(0, 2000);
+      contextParts.push(`[${idx}] ${s.title || 'Untitled'}:\n${content}`);
+      idx++;
+    }
+
+    const context = contextParts.join('\n\n');
+
+    const prompt = `Answer the following question based on the provided context from documentation pages.${currentPage ? ' The user is currently viewing the page marked as (当前页面), prioritize its content when answering.' : ''}
 
 Context:
 ${context}
@@ -156,14 +189,17 @@ Provide a helpful and concise answer. If the context doesn't contain enough info
     const model = this.getCompletionModel();
     const result = streamText({ model, prompt });
 
-    // First yield sources
-    yield JSON.stringify({
-      sources: sources.map((s) => ({
-        title: s.title,
-        slugId: s.slugId,
-        spaceSlug: s.spaceSlug,
-      })),
-    });
+    // 构建 sources 列表（当前页面放第一位）
+    const allSources: { title: string; slugId: string; spaceSlug: string }[] = [];
+    if (currentPage) {
+      allSources.push({ title: currentPage.title, slugId: currentPage.slugId, spaceSlug: currentPage.spaceSlug });
+    }
+    for (const s of sources) {
+      if (currentPage && s.slugId === currentPage.slugId) continue;
+      allSources.push({ title: s.title, slugId: s.slugId, spaceSlug: s.spaceSlug });
+    }
+
+    yield JSON.stringify({ sources: allSources });
 
     for await (const chunk of result.textStream) {
       yield JSON.stringify({ content: chunk });

@@ -69,7 +69,7 @@ VITE_DOCMOST_API_URL=http://localhost:3000/api/public-wiki
 | `apps/server/src/core/core.module.ts` | imports 添加 `PublicWikiModule` |
 | `apps/server/src/core/search/search.module.ts` | exports 添加 `SearchService`（供 PublicWikiModule 注入） |
 | `apps/server/src/integrations/environment/environment.service.ts` | 新增 `getWikiPublicSpaceSlugs()` 方法 |
-| `apps/server/src/main.ts` | CORS 配置提前 + `/api/public-wiki` 加入 excludedPaths |
+| `apps/server/src/main.ts` | 直接 `await` 注册 `@fastify/cors` + `/api/public-wiki` 加入 excludedPaths |
 
 ### API 端点
 
@@ -81,7 +81,7 @@ VITE_DOCMOST_API_URL=http://localhost:3000/api/public-wiki
 | `POST /api/public-wiki/sidebar` | `{ spaceSlug }` | 返回空间的递归页面树 |
 | `POST /api/public-wiki/page` | `{ slugId?, pageId?, format? }` | 返回页面 HTML/Markdown 内容 |
 | `POST /api/public-wiki/search` | `{ query, spaceSlug?, limit? }` | 全文搜索公开页面 |
-| `POST /api/public-wiki/ai/answers` | `{ query }` | AI 问答（SSE 流式响应） |
+| `POST /api/public-wiki/ai/answers` | `{ query, pageSlugId? }` | AI 问答（SSE 流式响应，可指定当前页面上下文） |
 
 ### 服务层核心逻辑
 
@@ -91,7 +91,7 @@ VITE_DOCMOST_API_URL=http://localhost:3000/api/public-wiki
 - **`getSidebarTree()`** — 查询空间全部页面，`buildTree()` 递归构建树结构（按 `position` 排序）
 - **`getPage()`** — 查找页面并验证属于公开空间，处理附件公开 URL，生成 HTML/Markdown
 - **`searchPublicPages()`** — 遍历公开空间调用 `SearchService.searchPage()`，合并排序
-- **`aiAnswers()`** — 通过 `ModuleRef` 动态获取 EE 的 `AiSearchService`，yield SSE 流
+- **`aiAnswers(query, workspaceId, pageSlugId?)`** — 通过 `ModuleRef` 动态获取 EE 的 `AiSearchService`，传递可选的当前页面 slugId，yield SSE 流
 - **`updatePublicAttachments()`** — 为页面附件生成临时签名 token（复用 `TokenService`）
 - **`getPageBreadcrumbs()`** — PostgreSQL 递归 CTE 查询页面祖先链
 
@@ -110,13 +110,15 @@ VITE_DOCMOST_API_URL=http://localhost:3000/api/public-wiki
 
 ## 前端：Wiki 集成层
 
-### 新建文件清单（3 个）
+### 新建文件清单（5 个）
 
 | 文件 | 说明 |
 |------|------|
 | `wiki/docs/.vitepress/theme/services/docmost.ts` | Docmost API 服务类 |
 | `wiki/docs/.vitepress/theme/composables/useDocmostSidebar.ts` | 动态侧边栏 composable |
+| `wiki/docs/.vitepress/theme/composables/useCodeCopy.ts` | 代码块复制功能（事件委托模式） |
 | `wiki/docs/.vitepress/theme/components/DocmostContent.vue` | 动态内容渲染组件 |
+| `wiki/docs/.vitepress/theme/utils/markdown.ts` | markdown-it + highlight.js 单例，AI 聊天 Markdown 渲染 |
 
 ### 修改文件清单（7 个）
 
@@ -191,8 +193,26 @@ const isLoaded = ref(false)
 
 `DocmostService` 封装所有 API 调用：
 - `post<T>()` — 通用 POST 方法，自动解包 `TransformHttpResponseInterceptor` 的 `{ data, success, status }` 响应包装
-- `aiAnswers()` — AsyncGenerator 模式消费 SSE 流
+- `aiAnswers(query, pageSlugId?)` — AsyncGenerator 模式消费 SSE 流，可传递当前页面 slugId 以获取精准上下文
 - `abort()` — AbortController 取消进行中的请求
+
+### AI 聊天 Markdown 渲染
+
+`AIChat.vue` 使用 `markdown-it` + `highlight.js` 替换了原有的正则解析。核心模块：
+
+- **`utils/markdown.ts`** — `markdown-it` 单例配置（`breaks: true`, `html: false`, `linkify: true`），集成 `highlight.js` core（注册 js/ts/python/bash/json/sql/html/css/java），自定义 code fence 输出带 header + 语言标签 + 复制按钮的结构，链接默认 `target="_blank"`
+- **`composables/useCodeCopy.ts`** — 事件委托模式在消息容器上监听 `.code-copy-btn` 点击，从 `data-code` 属性读取代码内容，复制后图标切换为对勾 2 秒
+- **`AIChat.vue`** — Bubble 角色配置（assistant: `borderless` + logo avatar），流式光标（`.is-streaming` + CSS `::after` 闪烁），highlight.js light/dark 双主题 token 颜色
+
+> **依赖说明**：`markdown-it` 和 `highlight.js` 均为 VitePress 传递依赖，无需额外安装。
+
+### 按页面隔离会话
+
+AI 聊天会话按页面路径隔离存储，每个文档页面有独立的对话历史：
+
+- **Storage key**: `cursor-docs-chat-history:{routePath}`（如 `cursor-docs-chat-history:/zh/docs/general/abc123`）
+- **路由监听**: `watch(route.path)` 检测页面切换，自动加载对应会话
+- **清空历史**: 仅清除当前页面的对话
 
 ### 数据流
 
@@ -218,9 +238,14 @@ const isLoaded = ref(false)
 
 4. AI 问答流程：
    AIChat 输入问题
-   → DocmostService.aiAnswers(query) SSE 流
+   → getCurrentPageSlugId() 从路由提取当前页面 slugId
+   → DocmostService.aiAnswers(query, pageSlugId) SSE 流
+   → 后端 answerWithContext(query, workspaceId, pageSlugId)
+     → 查询当前页面 text_content 作为主上下文（4000字符）
+     → 向量搜索补充上下文（去重当前页面）
+     → AI prompt 标注"当前页面"优先级
    → AsyncGenerator yield 逐块内容
-   → Markdown 实时渲染
+   → markdown-it + highlight.js 实时渲染
 ```
 
 ---
@@ -258,3 +283,86 @@ server {
 ### 方案 B：跨域部署
 
 Wiki 和 Docmost 不同域，需要 Docmost 启用 CORS（已在 `main.ts` 中配置 `origin: true`）。
+
+---
+
+## 特殊内容块渲染
+
+Docmost 后端通过 `jsonToHtml()` 将 TipTap JSON 序列化为 HTML，但部分内容类型需要客户端二次处理才能正常显示。Wiki 前台通过 `useContentProcessor.ts` 实现两阶段内容处理。
+
+### 新建文件（1 个）
+
+| 文件 | 说明 |
+|------|------|
+| `wiki/docs/.vitepress/theme/composables/useContentProcessor.ts` | 内容处理器（URL 重写 + 特殊块渲染） |
+
+### 修改文件（2 个）
+
+| 文件 | 修改内容 |
+|------|---------|
+| `wiki/docs/.vitepress/theme/components/DocmostContent.vue` | 集成两阶段处理，添加主题切换监听 |
+| `wiki/package.json` | 新增 `katex` 依赖 |
+
+### 阶段 1：HTML 字符串预处理（v-html 之前）
+
+**附件 URL 绝对化** — `rewriteAttachmentUrls(html)`
+
+后端返回的 HTML 中附件路径是相对路径（如 `/api/files/attachment/{id}/download?token=xxx`），在 Wiki 域名下无法解析。从 `VITE_DOCMOST_API_URL` 提取 origin，将所有相对路径替换为绝对路径。
+
+```
+VITE_DOCMOST_API_URL = http://localhost:3000/api/public-wiki
+提取 origin = http://localhost:3000
+
+/api/files/public/xxx → http://localhost:3000/api/files/public/xxx
+```
+
+正则匹配 `src="/`、`href="/`、`data-src="/"` 开头的 `/files/` 或 `/api/files/` 路径。影响节点：image、video、attachment、excalidraw、drawio。
+
+### 阶段 2：DOM 后处理（v-html 注入后）
+
+`processSpecialBlocks(container)` 在 `nextTick()` 后执行，处理三类特殊块：
+
+#### Mermaid 图表
+
+- **选择器**：`pre > code.language-mermaid`
+- **处理**：懒加载 `mermaid`，调用 `mermaid.render(id, source)` 生成 SVG，替换原 `<pre>` 块为 `<div class="docmost-mermaid-rendered">`
+- **主题跟随**：MutationObserver 监听 `<html>` 的 class 变化，主题切换时重新渲染
+
+#### KaTeX 公式
+
+- **选择器**：`[data-type="mathBlock"][data-katex]`、`[data-type="mathInline"][data-katex]`
+- **处理**：懒加载 `katex`，提取元素文本内容，调用 `katex.renderToString(formula, { displayMode })`
+- **CSS**：首次渲染时动态注入 KaTeX CDN 样式表
+
+#### Embed 嵌入内容（YouTube、Google Sheets 等）
+
+- **选择器**：`div[data-type="embed"]`
+- **处理**：提取 `data-src` 属性，通过 provider 映射表将原始 URL 转换为可嵌入的 iframe URL，创建 `<iframe>` 替换原 `<a>` 链接
+- **Provider 映射**：与 `packages/editor-ext/src/lib/embed-provider.ts` 保持同步
+
+| Provider | 转换规则 |
+|----------|---------|
+| YouTube | `youtube.com/watch?v=xxx` → `youtube-nocookie.com/embed/xxx` |
+| Vimeo | `vimeo.com/123` → `player.vimeo.com/video/123` |
+| Google Sheets | 保持原 URL |
+| Google Drive | `/file/d/{id}/...` → `/file/d/{id}/preview` |
+| Figma | 包装为 `figma.com/embed?url=...&embed_host=docmost` |
+| Loom | `loom.com/share/{id}` → `loom.com/embed/{id}` |
+| Miro | `miro.com/app/board/{id}` → `miro.com/app/live-embed/{id}` |
+| 其他 | 直接使用原 URL 作为 iframe src |
+
+iframe 安全属性：`sandbox="allow-scripts allow-same-origin allow-forms allow-popups"`、`loading="lazy"`
+
+### 后端 HTML 输出格式速查
+
+| 内容类型 | HTML 结构 | CSS 选择器 |
+|---------|-----------|-----------|
+| Mermaid | `<pre><code class="language-mermaid">...</code></pre>` | `pre > code.language-mermaid` |
+| 数学公式（行内） | `<span data-type="mathInline" data-katex="true">...</span>` | `span[data-type="mathInline"][data-katex]` |
+| 数学公式（块级） | `<div data-type="mathBlock" data-katex="true">...</div>` | `div[data-type="mathBlock"][data-katex]` |
+| Embed | `<div data-type="embed" data-src="..." data-provider="..."><a>...</a></div>` | `div[data-type="embed"]` |
+| 图片 | `<img src="/api/files/..." data-attachment-id="...">` | `img[data-attachment-id]` |
+| 视频 | `<video src="/api/files/..." data-attachment-id="...">` | `video[data-attachment-id]` |
+| 附件下载 | `<div data-type="attachment"><a class="attachment" href="/api/files/...">...</a></div>` | `div[data-type="attachment"]` |
+| Draw.io | `<div data-type="drawio" data-src="..."><img src="/api/files/..."></div>` | `div[data-type="drawio"]` |
+| Excalidraw | `<div data-type="excalidraw" data-src="..."><img src="/api/files/..."></div>` | `div[data-type="excalidraw"]` |
