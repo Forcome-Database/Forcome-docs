@@ -3,10 +3,11 @@
  * Docmost 动态内容组件
  * 从 Docmost API 获取页面 HTML 并渲染
  */
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vitepress'
 import { createDocmostService } from '../services/docmost'
 import { useDocmostSidebar } from '../composables/useDocmostSidebar'
+import { rewriteAttachmentUrls, processSpecialBlocks } from '../composables/useContentProcessor'
 import type { DocmostPage } from '../types'
 
 const route = useRoute()
@@ -16,6 +17,15 @@ const { spaces } = useDocmostSidebar()
 const page = ref<DocmostPage | null>(null)
 const isLoading = ref(false)
 const error = ref<string | null>(null)
+const contentRef = ref<HTMLElement | null>(null)
+
+/**
+ * 阶段1：附件 URL 绝对化后的 HTML 内容
+ */
+const processedContent = computed(() => {
+  if (!page.value?.content) return ''
+  return rewriteAttachmentUrls(page.value.content)
+})
 
 /**
  * 从路由中解析空间 slug 和页面 slugId
@@ -81,16 +91,19 @@ async function loadPage() {
       document.title = `${result.title || '文档'} | FORCOME 知识库`
     }
 
-    // 等待 DOM 更新后触发 TOC 重建
+    // 先关闭加载状态，让 v-else-if="page" 块渲染到 DOM
+    isLoading.value = false
+
+    // 等待 DOM 更新后进行阶段2处理并触发 TOC 重建
     await nextTick()
-    setTimeout(() => {
-      window.dispatchEvent(new Event('docmost-content-loaded'))
-    }, 50)
+    if (contentRef.value) {
+      await processSpecialBlocks(contentRef.value)
+    }
+    window.dispatchEvent(new Event('docmost-content-loaded'))
   } catch (err: any) {
     console.error('[DocmostContent] 加载页面失败:', err)
     error.value = err?.message || '加载页面失败'
     page.value = null
-  } finally {
     isLoading.value = false
   }
 }
@@ -100,8 +113,28 @@ watch(() => route.path, () => {
   loadPage()
 }, { immediate: true })
 
+// 监听主题变化，重新渲染 Mermaid 图表
+let themeObserver: MutationObserver | null = null
+
 onMounted(() => {
   loadPage()
+
+  themeObserver = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.attributeName === 'class' && contentRef.value) {
+        processSpecialBlocks(contentRef.value)
+        break
+      }
+    }
+  })
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['class'],
+  })
+})
+
+onUnmounted(() => {
+  themeObserver?.disconnect()
 })
 </script>
 
@@ -144,7 +177,7 @@ onMounted(() => {
       <h1>{{ page.icon ? `${page.icon} ` : '' }}{{ page.title }}</h1>
 
       <!-- HTML 内容 -->
-      <div class="docmost-html-content" v-html="page.content" />
+      <div ref="contentRef" class="docmost-html-content" v-html="processedContent" />
 
       <!-- 页面元信息 -->
       <div v-if="page.updatedAt" class="docmost-meta">
@@ -369,5 +402,39 @@ onMounted(() => {
   padding-left: 16px;
   margin: 16px 0;
   color: var(--c-text-2);
+}
+
+/* Mermaid 渲染后容器 */
+.docmost-html-content .docmost-mermaid-rendered {
+  margin: 16px 0;
+  text-align: center;
+}
+
+.docmost-html-content .docmost-mermaid-rendered svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* KaTeX 公式 */
+.docmost-html-content [data-type="mathBlock"] {
+  margin: 16px 0;
+  text-align: center;
+  overflow-x: auto;
+}
+
+.docmost-html-content [data-type="mathInline"] {
+  display: inline;
+}
+
+/* Embed 嵌入内容 */
+.docmost-html-content [data-type="embed"] {
+  margin: 16px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.docmost-html-content [data-type="embed"] iframe {
+  border-radius: 6px;
+  max-width: 100%;
 }
 </style>

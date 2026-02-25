@@ -23,11 +23,20 @@ export class AiSearchService {
     }
 
     switch (driver) {
-      case 'openai':
-      case 'openai-compatible': {
+      case 'openai': {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { openai } = require('@ai-sdk/openai');
         return openai.embedding(modelName);
+      }
+      case 'openai-compatible': {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
+        const provider = createOpenAICompatible({
+          baseURL: this.environmentService.getOpenAiApiUrl(),
+          apiKey: this.environmentService.getOpenAiApiKey(),
+          name: 'openai-compatible',
+        });
+        return provider.textEmbeddingModel(modelName);
       }
       case 'gemini': {
         // eslint-disable-next-line @typescript-eslint/no-require-imports

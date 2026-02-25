@@ -41,26 +41,26 @@ export default withMermaid(defineConfig({
       themeConfig: {
         nav: [
           { text: '首页', link: '/zh/', activeMatch: '^/zh/$' },
-          {
-            text: '企业应用',
-            activeMatch: '^/zh/docs/(kingdee|crm|oa)',
-            items: [
-              { text: '金蝶 ERP', link: '/zh/docs/kingdee/' },
-              { text: 'CRM 系统', link: '/zh/docs/crm/' },
-              { text: 'OA 办公', link: '/zh/docs/oa/' }
-            ]
-          },
-          {
-            text: 'AI应用',
-            activeMatch: '^/zh/docs/(finance|ppt)',
-            items: [
-              { text: '智能财务', link: '/zh/docs/finance/' },
-              { text: '智能PPT', link: '/zh/docs/ppt/' }
-            ]
-          },
-          { text: '知识学习', link: '/zh/docs/learning/', activeMatch: '^/zh/docs/learning' },
-          { text: '文档中心', link: '/zh/docs/general/', activeMatch: '^/zh/docs/general' },
-          { text: 'IBU文档', link: '/zh/docs/ibu/', activeMatch: '^/zh/docs/ibu' }
+        //   {
+        //     text: '企业应用',
+        //     activeMatch: '^/zh/docs/(kingdee|crm|oa)',
+        //     items: [
+        //       { text: '金蝶 ERP', link: '/zh/docs/kingdee/' },
+        //       { text: 'CRM 系统', link: '/zh/docs/crm/' },
+        //       { text: 'OA 办公', link: '/zh/docs/oa/' }
+        //     ]
+        //   },
+        //   {
+        //     text: 'AI应用',
+        //     activeMatch: '^/zh/docs/(finance|ppt)',
+        //     items: [
+        //       { text: '智能财务', link: '/zh/docs/finance/' },
+        //       { text: '智能PPT', link: '/zh/docs/ppt/' }
+        //     ]
+        //   },
+        //   { text: '知识学习', link: '/zh/docs/learning/', activeMatch: '^/zh/docs/learning' },
+        //   { text: '文档中心', link: '/zh/docs/general/', activeMatch: '^/zh/docs/general' },
+        //   { text: 'IBU文档', link: '/zh/docs/ibu/', activeMatch: '^/zh/docs/ibu' }
         ],
         sidebar: zhSidebar,
         outline: { label: '本页目录' },
