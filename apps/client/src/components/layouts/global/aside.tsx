@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { TableOfContents } from "@/features/editor/components/table-of-contents/table-of-contents.tsx";
 import { useAtomValue } from "jotai";
 import { pageEditorAtom } from "@/features/editor/atoms/editor-atoms.ts";
+import AiCreatorPanel from "@/ee/ai/components/ai-creator/ai-creator-panel";
 
 export default function Aside() {
   const [{ tab }] = useAtom(asideStateAtom);
@@ -15,6 +16,7 @@ export default function Aside() {
 
   let title: string;
   let component: ReactNode;
+  let customLayout = false;
 
   switch (tab) {
     case "comments":
@@ -25,9 +27,22 @@ export default function Aside() {
       component = <TableOfContents editor={pageEditor} />;
       title = "Table of contents";
       break;
+    case "ai-creator":
+      component = <AiCreatorPanel />;
+      title = "AI Creator";
+      customLayout = true;
+      break;
     default:
       component = null;
       title = null;
+  }
+
+  if (customLayout && component) {
+    return (
+      <Box style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        {component}
+      </Box>
+    );
   }
 
   return (

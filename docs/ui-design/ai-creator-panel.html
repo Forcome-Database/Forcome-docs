@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 创作面板 - UI 设计稿</title>
+<style>
+  /* === Reset & Base === */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f0f0f0;
+    display: flex;
+    justify-content: center;
+    padding: 40px 20px;
+    gap: 40px;
+    flex-wrap: wrap;
+  }
+
+  /* === Panel Container (simulates 350px aside) === */
+  .panel-wrapper {
+    width: 350px;
+    flex-shrink: 0;
+  }
+  .panel-wrapper h2 {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .panel {
+    width: 350px;
+    height: 680px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid #e8e8e8;
+  }
+
+  /* === Panel Header === */
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    flex-shrink: 0;
+  }
+  .panel-header .title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-header .sparkle {
+    width: 20px;
+    height: 20px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+  }
+  .panel-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a1a;
+  }
+  .panel-header .close-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: none;
+    color: #999;
+    cursor: pointer;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+  .panel-header .close-btn:hover {
+    background: #f5f5f5;
+    color: #666;
+  }
+
+  /* === Mode Switch === */
+  .mode-switch {
+    display: flex;
+    padding: 8px 12px;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .mode-switch .mode-btn {
+    flex: 1;
+    padding: 6px 0;
+    border: none;
+    background: #f5f5f5;
+    color: #666;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+  }
+  .mode-switch .mode-btn.active {
+    background: #6366f1;
+    color: white;
+  }
+
+  /* === Selection Preview === */
+  .selection-preview {
+    margin: 0 12px 8px;
+    padding: 10px 12px;
+    background: #f8f9fc;
+    border-radius: 8px;
+    border-left: 3px solid #6366f1;
+    flex-shrink: 0;
+  }
+  .selection-preview .label {
+    font-size: 11px;
+    color: #8b8fa3;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .selection-preview .text {
+    font-size: 13px;
+    color: #4a4a5a;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* === Context Hint (page has content) === */
+  .context-hint {
+    margin: 0 12px 8px;
+    padding: 8px 10px;
+    background: #fffbeb;
+    border-radius: 8px;
+    border: 1px solid #fde68a;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .context-hint .icon {
+    color: #f59e0b;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .context-hint .hint-content {
+    flex: 1;
+  }
+  .context-hint .hint-text {
+    font-size: 12px;
+    color: #92400e;
+  }
+  .context-hint .hint-toggle {
+    display: flex;
+    gap: 2px;
+    margin-top: 4px;
+  }
+  .context-hint .toggle-btn {
+    padding: 2px 10px;
+    border: 1px solid #fde68a;
+    background: white;
+    font-size: 11px;
+    color: #92400e;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .context-hint .toggle-btn.active {
+    background: #f59e0b;
+    color: white;
+    border-color: #f59e0b;
+  }
+
+  /* === Messages Area === */
+  .messages-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+  }
+  .messages-area::-webkit-scrollbar {
+    width: 4px;
+  }
+  .messages-area::-webkit-scrollbar-thumb {
+    background: #ddd;
+    border-radius: 4px;
+  }
+
+  /* Empty state */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #bbb;
+    gap: 12px;
+  }
+  .empty-state .icon {
+    font-size: 40px;
+    opacity: 0.5;
+  }
+  .empty-state .text {
+    font-size: 13px;
+  }
+  .empty-state .tips {
+    font-size: 11px;
+    color: #ccc;
+    text-align: center;
+    line-height: 1.6;
+  }
+
+  /* Message bubbles */
+  .message {
+    margin-bottom: 12px;
+  }
+  .message.user .bubble {
+    background: #6366f1;
+    color: white;
+    border-radius: 12px 12px 4px 12px;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-left: 32px;
+  }
+  .message.ai .bubble {
+    background: #f5f6f8;
+    color: #2a2a3a;
+    border-radius: 12px 12px 12px 4px;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    margin-right: 16px;
+  }
+  .message .meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    padding: 0 4px;
+  }
+  .message.user .meta {
+    justify-content: flex-end;
+  }
+  .message .meta .name {
+    font-size: 11px;
+    font-weight: 600;
+    color: #8b8fa3;
+  }
+  .message .meta .time {
+    font-size: 10px;
+    color: #c0c4d0;
+  }
+
+  /* AI message actions */
+  .message.ai .actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+    padding: 0 2px;
+  }
+  .message.ai .actions .action-btn {
+    padding: 3px 8px;
+    border: 1px solid #e8e8ec;
+    background: white;
+    color: #8b8fa3;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s;
+  }
+  .message.ai .actions .action-btn:hover {
+    border-color: #6366f1;
+    color: #6366f1;
+    background: #f8f7ff;
+  }
+
+  /* Streaming indicator */
+  .streaming {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    color: #8b8fa3;
+    font-size: 12px;
+  }
+  .streaming .dots {
+    display: flex;
+    gap: 3px;
+  }
+  .streaming .dots span {
+    width: 5px;
+    height: 5px;
+    background: #6366f1;
+    border-radius: 50%;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .streaming .dots span:nth-child(2) { animation-delay: 0.2s; }
+  .streaming .dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes pulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
+  }
+
+  /* === Input Area === */
+  .input-area {
+    border-top: 1px solid #f0f0f0;
+    padding: 10px 12px;
+    flex-shrink: 0;
+  }
+
+  /* File chips */
+  .file-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .file-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px 3px 6px;
+    background: #f0f0ff;
+    border: 1px solid #e0e0f0;
+    border-radius: 12px;
+    font-size: 11px;
+    color: #6366f1;
+  }
+  .file-chip .icon { font-size: 12px; }
+  .file-chip .remove {
+    width: 14px;
+    height: 14px;
+    border: none;
+    background: #d0d0e8;
+    color: white;
+    border-radius: 50%;
+    font-size: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+
+  /* Template selector row */
+  .template-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+    align-items: center;
+  }
+  .template-select {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid #e8e8ec;
+    border-radius: 8px;
+    font-size: 12px;
+    color: #666;
+    background: white;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 24px;
+  }
+
+  /* Input row */
+  .input-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .attach-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #e8e8ec;
+    background: white;
+    border-radius: 8px;
+    color: #8b8fa3;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .attach-btn:hover {
+    border-color: #6366f1;
+    color: #6366f1;
+  }
+  .input-wrapper {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    background: #f8f9fc;
+    border: 1px solid #e8e8ec;
+    border-radius: 12px;
+    padding: 4px 4px 4px 12px;
+    transition: border-color 0.15s;
+  }
+  .input-wrapper:focus-within {
+    border-color: #6366f1;
+    background: white;
+  }
+  .input-wrapper textarea {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: none;
+    max-height: 80px;
+    padding: 5px 0;
+    font-family: inherit;
+    color: #2a2a3a;
+  }
+  .input-wrapper textarea::placeholder {
+    color: #bbb;
+  }
+  .send-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: #6366f1;
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .send-btn:hover { background: #4f46e5; }
+  .send-btn.stop {
+    background: #ef4444;
+  }
+  .send-btn:disabled {
+    background: #d0d0d8;
+    cursor: not-allowed;
+  }
+
+  /* === Annotations (below panels) === */
+  .annotation {
+    margin-top: 16px;
+    padding: 12px;
+    background: #f8f8f8;
+    border-radius: 8px;
+    border-left: 3px solid #6366f1;
+  }
+  .annotation h4 {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6366f1;
+    margin-bottom: 6px;
+  }
+  .annotation p, .annotation li {
+    font-size: 12px;
+    color: #666;
+    line-height: 1.6;
+  }
+  .annotation ul {
+    padding-left: 16px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== MODE 1: CREATE (Empty State) ==================== -->
+<div class="panel-wrapper">
+  <h2>模式一：创作模式（空状态）</h2>
+  <div class="panel">
+    <div class="panel-header">
+      <div class="title-group">
+        <div class="sparkle">&#10024;</div>
+        <h3>AI 创作</h3>
+      </div>
+      <button class="close-btn">&times;</button>
+    </div>
+
+    <div class="messages-area">
+      <div class="empty-state">
+        <div class="icon">&#10024;</div>
+        <div class="text">上传文件，描述你想创建的文档</div>
+        <div class="tips">
+          支持上传 PDF / Word / 图片作为参考素材<br>
+          选择模版快速开始，或自由描述需求<br>
+          AI 将直接在左侧编辑器中写入内容
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="template-row">
+        <select class="template-select">
+          <option value="" disabled selected>选择模版（可选）</option>
+          <option>技术文档</option>
+          <option>会议纪要</option>
+          <option>需求分析</option>
+          <option>研究报告</option>
+          <option>产品 PRD</option>
+        </select>
+      </div>
+      <div class="input-row">
+        <button class="attach-btn" title="上传文件">&#128206;</button>
+        <div class="input-wrapper">
+          <textarea rows="1" placeholder="描述你想创建的内容..."></textarea>
+          <button class="send-btn" disabled>&#8593;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <h4>设计说明</h4>
+    <ul>
+      <li>空状态：图标 + 3 行引导提示</li>
+      <li>模版下拉紧凑可选</li>
+      <li>附件按钮在输入框左侧而非上方</li>
+      <li>发送按钮内嵌在输入框内</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== MODE 1: CREATE (With Files + Conversation) ==================== -->
+<div class="panel-wrapper">
+  <h2>模式一：创作模式（进行中）</h2>
+  <div class="panel">
+    <div class="panel-header">
+      <div class="title-group">
+        <div class="sparkle">&#10024;</div>
+        <h3>AI 创作</h3>
+      </div>
+      <button class="close-btn">&times;</button>
+    </div>
+
+    <div class="context-hint">
+      <div class="icon">&#9888;</div>
+      <div class="hint-content">
+        <div class="hint-text">页面已有内容</div>
+        <div class="hint-toggle">
+          <button class="toggle-btn active">追加</button>
+          <button class="toggle-btn">覆盖</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="messages-area">
+      <div class="message user">
+        <div class="meta">
+          <span class="name">你</span>
+        </div>
+        <div class="bubble">根据上传的会议录音，请按以下结构整理会议纪要：概要、讨论要点、决议事项、待办跟进。</div>
+      </div>
+
+      <div class="message ai">
+        <div class="meta">
+          <span class="name">AI</span>
+          <span class="time">7.7s</span>
+        </div>
+        <div class="bubble">
+          内容已写入编辑器，包含以下部分：<br><br>
+          <b>1. 会议概要</b> — 2026 Q1 产品评审会<br>
+          <b>2. 讨论要点</b> — 涵盖 5 个核心议题<br>
+          <b>3. 决议事项</b> — 确认 3 项行动计划<br>
+          <b>4. 待办跟进</b> — 已分配负责人和截止日期
+        </div>
+      </div>
+
+      <div class="message user">
+        <div class="meta">
+          <span class="name">你</span>
+        </div>
+        <div class="bubble">精简内容，让它更简洁</div>
+      </div>
+
+      <div class="streaming">
+        <div class="dots">
+          <span></span><span></span><span></span>
+        </div>
+        AI 正在写入...
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="file-chips">
+        <div class="file-chip">
+          <span class="icon">&#128196;</span>
+          会议录音.pdf
+          <button class="remove">&times;</button>
+        </div>
+      </div>
+      <div class="template-row">
+        <select class="template-select">
+          <option>会议纪要</option>
+        </select>
+      </div>
+      <div class="input-row">
+        <button class="attach-btn" title="上传文件">&#128206;</button>
+        <div class="input-wrapper">
+          <textarea rows="1" placeholder="描述你想创建的内容..."></textarea>
+          <button class="send-btn stop">&#9632;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <h4>设计说明</h4>
+    <ul>
+      <li>上下文提示（追加/覆盖）用紧凑的琥珀色横幅</li>
+      <li>用户消息：紫色气泡，右对齐</li>
+      <li>AI 消息：灰色气泡，左对齐，附带耗时</li>
+      <li>流式状态：动画圆点 + 文字</li>
+      <li>文件标签在模版选择器上方</li>
+      <li>流式生成时发送按钮变为红色停止按钮</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== MODE 2: EDIT ==================== -->
+<div class="panel-wrapper">
+  <h2>模式二：编辑模式（有选区）</h2>
+  <div class="panel">
+    <div class="panel-header">
+      <div class="title-group">
+        <div class="sparkle">&#10024;</div>
+        <h3>AI 创作</h3>
+      </div>
+      <button class="close-btn">&times;</button>
+    </div>
+
+    <div class="mode-switch">
+      <button class="mode-btn active">编辑</button>
+      <button class="mode-btn">对话</button>
+    </div>
+
+    <div class="selection-preview">
+      <div class="label">
+        &#9998; 选中文本
+      </div>
+      <div class="text">G1 性能——峰值 QPS 下 P95 延迟 &le; X ms；G2 扩展性——可水平扩展至 N 倍流量；G3 合规性——满足等保/ISO/PCI 等要求。</div>
+    </div>
+
+    <div class="messages-area">
+      <div class="message user">
+        <div class="meta">
+          <span class="name">你</span>
+        </div>
+        <div class="bubble">将每个目标展开为详细段落，包含具体指标</div>
+      </div>
+
+      <div class="message ai">
+        <div class="meta">
+          <span class="name">AI</span>
+          <span class="time">3.2s</span>
+        </div>
+        <div class="bubble">
+          内容已替换到编辑器中。每个目标现在包含具体指标、衡量标准和验收条件。
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-row">
+        <div class="input-wrapper">
+          <textarea rows="1" placeholder="描述如何修改选中内容..."></textarea>
+          <button class="send-btn" disabled>&#8593;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <h4>设计说明</h4>
+    <ul>
+      <li>选中文本时出现模式切换条</li>
+      <li>选区预览带靛蓝左侧边框</li>
+      <li>编辑模式不显示文件上传和模版（更简洁）</li>
+      <li>AI 确认已替换编辑器中的内容</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== MODE 3: CHAT ==================== -->
+<div class="panel-wrapper">
+  <h2>模式三：对话模式（仅面板内对话）</h2>
+  <div class="panel">
+    <div class="panel-header">
+      <div class="title-group">
+        <div class="sparkle">&#10024;</div>
+        <h3>AI 创作</h3>
+      </div>
+      <button class="close-btn">&times;</button>
+    </div>
+
+    <div class="mode-switch">
+      <button class="mode-btn">编辑</button>
+      <button class="mode-btn active">对话</button>
+    </div>
+
+    <div class="selection-preview">
+      <div class="label">
+        &#128172; 选中文本
+      </div>
+      <div class="text">G1 性能——峰值 QPS 下 P95 延迟 &le; X ms；G2 扩展性——可水平扩展至 N 倍流量；</div>
+    </div>
+
+    <div class="messages-area">
+      <div class="message user">
+        <div class="meta">
+          <span class="name">你</span>
+        </div>
+        <div class="bubble">用通俗的语言解释一下这些目标的含义</div>
+      </div>
+
+      <div class="message ai">
+        <div class="meta">
+          <span class="name">AI</span>
+          <span class="time">2.1s</span>
+        </div>
+        <div class="bubble">
+          这三个目标的含义是：<br><br>
+          <b>G1 性能</b> — 系统必须响应够快。在峰值负载下，95% 的请求应在 X 毫秒内完成。<br><br>
+          <b>G2 扩展性</b> — 系统可以通过增加服务器来承载更多流量，无需重新设计架构。<br><br>
+          <b>G3 合规性</b> — 系统满足处理敏感数据所需的国际安全标准。
+        </div>
+        <div class="actions">
+          <button class="action-btn">&#128203; 复制</button>
+          <button class="action-btn">&#8615; 插入编辑器</button>
+        </div>
+      </div>
+
+      <div class="message user">
+        <div class="meta">
+          <span class="name">你</span>
+        </div>
+        <div class="bubble">X ms 填什么值比较合理？</div>
+      </div>
+
+      <div class="message ai">
+        <div class="meta">
+          <span class="name">AI</span>
+          <span class="time">1.5s</span>
+        </div>
+        <div class="bubble">
+          对于大多数 Web 服务，合理的 P95 延迟目标是 <b>200-500ms</b>。实时 API 应控制在 <b>&lt;100ms</b>。批处理场景下 <b>1-2s</b> 可以接受。
+        </div>
+        <div class="actions">
+          <button class="action-btn">&#128203; 复制</button>
+          <button class="action-btn">&#8615; 插入编辑器</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-row">
+        <div class="input-wrapper">
+          <textarea rows="1" placeholder="针对选中内容提问..."></textarea>
+          <button class="send-btn" disabled>&#8593;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <h4>设计说明</h4>
+    <ul>
+      <li>对话模式：AI 仅在面板内回答，不修改编辑器</li>
+      <li>每条 AI 消息都有复制 + 插入按钮</li>
+      <li>用户可按需将任意 AI 回答插入编辑器</li>
+      <li>支持多轮上下文对话</li>
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>

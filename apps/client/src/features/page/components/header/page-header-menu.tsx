@@ -12,6 +12,7 @@ import {
   IconPrinter,
   IconTrash,
   IconWifiOff,
+  IconSparkles,
 } from "@tabler/icons-react";
 import React, { useEffect, useRef, useState } from "react";
 import useToggleAside from "@/hooks/use-toggle-aside.tsx";
@@ -76,6 +77,18 @@ export default function PageHeaderMenu({ readOnly }: PageHeaderMenuProps) {
       {!readOnly && <PageStateSegmentedControl size="xs" />}
 
       <ShareModal readOnly={readOnly} />
+
+      {!readOnly && (
+        <Tooltip label={t("AI Creator")} openDelay={250} withArrow>
+          <ActionIcon
+            variant="subtle"
+            color="dark"
+            onClick={() => toggleAside("ai-creator")}
+          >
+            <IconSparkles size={20} stroke={2} />
+          </ActionIcon>
+        </Tooltip>
+      )}
 
       <Tooltip label={t("Comments")} openDelay={250} withArrow>
         <ActionIcon

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { EnvironmentService } from '../../../integrations/environment/environment.service';
 import { AiAction, AiGenerateDto } from '../dto/ai.dto';
 import { generateText, streamText } from 'ai';
+import { AiContentPart } from './ai-file.service';
 
 @Injectable()
 export class AiService {
@@ -89,6 +90,75 @@ export class AiService {
       yield JSON.stringify({ content: chunk });
     }
     this.logger.debug(`Stream finished, total chunks: ${chunks}`);
+  }
+
+  async *streamWithFiles(
+    systemPrompt: string,
+    contentParts: AiContentPart[],
+  ): AsyncGenerator<string> {
+    const model = this.getModel();
+
+    // Check if we have any image parts (need multi-modal messages format)
+    const hasImages = contentParts.some((p) => p.type === 'image');
+
+    if (!hasImages) {
+      // Text-only: use simple prompt format (works with all providers)
+      const textParts = contentParts
+        .filter((p) => p.type === 'text')
+        .map((p) => p.text)
+        .join('\n\n');
+
+      const fullPrompt = textParts
+        ? `${textParts}\n\n---\n\n${systemPrompt}`
+        : systemPrompt;
+
+      this.logger.debug(
+        `Starting streamWithFiles (text-only), prompt length=${fullPrompt.length}`,
+      );
+
+      const result = streamText({ model, prompt: fullPrompt });
+
+      let chunks = 0;
+      for await (const chunk of result.textStream) {
+        chunks++;
+        yield JSON.stringify({ content: chunk });
+      }
+      this.logger.debug(`streamWithFiles finished, total chunks: ${chunks}`);
+      return;
+    }
+
+    // Multi-modal: use messages format with text + image parts
+    const userContent: any[] = [];
+
+    for (const part of contentParts) {
+      if (part.type === 'text') {
+        userContent.push({ type: 'text', text: part.text });
+      } else if (part.type === 'image') {
+        userContent.push({
+          type: 'image',
+          image: part.data,
+          mimeType: part.mimeType,
+        });
+      }
+    }
+
+    userContent.push({ type: 'text', text: systemPrompt });
+
+    this.logger.debug(
+      `Starting streamWithFiles (multi-modal), ${contentParts.length} content parts`,
+    );
+
+    const result = streamText({
+      model,
+      messages: [{ role: 'user', content: userContent }],
+    });
+
+    let chunks = 0;
+    for await (const chunk of result.textStream) {
+      chunks++;
+      yield JSON.stringify({ content: chunk });
+    }
+    this.logger.debug(`streamWithFiles finished, total chunks: ${chunks}`);
   }
 
   private buildPrompt(
