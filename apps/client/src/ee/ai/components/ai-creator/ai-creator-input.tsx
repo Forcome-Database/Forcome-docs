@@ -7,6 +7,10 @@ import {
   IconPencil,
   IconPencilOff,
   IconTemplate,
+  IconPlus,
+  IconRotate,
+  IconEdit,
+  IconTrash,
 } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
 import { NodeSelection } from "@tiptap/pm/state";
@@ -31,6 +35,13 @@ import {
 } from "./ai-creator-atoms";
 import { AiCreatorFileList } from "./ai-creator-file-list";
 import { AI_TEMPLATE_OPTIONS } from "./ai-creator.types";
+import {
+  useAiTemplatesQuery,
+  useResetAiTemplateMutation,
+  useDeleteAiTemplateMutation,
+} from "@/ee/ai/queries/ai-template-query";
+import { IAiTemplate } from "@/ee/ai/types/ai-template.types";
+import AiTemplateEditor from "@/ee/ai/components/ai-templates/ai-template-editor";
 import {
   creatorGenerate,
 } from "@/ee/ai/services/ai-service";
@@ -71,6 +82,14 @@ export function AiCreatorInput() {
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // User template personalization state
+  const [userEditorOpened, setUserEditorOpened] = useState(false);
+  const [editingUserTemplate, setEditingUserTemplate] = useState<IAiTemplate | null>(null);
+  const resetMutation = useResetAiTemplateMutation();
+  const deleteMutation = useDeleteAiTemplateMutation();
+
+  const { data: dynamicTemplates } = useAiTemplatesQuery();
 
   const pageHasContent =
     editor && editor.state.doc.textContent.trim().length > 0;
@@ -270,10 +289,48 @@ export function AiCreatorInput() {
     }
   };
 
+  // Use dynamic templates from API, fallback to static
+  const templateOptions = dynamicTemplates
+    ? dynamicTemplates
+    : AI_TEMPLATE_OPTIONS.map((st) => ({
+        key: st.key, name: st.name, prompt: "", scope: 'system' as const,
+        source: 'system' as const, canReset: false, canEdit: false, canDelete: false, isDefault: true,
+      } as IAiTemplate));
+
   const selectedTemplateOption = template
-    ? AI_TEMPLATE_OPTIONS.find((opt) => opt.key === template)
+    ? templateOptions.find((opt) => opt.key === template)
     : null;
   const selectedTemplateName = selectedTemplateOption ? t(selectedTemplateOption.name) : null;
+
+  const handleEditTemplate = (tmpl: IAiTemplate) => {
+    setEditingUserTemplate(tmpl);
+    setUserEditorOpened(true);
+  };
+
+  const handleCreateUserTemplate = () => {
+    setEditingUserTemplate(null);
+    setUserEditorOpened(true);
+  };
+
+  const handleDeleteTemplate = async (tmpl: IAiTemplate) => {
+    if (!tmpl.id) return;
+    try {
+      await deleteMutation.mutateAsync({ templateId: tmpl.id });
+      if (template === tmpl.key) setTemplate(null);
+      notifications.show({ message: t("Template deleted"), color: "green" });
+    } catch (err: any) {
+      notifications.show({ message: err?.response?.data?.message || t("Failed to delete"), color: "red" });
+    }
+  };
+
+  const handleResetTemplate = async (key: string) => {
+    try {
+      await resetMutation.mutateAsync({ key });
+      notifications.show({ message: t("Reset to default"), color: "green" });
+    } catch (err: any) {
+      notifications.show({ message: err?.response?.data?.message || t("Failed to reset"), color: "red" });
+    }
+  };
 
   return (
     <div className={classes.inputArea}>
@@ -317,22 +374,54 @@ export function AiCreatorInput() {
                 </Tooltip>
               </Menu.Target>
               <Menu.Dropdown>
-                {AI_TEMPLATE_OPTIONS.map((tmpl) => (
+                {templateOptions.map((tmpl) => (
                   <Menu.Item
                     key={tmpl.key}
                     onClick={() => setTemplate(template === tmpl.key ? null : tmpl.key)}
                     style={template === tmpl.key ? { fontWeight: 600, color: '#6366f1' } : undefined}
+                    rightSection={
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {tmpl.source === 'user' && (
+                          <span style={{ fontSize: 10, color: '#888' }}>{t("Personal")}</span>
+                        )}
+                        {tmpl.canReset && (
+                          <Tooltip label={t("Reset to default")} openDelay={300}>
+                            <ActionIcon variant="subtle" size="xs" color="gray"
+                              onClick={(e) => { e.stopPropagation(); handleResetTemplate(tmpl.key); }}
+                            ><IconRotate size={12} /></ActionIcon>
+                          </Tooltip>
+                        )}
+                        {tmpl.canEdit && (
+                          <Tooltip label={t("Edit")} openDelay={300}>
+                            <ActionIcon variant="subtle" size="xs" color="gray"
+                              onClick={(e) => { e.stopPropagation(); handleEditTemplate(tmpl); }}
+                            ><IconEdit size={12} /></ActionIcon>
+                          </Tooltip>
+                        )}
+                        {tmpl.canDelete && (
+                          <Tooltip label={t("Delete")} openDelay={300}>
+                            <ActionIcon variant="subtle" size="xs" color="red"
+                              onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(tmpl); }}
+                            ><IconTrash size={12} /></ActionIcon>
+                          </Tooltip>
+                        )}
+                      </span>
+                    }
                   >
                     {t(tmpl.name)}
                   </Menu.Item>
                 ))}
+                <Menu.Divider />
+                <Menu.Item
+                  leftSection={<IconPlus size={14} />}
+                  onClick={handleCreateUserTemplate}
+                >
+                  {t("New template")}
+                </Menu.Item>
                 {template && (
-                  <>
-                    <Menu.Divider />
-                    <Menu.Item color="dimmed" onClick={() => setTemplate(null)}>
-                      {t("Clear template")}
-                    </Menu.Item>
-                  </>
+                  <Menu.Item color="dimmed" onClick={() => setTemplate(null)}>
+                    {t("Clear template")}
+                  </Menu.Item>
                 )}
               </Menu.Dropdown>
             </Menu>
@@ -395,6 +484,13 @@ export function AiCreatorInput() {
           </div>
         </div>
       </div>
+      {/* Template editor modal */}
+      <AiTemplateEditor
+        opened={userEditorOpened}
+        onClose={() => setUserEditorOpened(false)}
+        template={editingUserTemplate}
+        scope={editingUserTemplate?.scope === 'workspace' ? 'workspace' : 'user'}
+      />
     </div>
   );
 }

@@ -1,6 +1,8 @@
 export interface AiTemplate {
   key: string;
   name: string;
+  description: string;
+  icon: string;
   prompt: string;
 }
 
@@ -8,6 +10,8 @@ export const AI_TEMPLATES: Record<string, AiTemplate> = {
   'technical-doc': {
     key: 'technical-doc',
     name: '技术文档',
+    description: '系统架构、API 文档',
+    icon: 'IconFileCode',
     prompt: `你是一位资深技术文档工程师。请根据用户提供的参考资料和描述，撰写一份高质量技术文档。
 
 ## 核心原则
@@ -64,6 +68,8 @@ export const AI_TEMPLATES: Record<string, AiTemplate> = {
   'operation-manual': {
     key: 'operation-manual',
     name: '操作手册',
+    description: '分步操作指南',
+    icon: 'IconBook',
     prompt: `你是一位专业技术文档工程师，编写面向一线操作人员的操作手册。读者不是开发者，是实际执行操作的业务人员或普通用户。
 
 ## 核心原则
@@ -153,6 +159,8 @@ export const AI_TEMPLATES: Record<string, AiTemplate> = {
   'meeting-notes': {
     key: 'meeting-notes',
     name: '会议纪要',
+    description: '会议记录与决议',
+    icon: 'IconNotes',
     prompt: `请根据提供的参考资料，按以下结构整理会议纪要。内容要精炼实用，不要废话。
 
 # {会议主题} — 会议纪要
@@ -185,6 +193,8 @@ export const AI_TEMPLATES: Record<string, AiTemplate> = {
   requirements: {
     key: 'requirements',
     name: '需求分析',
+    description: '功能分解与验收标准',
+    icon: 'IconChecklist',
     prompt: `请根据提供的参考资料，撰写需求分析文档。
 
 # {项目名称} — 需求分析
@@ -217,6 +227,8 @@ export const AI_TEMPLATES: Record<string, AiTemplate> = {
   report: {
     key: 'report',
     name: '研究报告',
+    description: '行业分析与研究',
+    icon: 'IconChartBar',
     prompt: `你是一位资深行业分析师，撰写数据驱动的研究报告。读者可能是决策层，需要快速理解重点。
 
 ## 核心原则
@@ -280,6 +292,8 @@ KaTeX 展示关键计算：$g = \\frac{V_1 - V_0}{V_0} \\times 100\\%$
   prd: {
     key: 'prd',
     name: '产品 PRD',
+    description: '产品需求规格书',
+    icon: 'IconClipboardList',
     prompt: `你是一位资深产品经理，撰写给研发、设计、测试看的产品需求文档。
 
 ## 核心原则

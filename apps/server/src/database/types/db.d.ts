@@ -338,6 +338,22 @@ export interface WorkspaceInvitations {
   workspaceId: string;
 }
 
+export interface AiPromptTemplates {
+  id: Generated<string>;
+  key: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  prompt: string;
+  scope: string;
+  workspaceId: string;
+  creatorId: string;
+  isDefault: Generated<boolean>;
+  createdAt: Generated<Timestamp>;
+  updatedAt: Generated<Timestamp>;
+  deletedAt: Timestamp | null;
+}
+
 export interface Workspaces {
   billingEmail: string | null;
   createdAt: Generated<Timestamp>;
@@ -391,6 +407,7 @@ export interface Watchers {
 }
 
 export interface DB {
+  aiPromptTemplates: AiPromptTemplates;
   apiKeys: ApiKeys;
   attachments: Attachments;
   authAccounts: AuthAccounts;

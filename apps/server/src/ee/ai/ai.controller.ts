@@ -13,11 +13,12 @@ import {
 import { AiService } from './services/ai.service';
 import { AiSearchService } from './services/ai-search.service';
 import { AiFileService } from './services/ai-file.service';
+import { AiTemplateService } from './services/ai-template.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator';
-import { Workspace } from '@docmost/db/types/entity.types';
+import { AuthUser } from '../../common/decorators/auth-user.decorator';
+import { Workspace, User } from '@docmost/db/types/entity.types';
 import { AiGenerateDto, AiAnswerDto } from './dto/ai.dto';
-import { AI_TEMPLATES } from './constants/ai-templates';
 import { FastifyReply, FastifyRequest } from 'fastify';
 
 @Controller('ai')
@@ -28,6 +29,7 @@ export class AiController {
     private readonly aiService: AiService,
     private readonly aiSearchService: AiSearchService,
     private readonly aiFileService: AiFileService,
+    private readonly aiTemplateService: AiTemplateService,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -112,6 +114,7 @@ export class AiController {
   async creatorGenerate(
     @Req() req: FastifyRequest,
     @AuthWorkspace() workspace: Workspace,
+    @AuthUser() user: User,
     @Res() res: FastifyReply,
   ) {
     this.checkAiGenerativeEnabled(workspace);
@@ -147,11 +150,27 @@ export class AiController {
     // Process uploaded files (already buffered)
     const contentParts = await this.aiFileService.processBufferedFiles(bufferedFiles);
 
-    // Build system prompt
+    // Build system prompt with three-layer resolution
     let systemPrompt = '';
 
-    if (template && AI_TEMPLATES[template]) {
-      systemPrompt += AI_TEMPLATES[template].prompt + '\n\n';
+    // Prepend global system prompt from workspace settings
+    const globalSystemPrompt = await this.aiTemplateService.getSystemPrompt(
+      workspace.id,
+    );
+    if (globalSystemPrompt) {
+      systemPrompt += globalSystemPrompt + '\n\n';
+    }
+
+    // Resolve template through layers: user → workspace → system default
+    if (template) {
+      const templatePrompt = await this.aiTemplateService.getTemplatePrompt(
+        template,
+        workspace.id,
+        user.id,
+      );
+      if (templatePrompt) {
+        systemPrompt += templatePrompt + '\n\n';
+      }
     }
 
     if (insertMode === 'append' && existingContentSummary) {

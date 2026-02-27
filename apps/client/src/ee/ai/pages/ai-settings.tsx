@@ -6,7 +6,9 @@ import useUserRole from "@/hooks/use-user-role.tsx";
 import { useTranslation } from "react-i18next";
 import EnableAiSearch from "@/ee/ai/components/enable-ai-search.tsx";
 import EnableGenerativeAi from "@/ee/ai/components/enable-generative-ai.tsx";
-import { Alert, Stack } from "@mantine/core";
+import AiSystemPromptEditor from "@/ee/ai/components/ai-templates/ai-system-prompt-editor.tsx";
+import AiTemplateList from "@/ee/ai/components/ai-templates/ai-template-list.tsx";
+import { Alert, Divider, Stack } from "@mantine/core";
 import { IconInfoCircle } from "@tabler/icons-react";
 import { useIsCloudEE } from "@/hooks/use-is-cloud-ee.tsx";
 import { isCloud } from "@/lib/config.ts";
@@ -43,6 +45,14 @@ export default function AiSettings() {
       <Stack gap="md">
         {!isCloud() && <EnableAiSearch />}
         <EnableGenerativeAi />
+
+        <Divider />
+
+        <AiSystemPromptEditor />
+
+        <Divider />
+
+        <AiTemplateList />
       </Stack>
     </>
   );

@@ -41,6 +41,7 @@ export interface IWorkspaceWikiSettings {
 export interface IWorkspaceAiSettings {
   search?: boolean;
   generative?: boolean;
+  systemPrompt?: string;
 }
 
 export interface IWorkspaceSharingSettings {

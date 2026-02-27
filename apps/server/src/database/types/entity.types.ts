@@ -1,5 +1,6 @@
 import { Insertable, Selectable, Updateable } from 'kysely';
 import {
+  AiPromptTemplates,
   Attachments,
   Comments,
   Groups,
@@ -143,3 +144,8 @@ export type UpdatableNotification = Updateable<Omit<Notifications, 'id'>>;
 export type Watcher = Selectable<Watchers>;
 export type InsertableWatcher = Insertable<Watchers>;
 export type UpdatableWatcher = Updateable<Omit<Watchers, 'id'>>;
+
+// AI Prompt Template
+export type AiPromptTemplate = Selectable<AiPromptTemplates>;
+export type InsertableAiPromptTemplate = Insertable<AiPromptTemplates>;
+export type UpdatableAiPromptTemplate = Updateable<Omit<AiPromptTemplates, 'id'>>;
