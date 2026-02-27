@@ -14,9 +14,17 @@ export default function Aside() {
   const { t } = useTranslation();
   const pageEditor = useAtomValue(pageEditorAtom);
 
+  // AI Creator uses its own full-height layout
+  if (tab === "ai-creator") {
+    return (
+      <Box style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <AiCreatorPanel />
+      </Box>
+    );
+  }
+
   let title: string;
   let component: ReactNode;
-  let customLayout = false;
 
   switch (tab) {
     case "comments":
@@ -27,22 +35,9 @@ export default function Aside() {
       component = <TableOfContents editor={pageEditor} />;
       title = "Table of contents";
       break;
-    case "ai-creator":
-      component = <AiCreatorPanel />;
-      title = "AI Creator";
-      customLayout = true;
-      break;
     default:
       component = null;
       title = null;
-  }
-
-  if (customLayout && component) {
-    return (
-      <Box style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-        {component}
-      </Box>
-    );
   }
 
   return (

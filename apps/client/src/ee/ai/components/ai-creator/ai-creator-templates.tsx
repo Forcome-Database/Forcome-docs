@@ -18,7 +18,7 @@ export function AiCreatorTemplates() {
       mb="xs"
       data={AI_TEMPLATE_OPTIONS.map((tmpl) => ({
         value: tmpl.key,
-        label: tmpl.name,
+        label: t(tmpl.name),
       }))}
     />
   );

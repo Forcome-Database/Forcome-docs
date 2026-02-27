@@ -1,11 +1,10 @@
 import { atom } from 'jotai';
-import { AiCreatorMode, AiCreatorMessage, InsertMode } from './ai-creator.types';
-
-export const aiCreatorModeAtom = atom<AiCreatorMode>('create');
-
-export const aiCreatorModeLockAtom = atom<boolean>(false);
+import { atomWithWebStorage } from '@/lib/jotai-helper';
+import { AiCreatorMessage } from './ai-creator.types';
 
 export const aiCreatorFilesAtom = atom<File[]>([]);
+
+export const aiCreatorAutoInsertAtom = atomWithWebStorage<boolean>('aiAutoInsert', false);
 
 export const aiCreatorTemplateAtom = atom<string | null>(null);
 
@@ -23,5 +22,3 @@ export const aiCreatorMessagesAtom = atom<
 >({});
 
 export const aiCreatorStreamingAtom = atom<boolean>(false);
-
-export const aiCreatorInsertModeAtom = atom<InsertMode>('append');

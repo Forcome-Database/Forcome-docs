@@ -3,43 +3,46 @@ import {
   ActionIcon,
   Group,
   ScrollArea,
-  SegmentedControl,
   Text,
+  Tooltip,
 } from "@mantine/core";
-import { IconSparkles, IconX } from "@tabler/icons-react";
+import { IconSparkles, IconX, IconPlus } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
-import { pageEditorAtom, titleEditorAtom } from "@/features/editor/atoms/editor-atoms";
+import { pageEditorAtom } from "@/features/editor/atoms/editor-atoms";
 import { asideStateAtom } from "@/components/layouts/global/hooks/atoms/sidebar-atom";
 import {
-  aiCreatorModeAtom,
-  aiCreatorModeLockAtom,
   aiCreatorSelectionAtom,
   aiCreatorSelectionRangeAtom,
-  aiCreatorInsertModeAtom,
+  aiCreatorMessagesAtom,
   SelectionRange,
 } from "./ai-creator-atoms";
-import { AiCreatorModeSwitch } from "./ai-creator-mode-switch";
 import { AiCreatorSelection } from "./ai-creator-selection";
 import { AiCreatorMessages } from "./ai-creator-messages";
 import { AiCreatorInput } from "./ai-creator-input";
-import { InsertMode } from "./ai-creator.types";
 import { useTranslation } from "react-i18next";
+import { useParams } from "react-router-dom";
+import { extractPageSlugId } from "@/lib";
 import classes from "./ai-creator.module.css";
 
 export default function AiCreatorPanel() {
   const { t } = useTranslation();
   const editor = useAtomValue(pageEditorAtom);
-  const titleEditor = useAtomValue(titleEditorAtom);
-  const [mode, setMode] = useAtom(aiCreatorModeAtom);
-  const [modeLock, setModeLock] = useAtom(aiCreatorModeLockAtom);
   const [, setSelection] = useAtom(aiCreatorSelectionAtom);
   const [, _setSelectionRange] = useAtom(aiCreatorSelectionRangeAtom);
   const setSelectionRange = _setSelectionRange as (v: SelectionRange | null) => void;
   const [, setAsideState] = useAtom(asideStateAtom);
-  const [insertMode, setInsertMode] = useAtom(aiCreatorInsertModeAtom);
+  const [, setAllMessages] = useAtom(aiCreatorMessagesAtom);
+  const { pageSlug } = useParams();
+  const pageId = extractPageSlugId(pageSlug);
 
-  const pageHasContent = editor && editor.state.doc.textContent.trim().length > 0;
+  const hasSelection = useAtomValue(aiCreatorSelectionAtom).length > 0;
 
+  // Clear messages when panel mounts (each open starts fresh)
+  useEffect(() => {
+    setAllMessages((prev) => ({ ...prev, [pageId]: [] }));
+  }, []);
+
+  // Listen to editor selection updates (as context only, no mode switching)
   useEffect(() => {
     if (!editor) return;
 
@@ -48,13 +51,10 @@ export default function AiCreatorPanel() {
       if (empty) {
         setSelection("");
         setSelectionRange(null);
-        if (!modeLock) setMode("create");
-        setModeLock(false);
       } else {
         const text = editor.state.doc.textBetween(from, to, "\n");
         setSelection(text);
         setSelectionRange({ from, to });
-        if (!modeLock) setMode("edit");
       }
     };
 
@@ -64,12 +64,14 @@ export default function AiCreatorPanel() {
     return () => {
       editor.off("selectionUpdate", onSelectionUpdate);
     };
-  }, [editor, modeLock]);
-
-  const hasSelection = useAtomValue(aiCreatorSelectionAtom).length > 0;
+  }, [editor]);
 
   const handleClose = () => {
     setAsideState({ tab: "", isAsideOpen: false });
+  };
+
+  const handleNewChat = () => {
+    setAllMessages((prev) => ({ ...prev, [pageId]: [] }));
   };
 
   return (
@@ -81,45 +83,28 @@ export default function AiCreatorPanel() {
             <IconSparkles size={14} />
           </div>
           <Text fw={600} size="sm">
-            AI {t("Creator")}
+            {t("AI Assistant")}
           </Text>
         </Group>
-        <ActionIcon variant="subtle" color="gray" size="sm" onClick={handleClose}>
-          <IconX size={16} />
-        </ActionIcon>
+        <Group gap={4}>
+          <Tooltip label={t("New conversation")} openDelay={300}>
+            <ActionIcon variant="subtle" color="gray" size="sm" onClick={handleNewChat}>
+              <IconPlus size={16} />
+            </ActionIcon>
+          </Tooltip>
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={handleClose}>
+            <IconX size={16} />
+          </ActionIcon>
+        </Group>
       </div>
-
-      {/* Context hint - at TOP, only in create mode when page has content */}
-      {mode === "create" && pageHasContent && (
-        <div className={classes.contextHint}>
-          <Text size="xs" c="dimmed" mb={4}>
-            {t("Page has existing content")}
-          </Text>
-          <SegmentedControl
-            size="xs"
-            fullWidth
-            value={insertMode}
-            onChange={(v) => setInsertMode(v as InsertMode)}
-            data={[
-              { label: t("Append"), value: "append" },
-              { label: t("Overwrite"), value: "overwrite" },
-            ]}
-          />
-        </div>
-      )}
-
-      {/* Mode switch - only when there's a selection */}
-      {hasSelection && <AiCreatorModeSwitch />}
-
-      {/* Selection preview - edit/chat modes */}
-      {hasSelection && (mode === "edit" || mode === "chat") && (
-        <AiCreatorSelection />
-      )}
 
       {/* Messages area */}
       <ScrollArea className={classes.scrollArea} scrollbarSize={5} type="scroll">
         <AiCreatorMessages />
       </ScrollArea>
+
+      {/* Selection context (shown above input when there's a selection) */}
+      {hasSelection && <AiCreatorSelection />}
 
       {/* Input area */}
       <AiCreatorInput />

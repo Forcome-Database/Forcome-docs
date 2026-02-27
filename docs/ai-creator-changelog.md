@@ -212,3 +212,11 @@ if (customLayout && component) {
 - Docmost 支持暗色模式，所有颜色必须适配
 - `light-dark(lightValue, darkValue)` 是项目统一的主题适配模式
 - 所有间距用 `var(--mantine-spacing-*)` token，与 Mantine 设计系统一致
+
+---
+
+## 2026-02-27 UI 重构
+
+面板进行了全面 UI 重构（参考 LobeHub 风格），详见 **[ai-creator-ui-refactor.md](./ai-creator-ui-refactor.md)**。
+
+主要变更：取消三模式系统 → 统一对话模式、可拖拽面板宽度、模板卡片欢迎页、气泡消息+头像、hljs 代码高亮、DOMPurify XSS 防护、LobeHub 风格大输入框+底部工具栏、自动/手动插入切换。

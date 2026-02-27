@@ -9,7 +9,6 @@ import {
   IconSpaces,
   IconBrush,
   IconCoin,
-  IconLock,
   IconKey,
   IconWorld,
   IconSparkles,
@@ -26,13 +25,10 @@ import {
   prefetchApiKeys,
   prefetchBilling,
   prefetchGroups,
-  prefetchLicense,
   prefetchShares,
   prefetchSpaces,
-  prefetchSsoProviders,
   prefetchWorkspaceMembers,
 } from "@/components/settings/settings-queries.tsx";
-import AppVersion from "@/components/settings/app-version.tsx";
 import { mobileSidebarAtom } from "@/components/layouts/global/hooks/atoms/sidebar-atom.ts";
 import { useToggleSidebar } from "@/components/layouts/global/hooks/hooks/use-toggle-sidebar.ts";
 import { useSettingsNavigation } from "@/hooks/use-settings-navigation";
@@ -89,15 +85,16 @@ const groupedData: DataGroup[] = [
         isCloud: true,
         isAdmin: true,
       },
-      {
-        label: "Security & SSO",
-        icon: IconLock,
-        path: "/settings/security",
-        isCloud: true,
-        isEnterprise: true,
-        isAdmin: true,
-        showDisabledInNonEE: true,
-      },
+      // Security & SSO - hidden
+      // {
+      //   label: "Security & SSO",
+      //   icon: IconLock,
+      //   path: "/settings/security",
+      //   isCloud: true,
+      //   isEnterprise: true,
+      //   isAdmin: true,
+      //   showDisabledInNonEE: true,
+      // },
       { label: "Groups", icon: IconUsersGroup, path: "/settings/groups" },
       { label: "Spaces", icon: IconSpaces, path: "/settings/spaces" },
       { label: "Public sharing", icon: IconWorld, path: "/settings/sharing" },
@@ -118,16 +115,17 @@ const groupedData: DataGroup[] = [
       },
     ],
   },
-  {
-    heading: "System",
-    items: [
-      {
-        label: "License & Edition",
-        icon: IconKey,
-        path: "/settings/license",
-      },
-    ],
-  },
+  // System section - hidden
+  // {
+  //   heading: "System",
+  //   items: [
+  //     {
+  //       label: "License & Edition",
+  //       icon: IconKey,
+  //       path: "/settings/license",
+  //     },
+  //   ],
+  // },
 ];
 
 export default function SettingsSidebar() {
@@ -210,14 +208,6 @@ export default function SettingsSidebar() {
             case "Billing":
               prefetchHandler = prefetchBilling;
               break;
-            case "License & Edition":
-              if (workspace?.hasLicenseKey) {
-                prefetchHandler = prefetchLicense;
-              }
-              break;
-            case "Security & SSO":
-              prefetchHandler = prefetchSsoProviders;
-              break;
             case "Public sharing":
               prefetchHandler = prefetchShares;
               break;
@@ -299,7 +289,7 @@ export default function SettingsSidebar() {
 
       <ScrollArea w="100%">{menuItems}</ScrollArea>
 
-      {!isCloud() && <AppVersion />}
+      {/* AppVersion hidden */}
 
       {isCloud() && (
         <div className={classes.text}>

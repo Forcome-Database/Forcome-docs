@@ -1,9 +1,12 @@
 import { useCallback, useRef, useState } from "react";
-import { ActionIcon, Group, Tooltip } from "@mantine/core";
+import { ActionIcon, Tooltip, Menu } from "@mantine/core";
 import {
   IconArrowUp,
   IconPaperclip,
   IconPlayerStop,
+  IconPencil,
+  IconPencilOff,
+  IconTemplate,
 } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
 import { useParams } from "react-router-dom";
@@ -14,30 +17,39 @@ import {
 } from "@/features/editor/atoms/editor-atoms";
 import { notifications } from "@mantine/notifications";
 import { useTranslation } from "react-i18next";
-import { marked } from "marked";
+import { markdownToHtml } from "@docmost/editor-ext";
 import { v7 as uuid7 } from "uuid";
 import {
-  aiCreatorModeAtom,
   aiCreatorFilesAtom,
   aiCreatorTemplateAtom,
   aiCreatorSelectionAtom,
   aiCreatorSelectionRangeAtom,
   aiCreatorMessagesAtom,
   aiCreatorStreamingAtom,
-  aiCreatorInsertModeAtom,
+  aiCreatorAutoInsertAtom,
 } from "./ai-creator-atoms";
 import { AiCreatorFileList } from "./ai-creator-file-list";
-import { AiCreatorTemplates } from "./ai-creator-templates";
+import { AI_TEMPLATE_OPTIONS } from "./ai-creator.types";
 import {
   creatorGenerate,
-  generateAiContentStream,
 } from "@/ee/ai/services/ai-service";
-import { AiAction } from "@/ee/ai/types/ai.types";
 import classes from "./ai-creator.module.css";
 
 const ACCEPTED_FILES = ".pdf,.docx,.doc,.png,.jpg,.jpeg,.gif,.webp";
 const MAX_FILES = 5;
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
+
+function extractTitle(markdown: string): [string | null, string] {
+  const match = markdown.match(/^#\s+(.+)$/m);
+  if (!match) return [null, markdown];
+  const title = match[1].trim();
+  const remaining = markdown.replace(/^#\s+.+\n*/m, "").trim();
+  return [title, remaining];
+}
+
+function renderMarkdownToEditorHtml(content: string): string {
+  return markdownToHtml(content) as string;
+}
 
 export function AiCreatorInput() {
   const { t } = useTranslation();
@@ -45,14 +57,15 @@ export function AiCreatorInput() {
   const pageId = extractPageSlugId(pageSlug);
   const editor = useAtomValue(pageEditorAtom);
   const titleEditor = useAtomValue(titleEditorAtom);
-  const mode = useAtomValue(aiCreatorModeAtom);
   const [files, setFiles] = useAtom(aiCreatorFilesAtom);
-  const template = useAtomValue(aiCreatorTemplateAtom);
+  const [template, _setTemplate] = useAtom(aiCreatorTemplateAtom);
+  const setTemplate = _setTemplate as (v: string | null) => void;
   const selection = useAtomValue(aiCreatorSelectionAtom);
   const selectionRange = useAtomValue(aiCreatorSelectionRangeAtom);
   const [, setAllMessages] = useAtom(aiCreatorMessagesAtom);
   const [isStreaming, setIsStreaming] = useAtom(aiCreatorStreamingAtom);
-  const insertMode = useAtomValue(aiCreatorInsertModeAtom);
+  const [autoInsert, _setAutoInsert] = useAtom(aiCreatorAutoInsertAtom);
+  const setAutoInsert = _setAutoInsert as (v: boolean) => void;
   const [prompt, setPrompt] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -117,83 +130,77 @@ export function AiCreatorInput() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setIsStreaming(true);
 
+    // Build prompt with selection context if available
+    let fullPrompt = userPrompt;
+    if (selection) {
+      fullPrompt = `[Selected text context]\n${selection}\n\n[User request]\n${userPrompt}`;
+    }
+
     addMessage({
-      id: uuid7(), role: "user", content: userPrompt, mode, timestamp: Date.now(),
+      id: uuid7(),
+      role: "user",
+      content: userPrompt,
+      timestamp: Date.now(),
+      selectionContext: selection || undefined,
+      selectionRange: selectionRange || undefined,
     });
+
     addMessage({
-      id: uuid7(), role: "assistant", content: "", mode, timestamp: Date.now(),
+      id: uuid7(),
+      role: "assistant",
+      content: "",
+      timestamp: Date.now(),
     });
 
     const startTime = Date.now();
 
     try {
-      if (mode === "create") {
-        if (insertMode === "overwrite") {
-          editor.commands.clearContent();
-        }
-        let accumulatedContent = "";
-        abortRef.current = await creatorGenerate(
-          {
-            files, prompt: userPrompt, template: template || undefined, pageId, insertMode,
-            existingContentSummary: pageHasContent
-              ? editor.state.doc.textBetween(0, Math.min(500, editor.state.doc.content.size))
-              : undefined,
-            pageTitle,
-          },
-          (chunk) => { accumulatedContent += chunk.content; updateLastMessage(() => accumulatedContent); },
-          (error) => { notifications.show({ color: "red", message: error.error }); setIsStreaming(false); },
-          () => {
-            if (accumulatedContent) {
-              // Extract first H1 as page title if title is empty
-              let markdown = accumulatedContent;
-              const titleMatch = markdown.match(/^#\s+(.+)$/m);
-              if (titleMatch && titleEditor) {
-                const currentTitle = titleEditor.state.doc.textContent.trim();
-                if (!currentTitle) {
-                  titleEditor.commands.setContent(titleMatch[1].trim());
-                  // Remove the H1 line from body content
-                  markdown = markdown.replace(/^#\s+.+\n*/m, '').trim();
+      let accumulatedContent = "";
+      abortRef.current = await creatorGenerate(
+        {
+          files,
+          prompt: fullPrompt,
+          template: template || undefined,
+          pageId,
+          existingContentSummary: pageHasContent
+            ? editor.state.doc.textBetween(0, Math.min(500, editor.state.doc.content.size))
+            : undefined,
+          pageTitle,
+        },
+        (chunk) => {
+          accumulatedContent += chunk.content;
+          updateLastMessage(() => accumulatedContent);
+        },
+        (error) => {
+          notifications.show({ color: "red", message: error.error });
+          setIsStreaming(false);
+        },
+        () => {
+          // Auto-insert to editor when toggle is on
+          if (autoInsert && accumulatedContent) {
+            let markdown = accumulatedContent;
+            // Extract title
+            if (titleEditor) {
+              const currentTitle = titleEditor.state.doc.textContent.trim();
+              if (!currentTitle) {
+                const [title, remaining] = extractTitle(markdown);
+                if (title) {
+                  titleEditor.commands.setContent(title);
+                  markdown = remaining;
                 }
               }
-              const html = (marked.parse(markdown) as string).trim();
-              if (html) {
-                editor.chain().focus("end").insertContent(html).run();
-              }
             }
-            setIsStreaming(false); setFiles([]);
-            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-            updateLastMessage((c) => c + `\n\n---\n*${elapsed}s*`);
-          },
-        );
-      } else if (mode === "edit") {
-        let accumulatedContent = "";
-        const range = selectionRange;
-        abortRef.current = await generateAiContentStream(
-          { action: AiAction.CUSTOM, content: selection, prompt: userPrompt },
-          (chunk) => { accumulatedContent += chunk.content; updateLastMessage(() => accumulatedContent); },
-          (error) => { notifications.show({ color: "red", message: error.error }); setIsStreaming(false); },
-          () => {
-            if (accumulatedContent && range) {
-              const html = (marked.parse(accumulatedContent) as string).trim();
-              editor.chain().focus().setTextSelection(range).insertContent(html).run();
+            const html = renderMarkdownToEditorHtml(markdown);
+            if (html) {
+              editor.chain().focus("end").insertContent(html).run();
             }
-            setIsStreaming(false);
-            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-            updateLastMessage((c) => c + `\n\n---\n*${elapsed}s*`);
-          },
-        );
-      } else {
-        abortRef.current = await generateAiContentStream(
-          { action: AiAction.CUSTOM, content: selection, prompt: userPrompt },
-          (chunk) => { updateLastMessage((prev) => prev + chunk.content); },
-          (error) => { notifications.show({ color: "red", message: error.error }); setIsStreaming(false); },
-          () => {
-            setIsStreaming(false);
-            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-            updateLastMessage((c) => c + `\n\n---\n*${elapsed}s*`);
-          },
-        );
-      }
+          }
+          setIsStreaming(false);
+          setFiles([]);
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          updateLastMessage((c) => c + `\n\n---\n*${elapsed}s*`);
+        },
+      );
     } catch (error: any) {
       notifications.show({ color: "red", message: error.message });
       setIsStreaming(false);
@@ -204,7 +211,7 @@ export function AiCreatorInput() {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
   };
 
   const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -213,30 +220,89 @@ export function AiCreatorInput() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
   };
+
+  const selectedTemplateOption = template
+    ? AI_TEMPLATE_OPTIONS.find((opt) => opt.key === template)
+    : null;
+  const selectedTemplateName = selectedTemplateOption ? t(selectedTemplateOption.name) : null;
 
   return (
     <div className={classes.inputArea}>
-      {/* File chips - create mode only */}
-      {mode === "create" && <AiCreatorFileList />}
+      {/* File chips above input box */}
+      <AiCreatorFileList />
 
-      {/* Template selector - create mode only */}
-      {mode === "create" && <AiCreatorTemplates />}
+      {/* Input container - LobeHub style */}
+      <div className={classes.inputBox}>
+        {/* Textarea */}
+        <textarea
+          ref={textareaRef}
+          data-ai-input
+          className={classes.inputTextarea}
+          rows={3}
+          placeholder={
+            selection
+              ? t("Ask about the selected text...  Press Shift+Enter for new line")
+              : t("Describe what to create...  Press Shift+Enter for new line")
+          }
+          value={prompt}
+          onChange={handlePromptChange}
+          onKeyDown={handleKeyDown}
+          disabled={isStreaming}
+        />
 
-      {/* Input row */}
-      <div className={classes.inputRow}>
-        {mode === "create" && (
-          <>
+        {/* Bottom toolbar */}
+        <div className={classes.inputToolbar}>
+          {/* Left side: template, upload, auto-insert toggle */}
+          <div className={classes.inputToolbarLeft}>
+            {/* Template selector */}
+            <Menu shadow="md" width={180} position="top-start">
+              <Menu.Target>
+                <Tooltip label={selectedTemplateName || t("Template")} openDelay={300}>
+                  <ActionIcon
+                    variant={template ? "light" : "subtle"}
+                    color={template ? "indigo" : "gray"}
+                    size="sm"
+                  >
+                    <IconTemplate size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              </Menu.Target>
+              <Menu.Dropdown>
+                {AI_TEMPLATE_OPTIONS.map((tmpl) => (
+                  <Menu.Item
+                    key={tmpl.key}
+                    onClick={() => setTemplate(template === tmpl.key ? null : tmpl.key)}
+                    style={template === tmpl.key ? { fontWeight: 600, color: '#6366f1' } : undefined}
+                  >
+                    {t(tmpl.name)}
+                  </Menu.Item>
+                ))}
+                {template && (
+                  <>
+                    <Menu.Divider />
+                    <Menu.Item color="dimmed" onClick={() => setTemplate(null)}>
+                      {t("Clear template")}
+                    </Menu.Item>
+                  </>
+                )}
+              </Menu.Dropdown>
+            </Menu>
+
+            {/* Upload files */}
             <Tooltip label={t("Upload files")} openDelay={300}>
               <ActionIcon
                 variant="subtle"
                 color="gray"
-                size="md"
+                size="sm"
                 onClick={handleFileUpload}
                 disabled={isStreaming || files.length >= MAX_FILES}
               >
-                <IconPaperclip size={18} stroke={1.8} />
+                <IconPaperclip size={16} />
               </ActionIcon>
             </Tooltip>
             <input
@@ -247,42 +313,42 @@ export function AiCreatorInput() {
               style={{ display: "none" }}
               onChange={handleFileChange}
             />
-          </>
-        )}
 
-        <div className={classes.inputWrapper}>
-          <textarea
-            ref={textareaRef}
-            className={classes.inputTextarea}
-            rows={1}
-            placeholder={
-              mode === "create"
-                ? t("Describe what to create...")
-                : mode === "edit"
-                  ? t("Describe how to edit...")
-                  : t("Ask about the selected text...")
-            }
-            value={prompt}
-            onChange={handlePromptChange}
-            onKeyDown={handleKeyDown}
-            disabled={isStreaming}
-          />
-          {isStreaming ? (
-            <ActionIcon variant="filled" color="red" radius="xl" size="sm" onClick={handleStop}>
-              <IconPlayerStop size={14} />
-            </ActionIcon>
-          ) : (
-            <ActionIcon
-              variant="filled"
-              color="blue"
-              radius="xl"
-              size="sm"
-              onClick={handleSubmit}
-              disabled={!prompt.trim()}
+            {/* Auto-insert toggle */}
+            <Tooltip
+              label={autoInsert ? t("Auto-insert ON: AI writes directly to editor") : t("Auto-insert OFF: Manual insert")}
+              openDelay={300}
             >
-              <IconArrowUp size={14} stroke={2.5} />
-            </ActionIcon>
-          )}
+              <ActionIcon
+                variant={autoInsert ? "light" : "subtle"}
+                color={autoInsert ? "indigo" : "gray"}
+                size="sm"
+                onClick={() => setAutoInsert(!autoInsert)}
+              >
+                {autoInsert ? <IconPencil size={16} /> : <IconPencilOff size={16} />}
+              </ActionIcon>
+            </Tooltip>
+          </div>
+
+          {/* Right side: send/stop */}
+          <div className={classes.inputToolbarRight}>
+            {isStreaming ? (
+              <ActionIcon variant="filled" color="red" radius="xl" size="sm" onClick={handleStop}>
+                <IconPlayerStop size={14} />
+              </ActionIcon>
+            ) : (
+              <ActionIcon
+                variant="filled"
+                color="indigo"
+                radius="xl"
+                size="sm"
+                onClick={handleSubmit}
+                disabled={!prompt.trim()}
+              >
+                <IconArrowUp size={14} stroke={2.5} />
+              </ActionIcon>
+            )}
+          </div>
         </div>
       </div>
     </div>

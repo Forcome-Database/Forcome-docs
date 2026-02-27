@@ -5,6 +5,7 @@ import SettingsSidebar from "@/components/settings/settings-sidebar.tsx";
 import { useAtom } from "jotai";
 import {
   asideStateAtom,
+  asideWidthAtom,
   desktopSidebarAtom,
   mobileSidebarAtom,
   sidebarWidthAtom,
@@ -27,8 +28,11 @@ export default function GlobalAppShell({
   const [desktopOpened] = useAtom(desktopSidebarAtom);
   const [{ isAsideOpen }] = useAtom(asideStateAtom);
   const [sidebarWidth, setSidebarWidth] = useAtom(sidebarWidthAtom);
+  const [asideWidth, setAsideWidth] = useAtom(asideWidthAtom);
   const [isResizing, setIsResizing] = useState(false);
+  const [isAsideResizing, setIsAsideResizing] = useState(false);
   const sidebarRef = useRef(null);
+  const asideRef = useRef<HTMLElement>(null);
 
   const startResizing = React.useCallback((mouseDownEvent) => {
     mouseDownEvent.preventDefault();
@@ -59,6 +63,35 @@ export default function GlobalAppShell({
     [isResizing],
   );
 
+  // Aside resize handlers
+  const startAsideResizing = React.useCallback((mouseDownEvent: React.MouseEvent) => {
+    mouseDownEvent.preventDefault();
+    setIsAsideResizing(true);
+  }, []);
+
+  const stopAsideResizing = React.useCallback(() => {
+    setIsAsideResizing(false);
+  }, []);
+
+  const resizeAside = React.useCallback(
+    (mouseMoveEvent: MouseEvent) => {
+      if (isAsideResizing && asideRef.current) {
+        const asideRect = asideRef.current.getBoundingClientRect();
+        const newWidth = asideRect.right - mouseMoveEvent.clientX;
+        if (newWidth < 350) {
+          setAsideWidth(350);
+          return;
+        }
+        if (newWidth > 700) {
+          setAsideWidth(700);
+          return;
+        }
+        setAsideWidth(newWidth);
+      }
+    },
+    [isAsideResizing],
+  );
+
   useEffect(() => {
     //https://codesandbox.io/p/sandbox/kz9de
     window.addEventListener("mousemove", resize);
@@ -68,6 +101,15 @@ export default function GlobalAppShell({
       window.removeEventListener("mouseup", stopResizing);
     };
   }, [resize, stopResizing]);
+
+  useEffect(() => {
+    window.addEventListener("mousemove", resizeAside);
+    window.addEventListener("mouseup", stopAsideResizing);
+    return () => {
+      window.removeEventListener("mousemove", resizeAside);
+      window.removeEventListener("mouseup", stopAsideResizing);
+    };
+  }, [resizeAside, stopAsideResizing]);
 
   const location = useLocation();
   const isSettingsRoute = location.pathname.startsWith("/settings");
@@ -92,7 +134,7 @@ export default function GlobalAppShell({
       }
       aside={
         isPageRoute && {
-          width: 350,
+          width: isAsideOpen ? asideWidth : 350,
           breakpoint: "sm",
           collapsed: { mobile: !isAsideOpen, desktop: !isAsideOpen },
         }
@@ -122,7 +164,10 @@ export default function GlobalAppShell({
       </AppShell.Main>
 
       {isPageRoute && (
-        <AppShell.Aside className={classes.aside} p="md" withBorder={false}>
+        <AppShell.Aside className={classes.aside} p="md" withBorder={false} ref={asideRef}>
+          {isAsideOpen && (
+            <div className={classes.asideResizeHandle} onMouseDown={startAsideResizing} />
+          )}
           <Aside />
         </AppShell.Aside>
       )}
