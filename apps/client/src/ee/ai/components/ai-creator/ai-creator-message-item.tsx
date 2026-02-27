@@ -7,6 +7,7 @@ import {
   IconSparkles,
 } from "@tabler/icons-react";
 import { useAtomValue } from "jotai";
+import { NodeSelection } from "@tiptap/pm/state";
 import { pageEditorAtom, titleEditorAtom } from "@/features/editor/atoms/editor-atoms";
 import { aiCreatorSelectionAtom, aiCreatorSelectionRangeAtom } from "./ai-creator-atoms";
 import { notifications } from "@mantine/notifications";
@@ -127,8 +128,41 @@ export function AiCreatorMessageItem({ message }: Props) {
   const handleReplace = useCallback(() => {
     if (!editor || !selectionRange) return;
     const markdown = stripTimestamp(message.content);
-    const html = renderEditorHtml(markdown);
-    editor.chain().focus().setTextSelection(selectionRange).insertContent(html).run();
+
+    // Determine if the selection is inside or on a code block
+    const $from = editor.state.doc.resolve(selectionRange.from);
+    const isInCodeBlock = $from.parent.type.name === "codeBlock";
+    const isCodeBlockNodeSelected =
+      editor.state.selection instanceof NodeSelection &&
+      (editor.state.selection as NodeSelection).node.type.name === "codeBlock";
+
+    if (isInCodeBlock || isCodeBlockNodeSelected) {
+      // Extract plain code from AI markdown response (strip code fences)
+      const codeMatch = markdown.match(/```[\w]*\n([\s\S]*?)```/);
+      const plainCode = codeMatch ? codeMatch[1].replace(/\n$/, "") : markdown;
+
+      if (isCodeBlockNodeSelected) {
+        // Replace the entire code block node, preserving its language attribute
+        const oldNode = (editor.state.selection as NodeSelection).node;
+        const language = oldNode.attrs.language || "mermaid";
+        const newNode = editor.state.schema.nodes.codeBlock.create(
+          { language },
+          plainCode ? editor.state.schema.text(plainCode) : undefined,
+        );
+        const { tr } = editor.state;
+        tr.replaceWith(selectionRange.from, selectionRange.to, newNode);
+        editor.view.dispatch(tr);
+      } else {
+        // Replace text inside the code block using insertText
+        const { tr } = editor.state;
+        tr.insertText(plainCode, selectionRange.from, selectionRange.to);
+        editor.view.dispatch(tr);
+      }
+    } else {
+      const html = renderEditorHtml(markdown);
+      editor.chain().focus().setTextSelection(selectionRange).insertContent(html).run();
+    }
+
     notifications.show({ message: t("Replaced") });
   }, [editor, message.content, selectionRange, t]);
 
@@ -209,7 +243,7 @@ export function AiCreatorMessageItem({ message }: Props) {
                   <IconArrowBarDown size={14} />
                 </ActionIcon>
               </Tooltip>
-              {selection && selectionRange && (
+              {selectionRange && (
                 <Tooltip label={t("Replace selection")} openDelay={300}>
                   <ActionIcon
                     variant="subtle"

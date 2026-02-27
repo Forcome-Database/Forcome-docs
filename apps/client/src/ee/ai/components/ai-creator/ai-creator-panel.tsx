@@ -8,6 +8,7 @@ import {
 } from "@mantine/core";
 import { IconSparkles, IconX, IconPlus } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
+import { NodeSelection } from "@tiptap/pm/state";
 import { pageEditorAtom } from "@/features/editor/atoms/editor-atoms";
 import { asideStateAtom } from "@/components/layouts/global/hooks/atoms/sidebar-atom";
 import {
@@ -47,10 +48,16 @@ export default function AiCreatorPanel() {
     if (!editor) return;
 
     const onSelectionUpdate = () => {
-      const { from, to, empty } = editor.state.selection;
+      const { selection } = editor.state;
+      const { from, to, empty } = selection;
       if (empty) {
         setSelection("");
         setSelectionRange(null);
+      } else if (selection instanceof NodeSelection) {
+        // NodeSelection (e.g. clicking a code block node) — extract node text
+        const node = selection.node;
+        setSelection(node.textContent || "");
+        setSelectionRange({ from, to });
       } else {
         const text = editor.state.doc.textBetween(from, to, "\n");
         setSelection(text);

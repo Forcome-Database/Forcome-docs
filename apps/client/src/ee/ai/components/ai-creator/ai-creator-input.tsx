@@ -9,6 +9,7 @@ import {
   IconTemplate,
 } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
+import { NodeSelection } from "@tiptap/pm/state";
 import { useParams } from "react-router-dom";
 import { extractPageSlugId } from "@/lib";
 import {
@@ -133,7 +134,14 @@ export function AiCreatorInput() {
     // Build prompt with selection context if available
     let fullPrompt = userPrompt;
     if (selection) {
-      fullPrompt = `[Selected text context]\n${selection}\n\n[User request]\n${userPrompt}`;
+      fullPrompt =
+        `[CRITICAL INSTRUCTION]\n` +
+        `The user has selected a specific portion of text for you to modify.\n` +
+        `You MUST ONLY output the modified version of the selected text below.\n` +
+        `STRICTLY FORBIDDEN: Do NOT rewrite the entire article, do NOT add content outside the scope of the selected text, do NOT output any surrounding context.\n` +
+        `Only return the replacement for the selected text, nothing more.\n\n` +
+        `[Selected text to modify]\n${selection}\n\n` +
+        `[User request]\n${userPrompt}`;
     }
 
     addMessage({
@@ -190,9 +198,45 @@ export function AiCreatorInput() {
                 }
               }
             }
-            const html = renderMarkdownToEditorHtml(markdown);
-            if (html) {
-              editor.chain().focus("end").insertContent(html).run();
+
+            if (selectionRange) {
+              // Replace selection — handle code blocks specially
+              const $from = editor.state.doc.resolve(selectionRange.from);
+              const isInCodeBlock = $from.parent.type.name === "codeBlock";
+              const isCodeBlockNodeSelected =
+                editor.state.selection instanceof NodeSelection &&
+                (editor.state.selection as NodeSelection).node.type.name === "codeBlock";
+
+              if (isInCodeBlock || isCodeBlockNodeSelected) {
+                const codeMatch = markdown.match(/```[\w]*\n([\s\S]*?)```/);
+                const plainCode = codeMatch ? codeMatch[1].replace(/\n$/, "") : markdown;
+
+                if (isCodeBlockNodeSelected) {
+                  const oldNode = (editor.state.selection as NodeSelection).node;
+                  const language = oldNode.attrs.language || "mermaid";
+                  const newNode = editor.state.schema.nodes.codeBlock.create(
+                    { language },
+                    plainCode ? editor.state.schema.text(plainCode) : undefined,
+                  );
+                  const { tr } = editor.state;
+                  tr.replaceWith(selectionRange.from, selectionRange.to, newNode);
+                  editor.view.dispatch(tr);
+                } else {
+                  const { tr } = editor.state;
+                  tr.insertText(plainCode, selectionRange.from, selectionRange.to);
+                  editor.view.dispatch(tr);
+                }
+              } else {
+                const html = renderMarkdownToEditorHtml(markdown);
+                if (html) {
+                  editor.chain().focus().setTextSelection(selectionRange).insertContent(html).run();
+                }
+              }
+            } else {
+              const html = renderMarkdownToEditorHtml(markdown);
+              if (html) {
+                editor.chain().focus("end").insertContent(html).run();
+              }
             }
           }
           setIsStreaming(false);
