@@ -25,11 +25,17 @@ export interface IWorkspace {
   aiSearch?: boolean;
   generativeAi?: boolean;
   disablePublicSharing?: boolean;
+  wikiRenderFormat?: string;
 }
 
 export interface IWorkspaceSettings {
   ai?: IWorkspaceAiSettings;
   sharing?: IWorkspaceSharingSettings;
+  wiki?: IWorkspaceWikiSettings;
+}
+
+export interface IWorkspaceWikiSettings {
+  renderFormat?: 'html' | 'markdown';
 }
 
 export interface IWorkspaceAiSettings {

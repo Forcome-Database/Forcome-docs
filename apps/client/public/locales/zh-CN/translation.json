@@ -74,6 +74,8 @@
   "Failed to import pages": "导入页面失败",
   "Failed to load page. An error occurred.": "页面加载失败。发生了一个错误。",
   "Failed to update data": "数据更新失败",
+  "Wiki render format": "Wiki 渲染格式",
+  "Choose how wiki pages are rendered for visitors. HTML preserves the original editor layout, Markdown provides cleaner text rendering.": "选择访客查看 wiki 页面时的渲染方式。HTML 保持原编辑器布局，Markdown 提供更简洁的文本渲染。",
   "Full access": "完全访问",
   "Full page width": "全页宽度",
   "Full width": "全宽",

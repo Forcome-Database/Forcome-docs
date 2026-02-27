@@ -187,6 +187,22 @@
 
 /* ===== 表格样式 ===== */
 
+/* 覆盖 VitePress .vp-doc 默认表格样式（display:block 破坏 border-collapse，tr border-top 产生多余行） */
+.vp-doc table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.vp-doc tr {
+  border-top: none;
+  background-color: transparent;
+}
+
+.vp-doc tr:nth-child(2n) {
+  background-color: transparent;
+}
+
 .content-wrapper :deep(table) {
   width: 100%;
   margin: 1em 0;

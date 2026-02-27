@@ -370,6 +370,15 @@ export class WorkspaceService {
       delete updateWorkspaceDto.generativeAi;
     }
 
+    if (typeof updateWorkspaceDto.wikiRenderFormat !== 'undefined') {
+      await this.workspaceRepo.updateWikiSettings(
+        workspaceId,
+        'renderFormat',
+        updateWorkspaceDto.wikiRenderFormat,
+      );
+      delete updateWorkspaceDto.wikiRenderFormat;
+    }
+
     if (typeof updateWorkspaceDto.disablePublicSharing !== 'undefined') {
       const currentWorkspace = await this.workspaceRepo.findById(workspaceId, {
         withLicenseKey: true,

@@ -47,6 +47,13 @@ export class DocmostService {
   }
 
   /**
+   * 获取 Wiki 设置
+   */
+  async getSettings(): Promise<{ wiki: { renderFormat: 'html' | 'markdown' } }> {
+    return this.post('settings')
+  }
+
+  /**
    * 获取公开空间列表
    */
   async getSpaces(): Promise<DocmostSpace[]> {

@@ -30,6 +30,13 @@ export class PublicWikiController {
 
   @Public()
   @HttpCode(HttpStatus.OK)
+  @Post('settings')
+  async getSettings(@AuthWorkspace() workspace: Workspace) {
+    return this.publicWikiService.getSettings(workspace.id);
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.OK)
   @Post('spaces')
   async getPublicSpaces(@AuthWorkspace() workspace: Workspace) {
     return this.publicWikiService.getPublicSpaces(workspace.id);

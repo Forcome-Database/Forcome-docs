@@ -17,3 +17,8 @@
 ### 知识学习
 如果你想学习新技术，请查看：
 - [知识学习](/zh/learning/) - 大模型、AI 技术入门
+
+```
+const { data } = await axios.post('/api/chat', {
+  messages: [{ role: 'user', content: '你好' }]
+})

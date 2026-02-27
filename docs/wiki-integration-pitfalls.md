@@ -626,3 +626,203 @@ watch(() => route.path.replace(/#.*$/, ''), () => { loadPage() })
 const path = route.path.replace(/#.*$/, '')
 ```
 **影响文件**：`DocmostContent.vue`（routeParams + watch）、`AIChat.vue`（getCurrentPageSlugId）
+
+---
+
+## 19. Wiki 渲染格式切换相关问题
+
+### 19.1 Markdown 模式下右侧 TOC 导航不显示
+**现象**：切换为 Markdown 渲染模式后，右侧"本页导航"面板为空，无任何标题项
+**原因**：`RightPanel.vue` 的 `buildOutline()` 扫描 `.content-wrapper h2, h3` 时要求 `header.id` 非空才纳入目录。markdown-it 默认不为 `<h2>`/`<h3>` 生成 `id` 属性，导致所有标题被过滤掉
+**修复**：在 `useContentProcessor.ts` 的 `processSpecialBlocks()` 中新增 `addHeadingIds()` 函数，为无 `id` 的标题自动生成 slugified 锚点 ID
+```typescript
+function addHeadingIds(container: HTMLElement): void {
+  const headers = container.querySelectorAll('h1, h2, h3, h4, h5, h6')
+  const usedIds = new Set<string>()
+
+  headers.forEach((header) => {
+    if (header.id) { usedIds.add(header.id); return }
+    let slug = text.toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^\w\u4e00-\u9fff\u3400-\u4dbf-]/g, '')  // 保留中文
+    // ... 处理重复 ID
+    header.id = uniqueSlug
+  })
+}
+```
+**注意**：此修复同时解决了 HTML 模式和 Markdown 模式的 TOC 问题（TipTap HTML 的标题可能也缺少 `id`）
+**文件**：`wiki/docs/.vitepress/theme/composables/useContentProcessor.ts`
+
+### 19.2 HTML 模式下任务列表渲染为普通列表
+**现象**：HTML 模式下任务列表 checkbox 显示为 `□` + 圆点列表，而非内联 checkbox + 文本的横排布局
+**原因**：TipTap 的任务列表 HTML 使用 `<ul data-type="taskList">` + `<li data-type="taskItem">` 结构，需要专门的 CSS（`list-style: none` + flex 布局）。之前只有 markdown-it-task-lists 输出的 `.task-list-item` 样式，没有 TipTap HTML 的对应样式
+**修复**：在 `DocmostContent.vue` 全局样式中新增 TipTap 任务列表 CSS（参照 Docmost 编辑器的 `task-list.css`）
+```css
+.docmost-html-content ul[data-type="taskList"] {
+  list-style: none;
+  padding: 0;
+}
+.docmost-html-content ul[data-type="taskList"] li {
+  display: flex;
+}
+.docmost-html-content ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  margin-right: 0.5rem;
+}
+```
+**文件**：`wiki/docs/.vitepress/theme/components/DocmostContent.vue`
+
+### 19.3 HTML 模式下 Callout 无样式
+**现象**：HTML 模式下 Callout 块显示为无样式的普通文本
+**原因**：TipTap Callout 使用 `<div data-type="callout" data-callout-type="info">` 结构，而 Markdown 模式的 Callout 使用 `.custom-block.info` 类名。两者 HTML 结构完全不同，需要各自独立的 CSS
+**修复**：新增 `div[data-type="callout"]` 的样式，按 `data-callout-type` 属性区分 info/tip/warning/danger 颜色
+**文件**：`wiki/docs/.vitepress/theme/components/DocmostContent.vue`
+
+### 19.4 HTML 模式下表格行距过大
+**现象**：HTML 模式的表格行高比正常 Markdown 表格大一倍
+**原因**：TipTap 在每个 `<td>`/`<th>` 内自动嵌套 `<p>` 标签，VitePress `.vp-doc p` 样式给 `<p>` 加了 `margin: 16px 0`，导致每行多出 32px 间距
+**修复**：新增 CSS 重置表格内 `<p>` 的 margin
+```css
+.docmost-html-content th p,
+.docmost-html-content td p {
+  margin: 0;
+}
+```
+**文件**：`wiki/docs/.vitepress/theme/components/DocmostContent.vue`
+
+### 19.5 turndown 表格转换时 `<p>` 产生多余换行
+**现象**：Markdown 模式下表格格式可能异常（单元格内容被多余换行打断）
+**原因**：`turndown.utils.ts` 的 `listParagraph` 规则对 `<p>` 标签返回 `\n\n${content}\n\n`，但只排除了 `<li>` 内的 `<p>`，没有排除 `<th>` 和 `<td>` 内的。TipTap 在表格单元格内嵌套 `<p>`，多余换行可能破坏 GFM 表格的 markdown 格式
+**修复**：在 parent 判断中增加 `TH` 和 `TD`
+```typescript
+// 修复前
+if (node.parentElement?.nodeName === 'LI') { return content }
+
+// 修复后
+const parent = node.parentElement?.nodeName;
+if (parent === 'LI' || parent === 'TH' || parent === 'TD') { return content }
+```
+**文件**：`packages/editor-ext/src/lib/markdown/utils/turndown.utils.ts`
+> **注意**：修改 `editor-ext` 包后需要重新构建（`pnpm --filter @docmost/editor-ext build`），否则后端仍使用旧的 `dist/index.js`
+
+### 19.6 VitePress `.vp-doc` 表格默认样式冲突
+**现象**：表格上方出现多余的细线行（两种模式均受影响）
+**原因**：内容区域 `<article class="content-wrapper vp-doc">` 同时应用两个类，VitePress 默认 `.vp-doc` 表格样式与自定义样式冲突：
+| VitePress 默认样式 | 问题 |
+|---|---|
+| `.vp-doc table { display: block }` | 破坏 `border-collapse`（仅对 `display: table` 生效），边框无法折叠产生双线 |
+| `.vp-doc tr { border-top: 1px solid }` | 给每个 `<tr>` 顶部画额外边线，`<thead>` 内的 `<tr>` 表现为"多余行" |
+| `.vp-doc tr { background-color }` | 覆盖自定义的透明背景 |
+**修复**：在 `markdown.css` 中直接覆盖 `.vp-doc` 的表格默认值
+```css
+.vp-doc table { display: table; width: 100%; border-collapse: collapse; }
+.vp-doc tr { border-top: none; background-color: transparent; }
+.vp-doc tr:nth-child(2n) { background-color: transparent; }
+```
+**文件**：`wiki/docs/.vitepress/theme/styles/markdown.css`
+
+### 19.7 [待解决] Markdown 模式下表格表头仍多出一行
+**现象**：覆盖 VitePress `.vp-doc` 样式后，Markdown 模式的表格表头上方仍然有一行空行
+**排查进展**：
+- turndown 输出的 Markdown 格式正确（无多余行）
+- markdown-it 渲染的 HTML 结构正确（`<thead><tr><th>...</th></tr></thead>` 无空行）
+- VitePress `.vp-doc` 的 `display: block` 和 `tr { border-top }` 已覆盖
+- 怀疑是 `markdown.css` 中 `:deep()` 选择器在非 scoped CSS 文件中可能无效（`:deep()` 是 Vue SFC scoped style 专属伪类），导致自定义样式未正确应用
+**可能的修复方向**：
+1. 将 `:deep()` 选择器改为直接 CSS 选择器（如 `.content-wrapper table` 而非 `.content-wrapper :deep(table)`）
+2. 或将表格样式移入 Vue SFC 的 `<style>` 块中（非 scoped）
+3. 用浏览器 DevTools 检查实际生效的 CSS 规则优先级
+
+### 19.8 代码块内容未渲染（两种模式）
+**现象**：HTML 和 Markdown 模式下代码块显示为无样式的纯文本，没有背景色、语法高亮或正确的代码块布局
+**原因**（两层）：
+
+**第一层：Markdown 模式 HTML 结构错误**
+markdown-it 的 `highlight` 回调返回 `<div class="code-block-wrapper">...` 开头的 HTML。markdown-it 默认行为：返回值以 `<pre` 开头则直接使用，否则包裹在 `<pre><code>` 中。由于返回值以 `<div>` 开头，markdown-it 将其包裹为：
+```html
+<!-- 无效的嵌套结构 -->
+<pre><code class="language-text">
+  <div class="code-block-wrapper">
+    <div class="code-block-header">...</div>
+    <pre class="code-block-body"><code class="hljs">...</code></pre>
+  </div>
+</code></pre>
+```
+浏览器解析此无效 HTML 时会破坏 DOM 结构。
+
+**修复**：用自定义 `md.renderer.rules.fence` 完全替代 `highlight` 选项。自定义 fence 规则直接控制输出 HTML，不经过 markdown-it 的 `<pre><code>` 包裹逻辑：
+```typescript
+// 替代 new MarkdownIt({ highlight: ... })
+md.renderer.rules.fence = function (tokens, idx) {
+  // 直接返回完整 HTML，无二次包裹
+  return `<div class="code-block-wrapper">...`
+    + `<pre class="code-block-body"><code class="hljs">${highlighted}</code></pre>`
+    + `</div>`
+}
+```
+> **关键知识**：`md.renderer.rules.fence` 替换整个 fence 渲染器，返回值直接作为最终 HTML，不会被 markdown-it 再次包裹。而 `highlight` 选项的返回值会被默认 fence 渲染器二次处理。
+
+**第二层：HTML 模式缺少代码块处理**
+TipTap 输出裸 `<pre><code class="language-xxx">` 结构，没有 wrapper、语言标签、复制按钮。
+**修复**：在 `useContentProcessor.ts` 新增 `wrapCodeBlocks()` 函数，在 `processSpecialBlocks` 中调用。为裸 `<pre><code>` 动态构建 `.code-block-wrapper` + header + 复制按钮结构。
+
+**第三层：CSS 样式缺失**
+代码块 CSS（`.code-block-wrapper`、`.code-block-header`、`.code-block-body` 等）只存在于 `AIChat.vue` 中，限定在 `.ai-chat-markdown` 选择器下，`DocmostContent.vue` 无法继承。
+**修复**：在 `DocmostContent.vue` 的全局 `<style>` 中新增 `.docmost-html-content .code-block-wrapper` 系列样式。
+
+**文件**：
+- `wiki/docs/.vitepress/theme/utils/markdown.ts`（fence 规则）
+- `wiki/docs/.vitepress/theme/composables/useContentProcessor.ts`（wrapCodeBlocks）
+- `wiki/docs/.vitepress/theme/components/DocmostContent.vue`（CSS）
+
+### 19.9 代码块复制按钮点击无反应
+**现象**：两种渲染模式下代码块的复制按钮点击后无任何效果（不复制，图标不变化）
+**原因**（两层）：
+
+**第一层：未引入 `useCodeCopy`**
+`DocmostContent.vue` 没有导入和调用 `useCodeCopy(contentRef)`。代码复制功能通过事件委托在容器元素上监听 `.code-copy-btn` 的点击，未注册则所有点击事件都不会被捕获。
+**修复**：在 `DocmostContent.vue` 中 `import { useCodeCopy }` 并调用 `useCodeCopy(contentRef)`。
+
+**第二层：`onMounted` 时 ref 为 null（时序问题）**
+即使引入了 `useCodeCopy`，复制仍然不工作。根因是 `useCodeCopy` 内部使用 `onMounted` 注册事件监听器：
+```typescript
+onMounted(() => {
+  containerRef.value?.addEventListener('click', handleClick) // null!
+})
+```
+**时序分析**：
+```
+组件创建 → useCodeCopy(contentRef) 调用，onMounted 回调排队
+    ↓
+Vue onMounted 触发 → contentRef.value = null
+    （v-else-if="page" 的 DOM 块未渲染，因为 page 还是 null）
+    → ?.addEventListener 静默跳过 ❌
+    ↓
+loadPage() 异步执行 → page.value = result → DOM 渲染
+    → contentRef 获得 HTMLElement ✅
+    → 但 onMounted 已经执行完毕，监听器永远不会注册
+```
+这是 Vue 条件渲染（`v-if` / `v-else-if`）与 `onMounted` 的经典时序冲突：`onMounted` 只在组件挂载时执行一次，但条件渲染的子元素可能在挂载后才出现。
+
+**修复**：将 `onMounted` 改为 `watch(containerRef, ...)`。Vue 的 template ref 在 DOM 元素挂载/卸载时自动更新，`watch` 在值变化时触发：
+```typescript
+// 修复前：onMounted 时 ref 可能为 null
+onMounted(() => {
+  containerRef.value?.addEventListener('click', handleClick)
+})
+
+// 修复后：watch ref 变化，DOM 出现时自动注册
+watch(containerRef, (newEl, oldEl) => {
+  oldEl?.removeEventListener('click', handleClick)
+  newEl?.addEventListener('click', handleClick)
+})
+```
+- `null → HTMLElement`（DOM 出现）→ 注册监听器 ✅
+- `HTMLElement → null`（DOM 消失）→ 移除监听器 ✅
+- 组件卸载 → `onUnmounted` 兜底清理
+
+> **通用教训**：在 Vue 中，对条件渲染元素的 template ref 注册事件监听器时，**永远不要用 `onMounted`**，应使用 `watch(ref, ...)` 响应 DOM 元素的出现和消失。`onMounted` 只保证组件本身已挂载，不保证条件渲染的子元素已渲染。
+
+**文件**：
+- `wiki/docs/.vitepress/theme/composables/useCodeCopy.ts`
+- `wiki/docs/.vitepress/theme/components/DocmostContent.vue`

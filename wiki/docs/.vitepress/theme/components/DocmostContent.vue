@@ -1,13 +1,15 @@
 <script setup lang="ts">
 /**
  * Docmost 动态内容组件
- * 从 Docmost API 获取页面 HTML 并渲染
+ * 从 Docmost API 获取页面内容并根据设置以 HTML 或 Markdown 模式渲染
  */
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vitepress'
 import { createDocmostService } from '../services/docmost'
 import { useDocmostSidebar } from '../composables/useDocmostSidebar'
 import { rewriteAttachmentUrls, processSpecialBlocks } from '../composables/useContentProcessor'
+import { useCodeCopy } from '../composables/useCodeCopy'
+import { renderMarkdownToHtml } from '../utils/markdown'
 import type { DocmostPage, DocmostSidebarNode } from '../types'
 
 const route = useRoute()
@@ -18,13 +20,42 @@ const page = ref<DocmostPage | null>(null)
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
+const renderFormat = ref<'html' | 'markdown'>('html')
+
+// 代码块复制功能（事件委托监听 .code-copy-btn 点击）
+useCodeCopy(contentRef)
+
+// 模块级缓存：避免每个页面都请求 settings API
+let cachedRenderFormat: 'html' | 'markdown' | null = null
+
+async function loadRenderFormat() {
+  if (cachedRenderFormat) {
+    renderFormat.value = cachedRenderFormat
+    return
+  }
+  try {
+    const settings = await docmostService?.getSettings()
+    if (settings?.wiki?.renderFormat) {
+      cachedRenderFormat = settings.wiki.renderFormat
+      renderFormat.value = cachedRenderFormat
+    }
+  } catch (err) {
+    console.warn('[DocmostContent] 获取 Wiki 设置失败，使用默认 HTML 渲染:', err)
+  }
+}
 
 /**
- * 阶段1：附件 URL 绝对化后的 HTML 内容
+ * 根据 renderFormat 处理页面内容
+ * - markdown 模式：Markdown → 附件 URL 绝对化 → 渲染为 HTML
+ * - html 模式：HTML → 附件 URL 绝对化 → 直接输出
  */
 const processedContent = computed(() => {
   if (!page.value?.content) return ''
-  return rewriteAttachmentUrls(page.value.content)
+  const contentWithUrls = rewriteAttachmentUrls(page.value.content)
+  if (renderFormat.value === 'markdown') {
+    return renderMarkdownToHtml(contentWithUrls)
+  }
+  return contentWithUrls
 })
 
 /**
@@ -143,6 +174,9 @@ const prevNext = computed(() => {
 async function loadPage() {
   if (!docmostService || !routeParams.value) return
 
+  // 首次加载时获取渲染格式设置
+  await loadRenderFormat()
+
   const { slugId } = routeParams.value
   if (!slugId) {
     // 空间根路径，不显示页面内容
@@ -160,7 +194,7 @@ async function loadPage() {
   error.value = null
 
   try {
-    const result = await docmostService.getPage(slugId)
+    const result = await docmostService.getPage(slugId, renderFormat.value)
     page.value = result
 
     // 更新页面标题（修复 404 标签显示）
@@ -508,72 +542,76 @@ onUnmounted(() => {
 </style>
 
 <style>
-/* 全局样式：Docmost TipTap HTML 内容的样式（继承 .vp-doc 行高） */
+/* 全局样式：Docmost 渲染后的内容样式 */
 .docmost-html-content {
 }
 
-/*
- * TipTap 会在 td/th/li 内部包裹 <p> 标签，而 VitePress markdown 不会。
- * .vp-doc p 有 margin: 16px 0，导致表格行高和列表间距被撑大。
- * 以下规则消除嵌套 <p> 的多余间距，对齐原版 .md 效果。
- */
-.docmost-html-content td p,
-.docmost-html-content th p {
-  margin: 0;
-  line-height: inherit;
+/* ===== 代码块（Markdown 模式 + HTML 模式统一结构） ===== */
+.docmost-html-content .code-block-wrapper {
+  margin: 1em 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: var(--vp-code-block-bg, var(--c-bg-soft));
+  border: 1px solid var(--c-border);
 }
 
-.docmost-html-content li > p {
-  margin: 0;
-}
-
-/* Callout 标注框 */
-.docmost-html-content [data-callout] {
-  padding: 12px 16px;
-  border-radius: 6px;
-  margin: 16px 0;
-  border-left: 4px solid;
-}
-
-.docmost-html-content [data-callout="info"] {
-  background-color: rgba(59, 130, 246, 0.08);
-  border-left-color: rgb(59, 130, 246);
-}
-
-.docmost-html-content [data-callout="warning"] {
-  background-color: rgba(245, 158, 11, 0.08);
-  border-left-color: rgb(245, 158, 11);
-}
-
-.docmost-html-content [data-callout="danger"],
-.docmost-html-content [data-callout="error"] {
-  background-color: rgba(239, 68, 68, 0.08);
-  border-left-color: rgb(239, 68, 68);
-}
-
-.docmost-html-content [data-callout="success"],
-.docmost-html-content [data-callout="tip"] {
-  background-color: rgba(34, 197, 94, 0.08);
-  border-left-color: rgb(34, 197, 94);
-}
-
-/* 任务列表 */
-.docmost-html-content ul[data-type="taskList"] {
-  list-style: none;
-  padding-left: 0;
-}
-
-.docmost-html-content ul[data-type="taskList"] li {
+.docmost-html-content .code-block-header {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background-color: var(--vp-code-block-bg, var(--c-bg-soft));
+  border-bottom: 1px solid var(--c-border);
 }
 
-.docmost-html-content ul[data-type="taskList"] li input[type="checkbox"] {
-  margin-top: 5px;
+.docmost-html-content .code-lang-label {
+  font-family: var(--vp-font-family-mono, monospace);
+  font-size: 12px;
+  color: var(--c-text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-/* 折叠块（Docmost 特有） */
+.docmost-html-content .code-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-text-3);
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.docmost-html-content .code-copy-btn:hover {
+  color: var(--c-text-1);
+  background-color: var(--c-hover, rgba(0, 0, 0, 0.05));
+}
+
+.docmost-html-content .code-block-body {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  font-size: 14px;
+  line-height: 1.6;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.docmost-html-content .code-block-body code {
+  font-size: inherit;
+  background: none;
+  padding: 0;
+  border: none;
+  color: var(--c-text-1);
+}
+
+/* 折叠块（turndown 输出 <details>/<summary> HTML 标签） */
 .docmost-html-content details {
   border: 1px solid var(--c-border);
   border-radius: 6px;
@@ -586,8 +624,19 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-/* 表格、代码块、引用块、分隔线、图片等通用元素样式
-   由 .vp-doc (vp-doc.css) 提供，此处不重复定义 */
+/* 任务列表微调（markdown-it-task-lists 插件输出） */
+.docmost-html-content .task-list-item {
+  list-style: none;
+}
+
+.docmost-html-content .task-list-item + .task-list-item {
+  margin-top: 2px;
+}
+
+.docmost-html-content .task-list-item input[type="checkbox"] {
+  margin-right: 0.4em;
+  cursor: default;
+}
 
 /* Mermaid 渲染后容器 */
 .docmost-html-content .docmost-mermaid-rendered {
@@ -598,6 +647,27 @@ onUnmounted(() => {
 .docmost-html-content .docmost-mermaid-rendered svg {
   max-width: 100%;
   height: auto;
+}
+
+/* Mermaid 渲染失败降级样式 */
+.docmost-mermaid-error-hint {
+  padding: 8px 12px;
+  color: var(--vp-c-warning-1, #e2a727);
+  font-size: 13px;
+  border: 1px dashed var(--vp-c-warning-2, #e2a72766);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--vp-c-warning-soft, #e2a72711);
+}
+
+.docmost-html-content pre.docmost-mermaid-error {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  margin-top: 0;
+  opacity: 0.7;
+  font-size: 12px;
+  max-height: 200px;
+  overflow: auto;
 }
 
 /* KaTeX 公式 */
@@ -621,5 +691,92 @@ onUnmounted(() => {
 .docmost-html-content [data-type="embed"] iframe {
   border-radius: 6px;
   max-width: 100%;
+}
+
+/* ===== HTML 模式：表格单元格内 <p> 去 margin ===== */
+.docmost-html-content th p,
+.docmost-html-content td p {
+  margin: 0;
+}
+
+/* ===== HTML 模式：TipTap 任务列表 ===== */
+.docmost-html-content ul[data-type="taskList"] {
+  list-style: none;
+  padding: 0;
+}
+
+.docmost-html-content ul[data-type="taskList"] p {
+  margin: 0;
+}
+
+.docmost-html-content ul[data-type="taskList"] li {
+  display: flex;
+}
+
+.docmost-html-content ul[data-type="taskList"] li > label {
+  padding-top: 0.2rem;
+  flex: 0 0 auto;
+  margin-right: 0.5rem;
+  user-select: none;
+}
+
+.docmost-html-content ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+}
+
+.docmost-html-content ul[data-type="taskList"] li > label input[type="checkbox"] {
+  width: 1em;
+  height: 1em;
+  cursor: default;
+}
+
+/* 嵌套列表在 taskList 内恢复正常 */
+.docmost-html-content ul[data-type="taskList"] li ul li,
+.docmost-html-content ul[data-type="taskList"] li ol li {
+  display: list-item;
+}
+
+.docmost-html-content ul[data-type="taskList"] li ul[data-type="taskList"] > li {
+  display: flex;
+}
+
+/* ===== HTML 模式：TipTap Callout ===== */
+.docmost-html-content div[data-type="callout"] {
+  margin: 1em 0;
+  padding: 1em;
+  border-radius: 6px;
+  border-left: 4px solid;
+  background-color: rgba(0, 102, 255, 0.1);
+  border-color: var(--c-accent, #2563eb);
+}
+
+.docmost-html-content div[data-type="callout"][data-callout-type="info"] {
+  background-color: rgba(0, 102, 255, 0.1);
+  border-color: var(--c-accent, #2563eb);
+}
+
+.docmost-html-content div[data-type="callout"][data-callout-type="tip"],
+.docmost-html-content div[data-type="callout"][data-callout-type="success"] {
+  background-color: rgba(16, 185, 129, 0.1);
+  border-color: #10b981;
+}
+
+.docmost-html-content div[data-type="callout"][data-callout-type="warning"] {
+  background-color: rgba(245, 158, 11, 0.1);
+  border-color: #f59e0b;
+}
+
+.docmost-html-content div[data-type="callout"][data-callout-type="danger"],
+.docmost-html-content div[data-type="callout"][data-callout-type="error"] {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+}
+
+.docmost-html-content div[data-type="callout"] > p:first-child {
+  margin-top: 0;
+}
+
+.docmost-html-content div[data-type="callout"] > p:last-child {
+  margin-bottom: 0;
 }
 </style>

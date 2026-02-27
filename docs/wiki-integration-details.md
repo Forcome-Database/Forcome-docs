@@ -366,3 +366,80 @@ iframe 安全属性：`sandbox="allow-scripts allow-same-origin allow-forms allo
 | 附件下载 | `<div data-type="attachment"><a class="attachment" href="/api/files/...">...</a></div>` | `div[data-type="attachment"]` |
 | Draw.io | `<div data-type="drawio" data-src="..."><img src="/api/files/..."></div>` | `div[data-type="drawio"]` |
 | Excalidraw | `<div data-type="excalidraw" data-src="..."><img src="/api/files/..."></div>` | `div[data-type="excalidraw"]` |
+
+---
+
+## Wiki 渲染格式可切换（HTML / Markdown）
+
+管理员可在 Docmost 工作区设置中切换 Wiki 前台的渲染格式（HTML 或 Markdown），所有匿名访客都受此设置影响。
+
+### 数据流
+
+```
+1. 管理员在 Docmost「设置 > 工作区 > General」切换 wikiRenderFormat
+2. 前端调用 POST /api/workspace/update { wikiRenderFormat: 'markdown' }
+3. 后端 WorkspaceService.update() → WorkspaceRepo.updateWikiSettings()
+4. 存储到 workspaces.settings.wiki.renderFormat（JSONB）
+5. Wiki 前台首次加载时 POST /api/public-wiki/settings 获取设置
+6. DocmostContent.vue 根据设置请求对应 format 并选择渲染路径
+```
+
+### 后端修改文件（5 个）
+
+| 文件 | 修改内容 |
+|------|---------|
+| `apps/server/src/database/repos/workspace/workspace.repo.ts` | 新增 `updateWikiSettings()` 方法（仿 `updateAiSettings`），操作 `settings.wiki.{prefKey}` JSONB 路径 |
+| `apps/server/src/core/workspace/dto/update-workspace.dto.ts` | 新增 `wikiRenderFormat: string` 可选字段 |
+| `apps/server/src/core/workspace/services/workspace.service.ts` | `update()` 方法中新增 `wikiRenderFormat` 处理分支 |
+| `apps/server/src/core/public-wiki/public-wiki.controller.ts` | 新增 `POST /api/public-wiki/settings` 公开端点 |
+| `apps/server/src/core/public-wiki/public-wiki.service.ts` | 新增 `getSettings()` 方法，返回 `{ wiki: { renderFormat } }`，默认 `'html'` |
+
+### 新增 API 端点
+
+| 端点 | 请求体 | 说明 |
+|------|--------|------|
+| `POST /api/public-wiki/settings` | 无 | 返回 Wiki 公开设置（目前仅 `wiki.renderFormat`） |
+
+### Docmost 前端修改文件（3 个）
+
+| 文件 | 修改内容 |
+|------|---------|
+| `apps/client/src/features/workspace/types/workspace.types.ts` | 新增 `IWorkspaceWikiSettings` 接口、`IWorkspace.wikiRenderFormat` 字段 |
+| `apps/client/src/features/workspace/components/settings/components/wiki-render-format-pref.tsx` | **新建**，SegmentedControl 组件（HTML / Markdown），仅管理员可操作 |
+| `apps/client/src/pages/settings/workspace/workspace-settings.tsx` | WorkspaceNameForm 后添加 Divider + WikiRenderFormatPref |
+
+### Wiki 前端修改文件（4 个）
+
+| 文件 | 修改内容 |
+|------|---------|
+| `wiki/docs/.vitepress/theme/services/docmost.ts` | 新增 `getSettings()` 方法 |
+| `wiki/docs/.vitepress/theme/components/DocmostContent.vue` | 新增 `renderFormat` ref + 模块级缓存 + `loadRenderFormat()`；`processedContent` 根据格式选择渲染路径；新增 HTML 模式 CSS（TipTap taskList / callout） |
+| `wiki/docs/.vitepress/theme/composables/useContentProcessor.ts` | 新增 `addHeadingIds()` 为标题自动生成锚点 ID（TOC 依赖） |
+| `wiki/docs/.vitepress/theme/styles/markdown.css` | 覆盖 VitePress `.vp-doc` 表格默认样式 |
+
+### 额外修改文件（1 个）
+
+| 文件 | 修改内容 |
+|------|---------|
+| `packages/editor-ext/src/lib/markdown/utils/turndown.utils.ts` | `listParagraph` 规则增加 `TH`/`TD` 排除，避免表格单元格 `<p>` 被加入多余换行 |
+
+### 渲染路径对比
+
+| 步骤 | HTML 模式 | Markdown 模式 |
+|------|-----------|---------------|
+| API 请求 | `getPage(slugId, 'html')` | `getPage(slugId, 'markdown')` |
+| 后端转换 | `jsonToHtml(prosemirrorJson)` | `jsonToHtml()` → `htmlToMarkdown()` |
+| 前端处理 | `rewriteAttachmentUrls(html)` → v-html | `rewriteAttachmentUrls(md)` → `renderMarkdownToHtml()` → v-html |
+| DOM 后处理 | `addHeadingIds()` + `processSpecialBlocks()` | 同左 |
+| Callout 样式 | `div[data-type="callout"][data-callout-type]` | `.custom-block.info/.tip/.warning/.danger` |
+| 任务列表样式 | `ul[data-type="taskList"]` + `li > label > input` | `.task-list-item` + `input[type="checkbox"]` |
+
+### 设计决策
+
+| 决策 | 选择 | 原因 |
+|------|------|------|
+| 设置级别 | 工作区级别 | Wiki 是公开匿名访问，无法识别用户偏好 |
+| 默认值 | `html` | 向后兼容，不改变现有行为 |
+| 权限 | 仅管理员 | 影响所有访客，需要管理员权限 |
+| 设置缓存 | Wiki 前台模块级变量 | 避免每个页面都请求 settings API |
+| Heading ID | DOM 后处理统一生成 | 两种模式都需要 ID 供 TOC 使用，markdown-it 默认不生成 heading ID |

@@ -1,8 +1,11 @@
 /**
  * 代码复制功能 composable
- * 事件委托模式：在消息列表容器上监听 .code-copy-btn 点击
+ * 事件委托模式：在容器上监听 .code-copy-btn 点击
+ *
+ * 使用 watch 而非 onMounted 注册监听器，因为容器 DOM 可能在
+ * 条件渲染（v-if / v-else-if）中延迟出现，onMounted 时 ref 为 null。
  */
-import { onMounted, onUnmounted, type Ref } from 'vue'
+import { watch, onUnmounted, type Ref } from 'vue'
 
 export function useCodeCopy(containerRef: Ref<HTMLElement | null>) {
   const handleClick = (e: Event) => {
@@ -26,8 +29,10 @@ export function useCodeCopy(containerRef: Ref<HTMLElement | null>) {
     })
   }
 
-  onMounted(() => {
-    containerRef.value?.addEventListener('click', handleClick)
+  // watch ref：DOM 出现时注册，消失时移除
+  watch(containerRef, (newEl, oldEl) => {
+    oldEl?.removeEventListener('click', handleClick)
+    newEl?.addEventListener('click', handleClick)
   })
 
   onUnmounted(() => {

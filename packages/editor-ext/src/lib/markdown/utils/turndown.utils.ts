@@ -33,7 +33,8 @@ function listParagraph(turndownService: _TurndownService) {
   turndownService.addRule('paragraph', {
     filter: ['p'],
     replacement: (content: string, node: HTMLInputElement) => {
-      if (node.parentElement?.nodeName === 'LI') {
+      const parent = node.parentElement?.nodeName;
+      if (parent === 'LI' || parent === 'TH' || parent === 'TD') {
         return content;
       }
       return `\n\n${content}\n\n`;

@@ -37,6 +37,21 @@ export class PublicWikiService {
     private readonly moduleRef: ModuleRef,
   ) {}
 
+  async getSettings(workspaceId: string) {
+    const workspace = await this.db
+      .selectFrom('workspaces')
+      .select('settings')
+      .where('id', '=', workspaceId)
+      .executeTakeFirst();
+
+    return {
+      wiki: {
+        renderFormat:
+          (workspace?.settings as any)?.wiki?.renderFormat || 'html',
+      },
+    };
+  }
+
   private getPublicSpaceSlugs(): string[] {
     return this.environmentService.getWikiPublicSpaceSlugs();
   }

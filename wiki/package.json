@@ -34,6 +34,8 @@
         "ant-design-vue": "^4.2.6",
         "ant-design-x-vue": "^1.5.0",
         "katex": "0.16.27",
+        "markdown-it-container": "^4.0.0",
+        "markdown-it-task-lists": "^2.1.1",
         "markmap-common": "^0.18.9",
         "minisearch": "^7.2.0"
     }
