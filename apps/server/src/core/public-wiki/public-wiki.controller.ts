@@ -15,6 +15,7 @@ import { Workspace } from '@docmost/db/types/entity.types';
 import { PublicWikiService } from './public-wiki.service';
 import {
   PublicSidebarDto,
+  PublicDirectoriesDto,
   PublicPageDto,
   PublicSearchDto,
   PublicAiAnswerDto,
@@ -44,12 +45,22 @@ export class PublicWikiController {
 
   @Public()
   @HttpCode(HttpStatus.OK)
+  @Post('directories')
+  async getDirectories(
+    @Body() dto: PublicDirectoriesDto,
+    @AuthWorkspace() workspace: Workspace,
+  ) {
+    return this.publicWikiService.getDirectories(dto.spaceSlug, workspace.id);
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.OK)
   @Post('sidebar')
   async getSidebar(
     @Body() dto: PublicSidebarDto,
     @AuthWorkspace() workspace: Workspace,
   ) {
-    return this.publicWikiService.getSidebarTree(dto.spaceSlug, workspace.id);
+    return this.publicWikiService.getSidebarTree(dto.spaceSlug, workspace.id, dto.directoryId);
   }
 
   @Public()
