@@ -158,6 +158,7 @@ export class PublicWikiService {
       ])
       .select((eb) => this.pageRepo.withHasChildren(eb))
       .where('spaceId', '=', space.id)
+      .where('directoryId', 'is', null)
       .where('deletedAt', 'is', null)
       .orderBy('position', 'asc')
       .execute();
