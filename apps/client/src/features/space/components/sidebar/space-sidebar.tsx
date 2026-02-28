@@ -10,6 +10,8 @@ import {
   IconArrowDown,
   IconDots,
   IconFileExport,
+  IconFoldDown,
+  IconFoldUp,
   IconHome,
   IconPlus,
   IconSearch,
@@ -17,7 +19,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import classes from "./space-sidebar.module.css";
-import React from "react";
+import React, { useState } from "react";
 import { useAtom } from "jotai";
 import { treeApiAtom } from "@/features/page/tree/atoms/tree-api-atom.ts";
 import { Link, useLocation, useParams } from "react-router-dom";
@@ -48,6 +50,7 @@ export function SpaceSidebar() {
     useDisclosure(false);
   const [mobileSidebarOpened] = useAtom(mobileSidebarAtom);
   const toggleMobileSidebar = useToggleSidebar(mobileSidebarAtom);
+  const [isTreeExpanded, setIsTreeExpanded] = useState(false);
 
   const { spaceSlug } = useParams();
   const { data: space } = useGetSpaceBySlugQuery(spaceSlug);
@@ -160,25 +163,50 @@ export function SpaceSidebar() {
               {t("Pages")}
             </Text>
 
-            {spaceAbility.can(
-              SpaceCaslAction.Manage,
-              SpaceCaslSubject.Page,
-            ) && (
-              <Group gap="xs">
-                <SpaceMenu spaceId={space.id} onSpaceSettings={openSettings} />
+            <Group gap="xs">
+              <Tooltip
+                label={isTreeExpanded ? t("Collapse all") : t("Expand all")}
+                withArrow
+                position="top"
+              >
+                <ActionIcon
+                  variant="subtle"
+                  size={18}
+                  onClick={() => {
+                    if (isTreeExpanded) {
+                      tree?.closeAll();
+                    } else {
+                      tree?.openAll();
+                    }
+                    setIsTreeExpanded(!isTreeExpanded);
+                  }}
+                  aria-label={isTreeExpanded ? t("Collapse all") : t("Expand all")}
+                  c="dimmed"
+                >
+                  {isTreeExpanded ? <IconFoldUp size={16} /> : <IconFoldDown size={16} />}
+                </ActionIcon>
+              </Tooltip>
 
-                <Tooltip label={t("Create page")} withArrow position="right">
-                  <ActionIcon
-                    variant="default"
-                    size={18}
-                    onClick={handleCreatePage}
-                    aria-label={t("Create page")}
-                  >
-                    <IconPlus />
-                  </ActionIcon>
-                </Tooltip>
-              </Group>
-            )}
+              {spaceAbility.can(
+                SpaceCaslAction.Manage,
+                SpaceCaslSubject.Page,
+              ) && (
+                <>
+                  <SpaceMenu spaceId={space.id} onSpaceSettings={openSettings} />
+
+                  <Tooltip label={t("Create page")} withArrow position="right">
+                    <ActionIcon
+                      variant="default"
+                      size={18}
+                      onClick={handleCreatePage}
+                      aria-label={t("Create page")}
+                    >
+                      <IconPlus />
+                    </ActionIcon>
+                  </Tooltip>
+                </>
+              )}
+            </Group>
           </Group>
 
           <div className={classes.pages}>

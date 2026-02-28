@@ -176,8 +176,8 @@ export default function SpaceTree({ spaceId, readOnly }: SpaceTreeProps) {
         directories.map(directoryToTreeNode)
       );
 
-      // Merge: directories first, then uncategorized pages
-      const treeData = [...dirTreeNodes, ...pageTreeData];
+      // Merge directories and uncategorized pages, sorted by position
+      const treeData = sortPositionKeys([...dirTreeNodes, ...pageTreeData]);
 
       setData((prev) => {
         // fresh space; full reset
@@ -335,6 +335,7 @@ function Node({ node, style, dragHandle, tree }: NodeRendererProps<any>) {
   const emit = useQueryEmit();
   const { spaceSlug } = useParams();
   const timerRef = useRef(null);
+  const isLoadingChildrenRef = useRef(false);
   const [mobileSidebarOpened] = useAtom(mobileSidebarAtom);
   const toggleMobileSidebar = useToggleSidebar(mobileSidebarAtom);
 
@@ -360,6 +361,9 @@ function Node({ node, style, dragHandle, tree }: NodeRendererProps<any>) {
 
   async function handleLoadChildren(node: NodeApi<SpaceTreeNode>) {
     if (!node.data.hasChildren) return;
+    if (node.children?.length > 0) return; // Already loaded
+    if (isLoadingChildrenRef.current) return; // Already loading
+    isLoadingChildrenRef.current = true;
 
     const nodeType = node.data.nodeType;
 
@@ -417,8 +421,17 @@ function Node({ node, style, dragHandle, tree }: NodeRendererProps<any>) {
       }
     } catch (error) {
       console.error("Failed to fetch children:", error);
+    } finally {
+      isLoadingChildrenRef.current = false;
     }
   }
+
+  // Auto-load children when node is opened (e.g., via openAll) but children not yet loaded
+  useEffect(() => {
+    if (node.isOpen && node.data.hasChildren && node.children?.length === 0) {
+      handleLoadChildren(node);
+    }
+  }, [node.isOpen]);
 
   const handleUpdateNodeIcon = (nodeId: string, newIcon: string) => {
     const updatedTree = updateTreeNodeIcon(treeData, nodeId, newIcon);

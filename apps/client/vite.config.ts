@@ -44,7 +44,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/api": {
           target: APP_URL,
-          changeOrigin: false,
+          changeOrigin: true,
         },
         "/socket.io": {
           target: APP_URL,

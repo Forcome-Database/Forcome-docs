@@ -17,7 +17,9 @@ import {
   useMovePageMutation,
   useUpdatePageMutation,
   updateCacheOnMovePage,
+  invalidateDirectoryTopicQueries,
 } from "@/features/page/queries/page-query.ts";
+import { queryClient } from "@/main";
 import { generateJitteredKeyBetween } from "fractional-indexing-jittered";
 import { SpaceTreeNode } from "@/features/page/tree/types.ts";
 import { buildPageUrl } from "@/features/page/page.utils.ts";
@@ -189,15 +191,57 @@ export function useTreeMutation<T>(spaceId: string) {
 
     setData(tree.data);
 
-    const payload: IMovePage = {
-      pageId: draggedNodeId,
-      position: newPosition,
-      parentPageId: args.parentId,
-    };
-
     const draggedNode = args.dragNodes[0];
     const nodeData = draggedNode.data as SpaceTreeNode;
     const oldParentId = nodeData.parentPageId ?? null;
+
+    // Detect old directory/topic from tree node data, or infer from parent node type
+    const previousParentData = (args.dragNodes[0].parent?.data as SpaceTreeNode) ?? undefined;
+    const previousParentType = previousParentData?.nodeType;
+    let oldDirectoryId: string | null = nodeData.directoryId ?? null;
+    let oldTopicId: string | null = nodeData.topicId ?? null;
+    if (!oldDirectoryId && !oldTopicId) {
+      // Fallback: infer from parent node in tree
+      if (previousParentType === "directory") {
+        oldDirectoryId = args.dragNodes[0].parent.id;
+      } else if (previousParentType === "topic") {
+        oldDirectoryId = previousParentData?.directoryId ?? null;
+        oldTopicId = args.dragNodes[0].parent.id;
+      }
+    }
+
+    // Determine actual parentPageId, directoryId, topicId based on drop target type
+    const parentNodeData = args.parentNode?.data as SpaceTreeNode | undefined;
+    const parentNodeType = parentNodeData?.nodeType;
+
+    let actualParentPageId: string | null = args.parentId;
+    let newDirectoryId: string | null = null;
+    let newTopicId: string | null = null;
+
+    if (parentNodeType === "directory") {
+      // Dropped on a directory node: categorize under this directory
+      actualParentPageId = null;
+      newDirectoryId = args.parentId;
+      newTopicId = null;
+    } else if (parentNodeType === "topic") {
+      // Dropped on a topic node: categorize under this topic (and its parent directory)
+      actualParentPageId = null;
+      newDirectoryId = parentNodeData?.directoryId ?? null;
+      newTopicId = args.parentId;
+    } else {
+      // Dropped on a regular page or root: clear directory/topic categorization
+      newDirectoryId = null;
+      newTopicId = null;
+    }
+
+    const payload: IMovePage = {
+      pageId: draggedNodeId,
+      position: newPosition,
+      parentPageId: actualParentPageId,
+      directoryId: newDirectoryId,
+      topicId: newTopicId,
+    };
+
     const pageData = {
       id: nodeData.id,
       slugId: nodeData.slugId,
@@ -205,14 +249,46 @@ export function useTreeMutation<T>(spaceId: string) {
       icon: nodeData.icon,
       position: newPosition,
       spaceId: nodeData.spaceId,
-      parentPageId: args.parentId,
+      parentPageId: actualParentPageId,
       hasChildren: nodeData.hasChildren,
     };
+
+    const wasInDirectory = !!oldDirectoryId || !!oldTopicId;
+    const isNowInDirectory = !!newDirectoryId || !!newTopicId;
 
     try {
       await movePageMutation.mutateAsync(payload);
 
-      updateCacheOnMovePage(spaceId, draggedNodeId, oldParentId, args.parentId, pageData);
+      if (!wasInDirectory && !isNowInDirectory) {
+        // Normal sidebar-to-sidebar move
+        updateCacheOnMovePage(spaceId, draggedNodeId, oldParentId, actualParentPageId, pageData);
+      } else {
+        // Involves directory/topic: handle cache invalidation carefully
+        if (!wasInDirectory) {
+          // Was in sidebar → now in dir/topic: invalidate old sidebar cache
+          if (oldParentId === null) {
+            queryClient.invalidateQueries({ queryKey: ["root-sidebar-pages", spaceId] });
+          } else {
+            queryClient.invalidateQueries({ queryKey: ["sidebar-pages", { pageId: oldParentId, spaceId }] });
+          }
+        }
+        if (!isNowInDirectory) {
+          // Was in dir/topic → now in sidebar: invalidate new sidebar cache
+          if (actualParentPageId === null) {
+            queryClient.invalidateQueries({ queryKey: ["root-sidebar-pages", spaceId] });
+          } else {
+            queryClient.invalidateQueries({ queryKey: ["sidebar-pages", { pageId: actualParentPageId, spaceId }] });
+          }
+        }
+        // Invalidate old directory/topic caches
+        if (oldDirectoryId || oldTopicId) {
+          invalidateDirectoryTopicQueries(spaceId, oldDirectoryId, oldTopicId);
+        }
+        // Invalidate new directory/topic caches
+        if (newDirectoryId || newTopicId) {
+          invalidateDirectoryTopicQueries(spaceId, newDirectoryId, newTopicId);
+        }
+      }
 
       setTimeout(() => {
         emit({
