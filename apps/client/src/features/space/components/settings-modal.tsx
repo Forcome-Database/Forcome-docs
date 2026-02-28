@@ -10,6 +10,8 @@ import {
   SpaceCaslSubject,
 } from "@/features/space/permissions/permissions.type.ts";
 import { useTranslation } from "react-i18next";
+import { DirectoryList } from "@/features/directory/components/directory-list";
+import { TopicList } from "@/features/topic/components/topic-list";
 
 interface SpaceSettingsModalProps {
   spaceId: string;
@@ -59,6 +61,12 @@ export default function SpaceSettingsModal({
                   <Tabs.Tab fw={500} value="members">
                     {t("Members")}
                   </Tabs.Tab>
+                  <Tabs.Tab fw={500} value="directories">
+                    {t("Directories")}
+                  </Tabs.Tab>
+                  <Tabs.Tab fw={500} value="topics">
+                    {t("Topics")}
+                  </Tabs.Tab>
                 </Tabs.List>
 
                 <Tabs.Panel value="general">
@@ -91,6 +99,34 @@ export default function SpaceSettingsModal({
                       SpaceCaslSubject.Member,
                     )}
                   />
+                </Tabs.Panel>
+
+                <Tabs.Panel value="directories">
+                  <ScrollArea h={580} scrollbarSize={5} pr={8}>
+                    <div style={{ paddingTop: "16px", paddingBottom: "100px" }}>
+                      <DirectoryList
+                        spaceId={space?.id}
+                        readOnly={spaceAbility.cannot(
+                          SpaceCaslAction.Manage,
+                          SpaceCaslSubject.Settings,
+                        )}
+                      />
+                    </div>
+                  </ScrollArea>
+                </Tabs.Panel>
+
+                <Tabs.Panel value="topics">
+                  <ScrollArea h={580} scrollbarSize={5} pr={8}>
+                    <div style={{ paddingTop: "16px", paddingBottom: "100px" }}>
+                      <TopicList
+                        spaceId={space?.id}
+                        readOnly={spaceAbility.cannot(
+                          SpaceCaslAction.Manage,
+                          SpaceCaslSubject.Settings,
+                        )}
+                      />
+                    </div>
+                  </ScrollArea>
                 </Tabs.Panel>
               </Tabs>
             </div>
