@@ -26,9 +26,11 @@ import {
   IconDotsVertical,
   IconFileDescription,
   IconFileExport,
+  IconFolder,
   IconLink,
   IconPlus,
   IconPointFilled,
+  IconTag,
   IconTrash,
 } from "@tabler/icons-react";
 import {
@@ -43,12 +45,14 @@ import {
   buildTree,
   buildTreeWithChildren,
   mergeRootTrees,
+  sortPositionKeys,
   updateTreeNodeIcon,
 } from "@/features/page/tree/utils/utils.ts";
 import { SpaceTreeNode } from "@/features/page/tree/types.ts";
 import {
   getPageBreadcrumbs,
   getPageById,
+  getAllSidebarPages,
   getSidebarPages,
 } from "@/features/page/services/page-service.ts";
 import { IPage, SidebarPagesParams } from "@/features/page/types/page.types.ts";
@@ -75,6 +79,41 @@ import { useToggleSidebar } from "@/components/layouts/global/hooks/hooks/use-to
 import CopyPageModal from "../../components/copy-page-modal.tsx";
 import CategorizePageModal from "../../components/categorize-page-modal.tsx";
 import { duplicatePage } from "../../services/page-service.ts";
+import { useGetDirectoriesQuery } from "@/features/directory/queries/directory-query.ts";
+import { getTopics } from "@/features/topic/services/topic-service.ts";
+import { IDirectory } from "@/features/directory/types/directory.types.ts";
+import { ITopic } from "@/features/topic/types/topic.types.ts";
+
+function directoryToTreeNode(dir: IDirectory): SpaceTreeNode {
+  return {
+    id: dir.id,
+    slugId: dir.slug || '',
+    name: dir.name,
+    icon: dir.icon,
+    position: dir.position || 'a0',
+    spaceId: dir.spaceId,
+    parentPageId: null,
+    hasChildren: true,
+    children: [],
+    nodeType: 'directory',
+  };
+}
+
+function topicToTreeNode(topic: ITopic): SpaceTreeNode {
+  return {
+    id: topic.id,
+    slugId: topic.slug || '',
+    name: topic.name,
+    icon: topic.icon,
+    position: topic.position || 'a0',
+    spaceId: topic.spaceId,
+    parentPageId: null,
+    hasChildren: true,
+    children: [],
+    nodeType: 'topic',
+    directoryId: topic.directoryId,
+  };
+}
 
 interface SpaceTreeProps {
   spaceId: string;
@@ -96,6 +135,7 @@ export default function SpaceTree({ spaceId, readOnly }: SpaceTreeProps) {
   } = useGetRootSidebarPagesQuery({
     spaceId,
   });
+  const { data: dirData } = useGetDirectoriesQuery(spaceId);
   const [, setTreeApi] = useAtom<TreeApi<SpaceTreeNode>>(treeApiAtom);
   const treeApiRef = useRef<TreeApi<SpaceTreeNode>>();
   const [openTreeNodes, setOpenTreeNodes] = useAtom<OpenMap>(openTreeNodesAtom);
@@ -128,7 +168,16 @@ export default function SpaceTree({ spaceId, readOnly }: SpaceTreeProps) {
   useEffect(() => {
     if (pagesData?.pages && !hasNextPage) {
       const allItems = pagesData.pages.flatMap((page) => page.items);
-      const treeData = buildTree(allItems);
+      const pageTreeData = buildTree(allItems);
+
+      // Convert directories to tree nodes
+      const directories = dirData?.items || [];
+      const dirTreeNodes = sortPositionKeys(
+        directories.map(directoryToTreeNode)
+      );
+
+      // Merge: directories first, then uncategorized pages
+      const treeData = [...dirTreeNodes, ...pageTreeData];
 
       setData((prev) => {
         // fresh space; full reset
@@ -143,7 +192,7 @@ export default function SpaceTree({ spaceId, readOnly }: SpaceTreeProps) {
         return mergeRootTrees(prev, treeData);
       });
     }
-  }, [pagesData, hasNextPage, spaceId]);
+  }, [pagesData, hasNextPage, spaceId, dirData]);
 
   useEffect(() => {
     const effectSpaceId = spaceId;
@@ -311,23 +360,61 @@ function Node({ node, style, dragHandle, tree }: NodeRendererProps<any>) {
 
   async function handleLoadChildren(node: NodeApi<SpaceTreeNode>) {
     if (!node.data.hasChildren) return;
-    // in conflict with use-query-subscription.ts => case "addTreeNode","moveTreeNode" etc with websocket
-    // if (node.data.children && node.data.children.length > 0) {
-    //   return;
-    // }
+
+    const nodeType = node.data.nodeType;
 
     try {
-      const params: SidebarPagesParams = {
-        pageId: node.data.id,
-        spaceId: node.data.spaceId,
-      };
+      if (nodeType === 'directory') {
+        // Fetch topics for this directory
+        const topicsResult = await getTopics(node.data.id);
+        const topicNodes = sortPositionKeys(
+          (topicsResult?.items || []).map(topicToTreeNode)
+        );
 
-      const childrenTree = await fetchAllAncestorChildren(params);
+        // Fetch direct pages under this directory (no topic)
+        const pagesResult = await getAllSidebarPages({
+          spaceId: node.data.spaceId,
+          directoryId: node.data.id,
+        });
+        const allPages = pagesResult.pages.flatMap((p) => p.items);
+        // Filter pages that have no topicId (direct children of directory)
+        const directPages = allPages.filter((page) => !page.topicId);
+        const pageNodes = buildTree(directPages);
 
-      appendChildren({
-        parentId: node.data.id,
-        children: childrenTree,
-      });
+        // Merge: topics first, then direct pages
+        const children = [...topicNodes, ...pageNodes];
+
+        appendChildren({
+          parentId: node.data.id,
+          children,
+        });
+      } else if (nodeType === 'topic') {
+        // Fetch pages under this topic
+        const pagesResult = await getAllSidebarPages({
+          spaceId: node.data.spaceId,
+          topicId: node.data.id,
+        });
+        const allPages = pagesResult.pages.flatMap((p) => p.items);
+        const pageNodes = buildTree(allPages);
+
+        appendChildren({
+          parentId: node.data.id,
+          children: pageNodes,
+        });
+      } else {
+        // Default: page node - existing logic
+        const params: SidebarPagesParams = {
+          pageId: node.data.id,
+          spaceId: node.data.spaceId,
+        };
+
+        const childrenTree = await fetchAllAncestorChildren(params);
+
+        appendChildren({
+          parentId: node.data.id,
+          children: childrenTree,
+        });
+      }
     } catch (error) {
       console.error("Failed to fetch children:", error);
     }
@@ -388,6 +475,55 @@ function Node({ node, style, dragHandle, tree }: NodeRendererProps<any>) {
     }, 650);
   }
 
+  const nodeType = node.data.nodeType;
+
+  // Directory and Topic nodes: no navigation, click toggles expand
+  if (nodeType === 'directory' || nodeType === 'topic') {
+    return (
+      <>
+        <Box
+          style={style}
+          className={clsx(classes.node, node.state)}
+          // @ts-ignore
+          ref={dragHandle}
+          onClick={() => {
+            node.toggle();
+            handleLoadChildren(node);
+          }}
+        >
+          <PageArrow node={node} onExpandTree={() => handleLoadChildren(node)} />
+
+          <ActionIcon
+            variant="transparent"
+            c="gray"
+            style={{ marginRight: "4px" }}
+          >
+            {node.data.icon ? (
+              node.data.icon
+            ) : nodeType === 'directory' ? (
+              <IconFolder size={18} />
+            ) : (
+              <IconTag size={18} />
+            )}
+          </ActionIcon>
+
+          <span className={classes.text}>{node.data.name || t("untitled")}</span>
+
+          <div className={classes.actions}>
+            {!tree.props.disableEdit && (
+              <CreateNode
+                node={node}
+                treeApi={tree}
+                onExpandTree={() => handleLoadChildren(node)}
+              />
+            )}
+          </div>
+        </Box>
+      </>
+    );
+  }
+
+  // Page nodes: full behavior with navigation, emoji picker, node menu
   const pageUrl = buildPageUrl(spaceSlug, node.data.slugId, node.data.name);
 
   return (

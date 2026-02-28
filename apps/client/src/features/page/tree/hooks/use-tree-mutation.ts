@@ -37,11 +37,24 @@ export function useTreeMutation<T>(spaceId: string) {
   const emit = useQueryEmit();
 
   const onCreate: CreateHandler<T> = async ({ parentId, index, type }) => {
-    const payload: { spaceId: string; parentPageId?: string } = {
+    const payload: { spaceId: string; parentPageId?: string; directoryId?: string; topicId?: string } = {
       spaceId: spaceId,
     };
+
     if (parentId) {
-      payload.parentPageId = parentId;
+      const parentNode = tree.find(parentId);
+      const parentNodeType = (parentNode?.data as SpaceTreeNode)?.nodeType;
+
+      if (parentNodeType === 'directory') {
+        payload.directoryId = parentId;
+        // Don't set parentPageId - the page is at root level in page hierarchy
+      } else if (parentNodeType === 'topic') {
+        payload.directoryId = (parentNode.data as SpaceTreeNode).directoryId;
+        payload.topicId = parentId;
+        // Don't set parentPageId
+      } else {
+        payload.parentPageId = parentId;
+      }
     }
 
     let createdPage: IPage;
@@ -101,6 +114,12 @@ export function useTreeMutation<T>(spaceId: string) {
     parentNode: NodeApi<T> | null;
     index: number;
   }) => {
+    const draggedNodeType = (args.dragNodes[0].data as SpaceTreeNode)?.nodeType;
+    // Don't allow moving directory or topic nodes
+    if (draggedNodeType === 'directory' || draggedNodeType === 'topic') {
+      return;
+    }
+
     const draggedNodeId = args.dragIds[0];
 
     tree.move({

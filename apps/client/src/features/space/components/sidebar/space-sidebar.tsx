@@ -27,7 +27,6 @@ import SpaceSettingsModal from "@/features/space/components/settings-modal.tsx";
 import { useGetSpaceBySlugQuery } from "@/features/space/queries/space-query.ts";
 import { getSpaceUrl } from "@/lib/config.ts";
 import SpaceTree from "@/features/page/tree/components/space-tree.tsx";
-import { SidebarDirectories } from "@/features/directory/components/sidebar-directories.tsx";
 import { useSpaceAbility } from "@/features/space/permissions/use-space-ability.ts";
 import {
   SpaceCaslAction,
@@ -183,7 +182,6 @@ export function SpaceSidebar() {
           </Group>
 
           <div className={classes.pages}>
-            <SidebarDirectories spaceId={space.id} />
             <SpaceTree
               spaceId={space.id}
               readOnly={spaceAbility.cannot(
