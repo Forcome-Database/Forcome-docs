@@ -649,6 +649,23 @@ export class PageService {
     await this.pageRepo.updatePage(updateData, dto.pageId);
   }
 
+  async categorizePage(
+    pageId: string,
+    directoryId: string | null | undefined,
+    topicId: string | null | undefined,
+  ): Promise<void> {
+    const updateData: Record<string, any> = {};
+    if (directoryId !== undefined) {
+      updateData.directoryId = directoryId || null;
+    }
+    if (topicId !== undefined) {
+      updateData.topicId = topicId || null;
+    }
+    if (Object.keys(updateData).length > 0) {
+      await this.pageRepo.updatePage(updateData, pageId);
+    }
+  }
+
   async getPageBreadCrumbs(childPageId: string) {
     const ancestors = await this.db
       .withRecursive('page_ancestors', (db) =>

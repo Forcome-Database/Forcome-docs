@@ -19,6 +19,7 @@ import classes from "@/features/page/tree/styles/tree.module.css";
 import { ActionIcon, Box, Menu, rem, Text } from "@mantine/core";
 import {
   IconArrowRight,
+  IconCategory,
   IconChevronDown,
   IconChevronRight,
   IconCopy,
@@ -72,6 +73,7 @@ import MovePageModal from "../../components/move-page-modal.tsx";
 import { mobileSidebarAtom } from "@/components/layouts/global/hooks/atoms/sidebar-atom.ts";
 import { useToggleSidebar } from "@/components/layouts/global/hooks/hooks/use-toggle-sidebar.ts";
 import CopyPageModal from "../../components/copy-page-modal.tsx";
+import CategorizePageModal from "../../components/categorize-page-modal.tsx";
 import { duplicatePage } from "../../services/page-service.ts";
 
 interface SpaceTreeProps {
@@ -498,6 +500,10 @@ function NodeMenu({ node, treeApi, spaceId }: NodeMenuProps) {
     copyPageModalOpened,
     { open: openCopyPageModal, close: closeCopySpaceModal },
   ] = useDisclosure(false);
+  const [
+    categorizeModalOpened,
+    { open: openCategorizeModal, close: closeCategorizeModal },
+  ] = useDisclosure(false);
 
   const handleCopyLink = () => {
     const pageUrl =
@@ -645,6 +651,17 @@ function NodeMenu({ node, treeApi, spaceId }: NodeMenuProps) {
                 {t("Copy to space")}
               </Menu.Item>
 
+              <Menu.Item
+                leftSection={<IconCategory size={16} />}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openCategorizeModal();
+                }}
+              >
+                {t("Categorize")}
+              </Menu.Item>
+
               <Menu.Divider />
               <Menu.Item
                 c="red"
@@ -675,6 +692,15 @@ function NodeMenu({ node, treeApi, spaceId }: NodeMenuProps) {
         currentSpaceSlug={spaceSlug}
         onClose={closeCopySpaceModal}
         open={copyPageModalOpened}
+      />
+
+      <CategorizePageModal
+        pageId={node.id}
+        spaceId={spaceId}
+        currentDirectoryId={node.data.directoryId}
+        currentTopicId={node.data.topicId}
+        open={categorizeModalOpened}
+        onClose={closeCategorizeModal}
       />
 
       <ExportModal

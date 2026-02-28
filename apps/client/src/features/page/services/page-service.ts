@@ -62,6 +62,15 @@ export async function duplicatePage(data: ICopyPageToSpace): Promise<IPage> {
   return req.data;
 }
 
+export async function categorizePage(data: {
+  pageId: string;
+  directoryId?: string | null;
+  topicId?: string | null;
+}): Promise<IPage> {
+  const req = await api.post<IPage>("/pages/categorize", data);
+  return req.data;
+}
+
 export async function getSidebarPages(
   params: SidebarPagesParams,
 ): Promise<IPagination<IPage>> {

@@ -35,6 +35,7 @@ import { PageRepo } from '@docmost/db/repos/page/page.repo';
 import { RecentPageDto } from './dto/recent-page.dto';
 import { DuplicatePageDto } from './dto/duplicate-page.dto';
 import { DeletedPageDto } from './dto/deleted-page.dto';
+import { CategorizePageDto } from './dto/categorize-page.dto';
 import {
   jsonToHtml,
   jsonToMarkdown,
@@ -404,6 +405,26 @@ export class PageController {
 
       return this.pageService.duplicatePage(copiedPage, undefined, user, dto.directoryId, dto.topicId);
     }
+  }
+
+  @HttpCode(HttpStatus.OK)
+  @Post('categorize')
+  async categorizePage(
+    @Body() dto: CategorizePageDto,
+    @AuthUser() user: User,
+  ) {
+    const page = await this.pageRepo.findById(dto.pageId);
+    if (!page) {
+      throw new NotFoundException('Page not found');
+    }
+
+    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    if (ability.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
+      throw new ForbiddenException();
+    }
+
+    await this.pageService.categorizePage(dto.pageId, dto.directoryId, dto.topicId);
+    return this.pageRepo.findById(dto.pageId, { includeSpace: true });
   }
 
   @HttpCode(HttpStatus.OK)
