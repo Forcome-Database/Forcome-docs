@@ -1,7 +1,7 @@
 # 目录/主题层级系统设计文档
 
 > 日期：2026-02-28
-> 状态：已批准
+> 状态：已批准（v2，含 Codex 评审修正）
 > 分支：feater-dir-refactor
 
 ## 1. 概述
@@ -14,10 +14,10 @@
 |------|------|
 | 层级结构 | Space → Directory(扁平) → Topic(扁平) → Page(可嵌套) |
 | 嵌套方式 | Directory/Topic 均为一级扁平，Page 保留 parent_page_id 无限嵌套 |
-| 权限模式 | 继承 + 只能缩小覆盖（子级权限 ≤ 父级） |
-| 架构方案 | 独立表（directories + topics + directory_members + topic_members） |
+| 权限模式 | **一期：纯继承 Space 权限**（二期加覆盖能力） |
+| 架构方案 | 独立表（directories + topics，**一期无 member 表**） |
 | 侧边栏 | 分组折叠式（Directory/Topic/Page 混合树） |
-| 管理入口 | /settings 独立页面 |
+| 管理入口 | **SpaceSettingsModal 内新增 Tab**（非独立路由） |
 | URL 路由 | 不变，保持 /s/:spaceSlug/p/:pageSlug |
 | 删除 Directory | 级联删除其下 Topic，页面变未分类 |
 | 删除 Topic | 页面保留在 Directory 下（topic_id=null） |
