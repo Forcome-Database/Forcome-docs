@@ -10,6 +10,8 @@ export interface IPage {
   parentPageId: string;
   creatorId: string;
   spaceId: string;
+  directoryId?: string;
+  topicId?: string;
   workspaceId: string;
   isLocked: boolean;
   lastUpdatedById: string;
@@ -63,6 +65,9 @@ export interface SidebarPagesParams {
   spaceId?: string;
   pageId?: string;
   cursor?: string;
+  directoryId?: string;
+  topicId?: string;
+  filterUncategorized?: boolean;
 }
 
 export interface IPageInput {

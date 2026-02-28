@@ -8,4 +8,7 @@ export type SpaceTreeNode = {
   parentPageId: string;
   hasChildren: boolean;
   children: SpaceTreeNode[];
+  nodeType?: "directory" | "topic" | "page";
+  directoryId?: string;
+  topicId?: string;
 };
