@@ -19,6 +19,7 @@ import { ShareModule } from './share/share.module';
 import { NotificationModule } from './notification/notification.module';
 import { WatcherModule } from './watcher/watcher.module';
 import { PublicWikiModule } from './public-wiki/public-wiki.module';
+import { DirectoryModule } from './directory/directory.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { PublicWikiModule } from './public-wiki/public-wiki.module';
     SpaceModule,
     GroupModule,
     CaslModule,
+    DirectoryModule,
     ShareModule,
     NotificationModule,
     WatcherModule,
