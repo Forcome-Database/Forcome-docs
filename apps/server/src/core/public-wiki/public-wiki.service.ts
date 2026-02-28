@@ -250,10 +250,9 @@ export class PublicWikiService {
         icon: p.icon,
         position: p.position,
         hasChildren: p.hasChildren,
-        children: p.hasChildren ? this.buildTree(
-          pages.filter((cp) => cp.topicId === topic.id),
-          p.id,
-        ) : [],
+        // Pass all pages so buildTree can find children via parentPageId
+        // (child pages may not have topicId set, only their ancestors do)
+        children: p.hasChildren ? this.buildTree(pages, p.id) : [],
       }));
 
       return {
@@ -278,10 +277,8 @@ export class PublicWikiService {
       icon: p.icon,
       position: p.position,
       hasChildren: p.hasChildren,
-      children: p.hasChildren ? this.buildTree(
-        pages.filter((cp) => !cp.topicId),
-        p.id,
-      ) : [],
+      // Pass all pages so buildTree can find children via parentPageId
+      children: p.hasChildren ? this.buildTree(pages, p.id) : [],
     }));
 
     // Merge and sort all top-level items by position
