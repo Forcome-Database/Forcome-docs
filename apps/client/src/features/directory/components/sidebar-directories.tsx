@@ -27,6 +27,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { getSidebarPages } from "@/features/page/services/page-service";
 import { IPage } from "@/features/page/types/page.types";
 import { notifications } from "@mantine/notifications";
+import { invalidateDirectoryTopicQueries } from "@/features/page/queries/page-query";
 
 interface SidebarDirectoriesProps {
   spaceId: string;
@@ -67,6 +68,7 @@ function DirectoryNode({
         spaceId,
         directoryId: directory.id,
       });
+      invalidateDirectoryTopicQueries(spaceId, directory.id, null);
       const pageUrl = buildPageUrl(spaceSlug, page.slugId, page.title);
       navigate(pageUrl);
     } catch {
@@ -193,6 +195,7 @@ function TopicNode({
         directoryId: topic.directoryId,
         topicId: topic.id,
       });
+      invalidateDirectoryTopicQueries(spaceId, topic.directoryId, topic.id);
       const pageUrl = buildPageUrl(spaceSlug, page.slugId, page.title);
       navigate(pageUrl);
     } catch {
@@ -296,13 +299,16 @@ function PageItem({ page }: { page: Partial<IPage> }) {
   const pageUrl = buildPageUrl(spaceSlug, page.slugId, page.title);
 
   return (
-    <UnstyledButton
-      component={Link}
+    <Link
       to={pageUrl}
-      py={3}
-      px={8}
-      w="100%"
-      style={{ borderRadius: 4 }}
+      style={{
+        textDecoration: "none",
+        color: "inherit",
+        display: "block",
+        padding: "3px 8px",
+        borderRadius: 4,
+        width: "100%",
+      }}
     >
       <Group gap={6} wrap="nowrap">
         {page.icon ? (
@@ -316,6 +322,6 @@ function PageItem({ page }: { page: Partial<IPage> }) {
           {page.title || "untitled"}
         </Text>
       </Group>
-    </UnstyledButton>
+    </Link>
   );
 }

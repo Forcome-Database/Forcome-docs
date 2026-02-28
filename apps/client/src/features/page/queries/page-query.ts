@@ -261,7 +261,11 @@ export function useGetRootSidebarPagesQuery(data: SidebarPagesParams) {
   return useInfiniteQuery({
     queryKey: ["root-sidebar-pages", data.spaceId],
     queryFn: async ({ pageParam }) => {
-      return getSidebarPages({ spaceId: data.spaceId, cursor: pageParam });
+      return getSidebarPages({
+        spaceId: data.spaceId,
+        cursor: pageParam,
+        filterUncategorized: true,
+      });
     },
     initialPageParam: undefined,
     getNextPageParam: (lastPage) =>
@@ -326,37 +330,46 @@ export function invalidateOnCreatePage(data: Partial<IPage>) {
     slugId: data.slugId,
     spaceId: data.spaceId,
     title: data.title,
+    directoryId: data.directoryId,
+    topicId: data.topicId,
   };
 
-  let queryKey: QueryKey = null;
-  if (data.parentPageId === null) {
-    queryKey = ["root-sidebar-pages", data.spaceId];
-  } else {
-    queryKey = [
-      "sidebar-pages",
-      { pageId: data.parentPageId, spaceId: data.spaceId },
-    ];
-  }
+  const isCategorized = !!data.directoryId || !!data.topicId;
 
-  //update all sidebar pages
-  queryClient.setQueryData<InfiniteData<IPagination<Partial<IPage>>>>(
-    queryKey,
-    (old) => {
-      if (!old) return old;
-      return {
-        ...old,
-        pages: old.pages.map((page, index) => {
-          if (index === old.pages.length - 1) {
-            return {
-              ...page,
-              items: [...page.items, newPage],
-            };
-          }
-          return page;
-        }),
-      };
-    },
-  );
+  if (isCategorized) {
+    // Categorized page: invalidate directory/topic queries, NOT the main tree
+    invalidateDirectoryTopicQueries(data.spaceId, data.directoryId, data.topicId);
+  } else {
+    // Uncategorized page: add to the main tree as before
+    let queryKey: QueryKey = null;
+    if (data.parentPageId === null) {
+      queryKey = ["root-sidebar-pages", data.spaceId];
+    } else {
+      queryKey = [
+        "sidebar-pages",
+        { pageId: data.parentPageId, spaceId: data.spaceId },
+      ];
+    }
+
+    queryClient.setQueryData<InfiniteData<IPagination<Partial<IPage>>>>(
+      queryKey,
+      (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page, index) => {
+            if (index === old.pages.length - 1) {
+              return {
+                ...page,
+                items: [...page.items, newPage],
+              };
+            }
+            return page;
+          }),
+        };
+      },
+    );
+  }
 
   //update sidebar haschildren
   if (data.parentPageId !== null) {
@@ -444,6 +457,9 @@ export function invalidateOnUpdatePage(
       };
     },
   );
+
+  // Also update dir-pages and topic-pages caches
+  updateDirectoryTopicPageCaches(id, { title, icon });
 
   //update recent changes
   queryClient.invalidateQueries({
@@ -597,8 +613,91 @@ export function invalidateOnDeletePage(pageId: string) {
     });
   });
 
+  // Also remove from dir-pages and topic-pages caches
+  removeFromDirectoryTopicCaches(pageId);
+
   //update recent changes
   queryClient.invalidateQueries({
     queryKey: ["recent-changes"],
+  });
+}
+
+/**
+ * Invalidate dir-pages and topic-pages queries so the directory/topic sidebar
+ * sections refetch their page lists.
+ */
+export function invalidateDirectoryTopicQueries(
+  spaceId?: string,
+  directoryId?: string | null,
+  topicId?: string | null,
+) {
+  if (topicId) {
+    queryClient.invalidateQueries({
+      queryKey: ["topic-pages", spaceId, topicId],
+    });
+  }
+  if (directoryId) {
+    queryClient.invalidateQueries({
+      queryKey: ["dir-pages", spaceId, directoryId],
+    });
+  }
+}
+
+/**
+ * Update title/icon in all dir-pages and topic-pages caches.
+ */
+function updateDirectoryTopicPageCaches(
+  pageId: string,
+  update: { title?: string; icon?: string },
+) {
+  const dirMatches = queryClient.getQueriesData({
+    queryKey: ["dir-pages"],
+    exact: false,
+  });
+  const topicMatches = queryClient.getQueriesData({
+    queryKey: ["topic-pages"],
+    exact: false,
+  });
+
+  [...dirMatches, ...topicMatches].forEach(([key]) => {
+    queryClient.setQueryData<InfiniteData<IPagination<IPage>>>(key, (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        pages: old.pages.map((page) => ({
+          ...page,
+          items: page.items.map((item: IPage) =>
+            item.id === pageId ? { ...item, ...update } : item,
+          ),
+        })),
+      };
+    });
+  });
+}
+
+/**
+ * Remove a page from all dir-pages and topic-pages caches.
+ */
+function removeFromDirectoryTopicCaches(pageId: string) {
+  const dirMatches = queryClient.getQueriesData({
+    queryKey: ["dir-pages"],
+    exact: false,
+  });
+  const topicMatches = queryClient.getQueriesData({
+    queryKey: ["topic-pages"],
+    exact: false,
+  });
+
+  [...dirMatches, ...topicMatches].forEach(([key]) => {
+    queryClient.setQueryData<InfiniteData<IPagination<IPage>>>(key, (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        pages: old.pages.map((page) => ({
+          ...page,
+          items: page.items.filter((item: IPage) => item.id !== pageId),
+        })),
+      };
+    });
   });
 }

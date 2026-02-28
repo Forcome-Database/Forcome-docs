@@ -6,6 +6,7 @@ import { DirectorySelect } from "@/features/directory/components/directory-selec
 import { TopicSelect } from "@/features/topic/components/topic-select";
 import { categorizePage } from "@/features/page/services/page-service";
 import { queryClient } from "@/main";
+import { invalidateDirectoryTopicQueries } from "@/features/page/queries/page-query";
 
 interface CategorizePageModalProps {
   pageId: string;
@@ -47,10 +48,20 @@ export default function CategorizePageModal({
   const handleSave = async () => {
     try {
       await categorizePage({ pageId, directoryId, topicId });
+      // Refresh page data and breadcrumbs
       queryClient.invalidateQueries({
         predicate: (item) =>
           ["pages", "breadcrumbs"].includes(item.queryKey[0] as string),
       });
+      // Refresh the main tree (page may have moved in/out of uncategorized)
+      queryClient.invalidateQueries({ queryKey: ["root-sidebar-pages"] });
+      // Refresh old and new directory/topic sections
+      if (currentDirectoryId) {
+        invalidateDirectoryTopicQueries(spaceId, currentDirectoryId, currentTopicId);
+      }
+      if (directoryId) {
+        invalidateDirectoryTopicQueries(spaceId, directoryId, topicId);
+      }
       notifications.show({ message: t("Page categorized successfully") });
       onClose();
     } catch (err: any) {
