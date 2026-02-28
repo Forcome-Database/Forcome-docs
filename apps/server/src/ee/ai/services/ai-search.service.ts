@@ -104,6 +104,7 @@ export class AiSearchService {
     query: string,
     workspaceId: string,
     limit = 5,
+    filters?: { spaceId?: string; directoryId?: string; topicId?: string },
   ) {
     const queryEmbedding = await this.generateEmbedding(query);
     const embeddingStr = `[${queryEmbedding.join(',')}]`;
@@ -117,6 +118,9 @@ export class AiSearchService {
       JOIN spaces s ON s.id = pe."spaceId"
       WHERE pe."workspaceId" = ${workspaceId}
         AND p.deleted_at IS NULL
+        ${filters?.spaceId ? sql`AND pe."spaceId" = ${filters.spaceId}` : sql``}
+        ${filters?.directoryId ? sql`AND pe."directoryId" = ${filters.directoryId}` : sql``}
+        ${filters?.topicId ? sql`AND pe."topicId" = ${filters.topicId}` : sql``}
       ORDER BY distance ASC
       LIMIT ${limit}
     `.execute(this.db);

@@ -24,6 +24,14 @@ export class SearchDTO {
   creatorId?: string;
 
   @IsOptional()
+  @IsString()
+  directoryId?: string;
+
+  @IsOptional()
+  @IsString()
+  topicId?: string;
+
+  @IsOptional()
   @IsNumber()
   limit?: number;
 

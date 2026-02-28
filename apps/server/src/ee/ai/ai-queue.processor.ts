@@ -62,6 +62,29 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
           );
           break;
         }
+
+        case QueueJob.PAGE_MOVED_TO_SPACE: {
+          const { pageId, workspaceId } = job.data;
+          const pageIds = Array.isArray(pageId) ? pageId : [pageId];
+          for (const pid of pageIds) {
+            const page = await this.db
+              .selectFrom('pages')
+              .select(['spaceId', 'directoryId', 'topicId'])
+              .where('id', '=', pid)
+              .executeTakeFirst();
+            if (page) {
+              await sql`
+                UPDATE page_embeddings
+                SET "spaceId" = ${page.spaceId},
+                    "directoryId" = ${page.directoryId},
+                    "topicId" = ${page.topicId},
+                    "updatedAt" = NOW()
+                WHERE "pageId" = ${pid}
+              `.execute(this.db);
+            }
+          }
+          break;
+        }
       }
     } catch (err: any) {
       this.logger.error(
@@ -99,8 +122,17 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
         metadata JSONB DEFAULT '{}',
         "createdAt" TIMESTAMPTZ DEFAULT NOW(),
         "updatedAt" TIMESTAMPTZ DEFAULT NOW(),
+        "directoryId" UUID,
+        "topicId" UUID,
         "deletedAt" TIMESTAMPTZ
       )
+    `.execute(this.db);
+
+    // Add directoryId/topicId columns if table already exists (idempotent)
+    await sql`
+      ALTER TABLE page_embeddings
+      ADD COLUMN IF NOT EXISTS "directoryId" UUID,
+      ADD COLUMN IF NOT EXISTS "topicId" UUID
     `.execute(this.db);
 
     await sql`

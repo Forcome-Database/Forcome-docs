@@ -167,6 +167,8 @@ export class ExportService {
         'pages.parentPageId',
         'pages.spaceId',
         'pages.workspaceId',
+        'pages.directoryId',
+        'pages.topicId',
         'pages.createdAt',
         'pages.updatedAt',
       ])

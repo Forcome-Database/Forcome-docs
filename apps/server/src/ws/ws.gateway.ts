@@ -55,6 +55,12 @@ export class WsGateway implements OnGatewayConnection, OnModuleDestroy {
       'addTreeNode',
       'moveTreeNode',
       'deleteTreeNode',
+      'addDirectory',
+      'updateDirectory',
+      'deleteDirectory',
+      'addTopic',
+      'updateTopic',
+      'deleteTopic',
     ];
 
     if (spaceEvents.includes(data?.operation) && data?.spaceId) {

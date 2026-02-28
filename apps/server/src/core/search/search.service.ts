@@ -60,6 +60,12 @@ export class SearchService {
       .$if(Boolean(searchParams.creatorId), (qb) =>
         qb.where('creatorId', '=', searchParams.creatorId),
       )
+      .$if(Boolean(searchParams.directoryId), (qb) =>
+        qb.where('directoryId', '=', searchParams.directoryId),
+      )
+      .$if(Boolean(searchParams.topicId), (qb) =>
+        qb.where('topicId', '=', searchParams.topicId),
+      )
       .where('deletedAt', 'is', null)
       .orderBy('rank', 'desc')
       .limit(searchParams.limit || 25)
