@@ -23,6 +23,8 @@ import {
   UserMfa as _UserMFA,
   ApiKeys,
   Watchers,
+  Directories,
+  Topics,
 } from './db';
 import { PageEmbeddings } from '@docmost/db/types/embeddings.types';
 
@@ -149,3 +151,13 @@ export type UpdatableWatcher = Updateable<Omit<Watchers, 'id'>>;
 export type AiPromptTemplate = Selectable<AiPromptTemplates>;
 export type InsertableAiPromptTemplate = Insertable<AiPromptTemplates>;
 export type UpdatableAiPromptTemplate = Updateable<Omit<AiPromptTemplates, 'id'>>;
+
+// Directory
+export type Directory = Selectable<Directories>;
+export type InsertableDirectory = Insertable<Directories>;
+export type UpdatableDirectory = Updateable<Omit<Directories, 'id'>>;
+
+// Topic
+export type Topic = Selectable<Topics>;
+export type InsertableTopic = Insertable<Topics>;
+export type UpdatableTopic = Updateable<Omit<Topics, 'id'>>;
