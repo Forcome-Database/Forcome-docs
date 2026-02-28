@@ -7,12 +7,14 @@ import {
   Stack,
   ActionIcon,
   Tooltip,
+  Box,
 } from "@mantine/core";
 import {
   IconChevronRight,
   IconFileDescription,
   IconFolder,
   IconPlus,
+  IconPointFilled,
   IconTag,
 } from "@tabler/icons-react";
 import { useGetDirectoriesQuery } from "../queries/directory-query";
@@ -28,6 +30,7 @@ import { getSidebarPages } from "@/features/page/services/page-service";
 import { IPage } from "@/features/page/types/page.types";
 import { notifications } from "@mantine/notifications";
 import { invalidateDirectoryTopicQueries } from "@/features/page/queries/page-query";
+import treeClasses from "@/features/page/tree/styles/tree.module.css";
 
 interface SidebarDirectoriesProps {
   spaceId: string;
@@ -295,33 +298,37 @@ function TopicPages({
 }
 
 function PageItem({ page }: { page: Partial<IPage> }) {
+  const { t } = useTranslation();
   const { spaceSlug } = useParams();
   const pageUrl = buildPageUrl(spaceSlug, page.slugId, page.title);
 
   return (
-    <Link
+    <Box
+      component={Link}
       to={pageUrl}
-      style={{
-        textDecoration: "none",
-        color: "inherit",
-        display: "block",
-        padding: "3px 8px",
-        borderRadius: 4,
-        width: "100%",
-      }}
+      className={treeClasses.node}
+      style={{ height: 30, paddingBottom: 2 }}
     >
-      <Group gap={6} wrap="nowrap">
+      <ActionIcon size={20} variant="subtle" c="gray" component="span">
+        <IconPointFilled size={8} />
+      </ActionIcon>
+
+      <ActionIcon
+        c="gray"
+        variant="transparent"
+        component="span"
+        style={{ marginRight: 4 }}
+      >
         {page.icon ? (
-          <Text size="xs" style={{ flexShrink: 0 }}>
-            {page.icon}
-          </Text>
+          page.icon
         ) : (
-          <IconFileDescription size={16} style={{ flexShrink: 0 }} />
+          <IconFileDescription size={18} />
         )}
-        <Text size="sm" truncate="end">
-          {page.title || "untitled"}
-        </Text>
-      </Group>
-    </Link>
+      </ActionIcon>
+
+      <span className={treeClasses.text}>
+        {page.title || t("untitled")}
+      </span>
+    </Box>
   );
 }
