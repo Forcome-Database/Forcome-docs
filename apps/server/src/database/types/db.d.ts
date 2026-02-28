@@ -406,6 +406,37 @@ export interface Watchers {
   createdAt: Generated<Timestamp>;
 }
 
+export interface Directories {
+  id: Generated<string>;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  slug: string;
+  position: string | null;
+  spaceId: string;
+  workspaceId: string;
+  creatorId: string | null;
+  createdAt: Generated<Timestamp>;
+  updatedAt: Generated<Timestamp>;
+  deletedAt: Timestamp | null;
+}
+
+export interface Topics {
+  id: Generated<string>;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  slug: string;
+  position: string | null;
+  directoryId: string;
+  spaceId: string;
+  workspaceId: string;
+  creatorId: string | null;
+  createdAt: Generated<Timestamp>;
+  updatedAt: Generated<Timestamp>;
+  deletedAt: Timestamp | null;
+}
+
 export interface DB {
   aiPromptTemplates: AiPromptTemplates;
   apiKeys: ApiKeys;
@@ -415,6 +446,7 @@ export interface DB {
   backlinks: Backlinks;
   billing: Billing;
   comments: Comments;
+  directories: Directories;
   fileTasks: FileTasks;
   groups: Groups;
   groupUsers: GroupUsers;
@@ -424,6 +456,7 @@ export interface DB {
   shares: Shares;
   spaceMembers: SpaceMembers;
   spaces: Spaces;
+  topics: Topics;
   userMfa: UserMfa;
   users: Users;
   userTokens: UserTokens;
