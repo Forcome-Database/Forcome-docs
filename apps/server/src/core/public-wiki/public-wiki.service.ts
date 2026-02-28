@@ -83,10 +83,33 @@ export class PublicWikiService {
     }
 
     const spaces = await query.execute();
-    return { items: spaces };
+
+    // Check which spaces have directories
+    const spaceIds = spaces.map((s) => s.id);
+    const dirCounts = spaceIds.length > 0
+      ? await this.db
+          .selectFrom('directories')
+          .select(['spaceId'])
+          .select((eb) => eb.fn.countAll().as('count'))
+          .where('spaceId', 'in', spaceIds)
+          .where('deletedAt', 'is', null)
+          .groupBy('spaceId')
+          .execute()
+      : [];
+
+    const dirCountMap = new Map(
+      dirCounts.map((d) => [d.spaceId, Number(d.count)]),
+    );
+
+    const items = spaces.map((s) => ({
+      ...s,
+      hasDirectories: (dirCountMap.get(s.id) || 0) > 0,
+    }));
+
+    return { items };
   }
 
-  async getSidebarTree(spaceSlug: string, workspaceId: string) {
+  async getDirectories(spaceSlug: string, workspaceId: string) {
     if (!this.isSpacePublic(spaceSlug)) {
       throw new NotFoundException('Space not found');
     }
@@ -94,6 +117,32 @@ export class PublicWikiService {
     const space = await this.spaceRepo.findBySlug(spaceSlug, workspaceId);
     if (!space) {
       throw new NotFoundException('Space not found');
+    }
+
+    const directories = await this.db
+      .selectFrom('directories')
+      .select(['id', 'name', 'slug', 'icon', 'position'])
+      .where('spaceId', '=', space.id)
+      .where('deletedAt', 'is', null)
+      .orderBy('position', 'asc')
+      .execute();
+
+    return { items: directories };
+  }
+
+  async getSidebarTree(spaceSlug: string, workspaceId: string, directoryId?: string) {
+    if (!this.isSpacePublic(spaceSlug)) {
+      throw new NotFoundException('Space not found');
+    }
+
+    const space = await this.spaceRepo.findBySlug(spaceSlug, workspaceId);
+    if (!space) {
+      throw new NotFoundException('Space not found');
+    }
+
+    // When directoryId is provided, build a mixed tree of topics and pages
+    if (directoryId) {
+      return this.getDirectorySidebarTree(space, directoryId);
     }
 
     const pages = await this.db
@@ -117,6 +166,111 @@ export class PublicWikiService {
     const tree = this.buildTree(pages, null);
 
     return { space: { id: space.id, name: space.name, slug: space.slug }, items: tree };
+  }
+
+  private async getDirectorySidebarTree(
+    space: { id: string; name: string; slug: string },
+    directoryId: string,
+  ) {
+    // Verify directory exists in this space
+    const directory = await this.db
+      .selectFrom('directories')
+      .select(['id', 'name'])
+      .where('id', '=', directoryId)
+      .where('spaceId', '=', space.id)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirst();
+
+    if (!directory) {
+      throw new NotFoundException('Directory not found');
+    }
+
+    // Query topics in this directory
+    const topics = await this.db
+      .selectFrom('topics')
+      .select(['id', 'name', 'icon', 'position'])
+      .where('directoryId', '=', directoryId)
+      .where('spaceId', '=', space.id)
+      .where('deletedAt', 'is', null)
+      .orderBy('position', 'asc')
+      .execute();
+
+    // Query all pages in this directory (including nested children via parentPageId)
+    const pages = await this.db
+      .selectFrom('pages')
+      .select([
+        'id',
+        'slugId',
+        'title',
+        'icon',
+        'position',
+        'parentPageId',
+        'topicId',
+      ])
+      .select((eb) => this.pageRepo.withHasChildren(eb))
+      .where('directoryId', '=', directoryId)
+      .where('spaceId', '=', space.id)
+      .where('deletedAt', 'is', null)
+      .orderBy('position', 'asc')
+      .execute();
+
+    // Build topic nodes with their pages
+    const topicNodes = topics.map((topic) => {
+      const topicPages = pages.filter((p) => p.topicId === topic.id && !p.parentPageId);
+      const topicPageNodes = topicPages.map((p) => ({
+        nodeType: 'page' as const,
+        id: p.id,
+        slugId: p.slugId,
+        title: p.title,
+        icon: p.icon,
+        position: p.position,
+        hasChildren: p.hasChildren,
+        children: p.hasChildren ? this.buildTree(
+          pages.filter((cp) => cp.topicId === topic.id),
+          p.id,
+        ) : [],
+      }));
+
+      return {
+        nodeType: 'topic' as const,
+        id: topic.id,
+        name: topic.name,
+        icon: topic.icon,
+        position: topic.position,
+        children: topicPageNodes,
+      };
+    });
+
+    // Build uncategorized page nodes (topicId is null, parentPageId is null)
+    const uncategorizedPages = pages.filter(
+      (p) => !p.topicId && !p.parentPageId,
+    );
+    const uncategorizedPageNodes = uncategorizedPages.map((p) => ({
+      nodeType: 'page' as const,
+      id: p.id,
+      slugId: p.slugId,
+      title: p.title,
+      icon: p.icon,
+      position: p.position,
+      hasChildren: p.hasChildren,
+      children: p.hasChildren ? this.buildTree(
+        pages.filter((cp) => !cp.topicId),
+        p.id,
+      ) : [],
+    }));
+
+    // Merge and sort all top-level items by position
+    const items = [...topicNodes, ...uncategorizedPageNodes].sort((a, b) => {
+      const posA = a.position || '';
+      const posB = b.position || '';
+      return posA.localeCompare(posB);
+    });
+
+    return {
+      space: { id: space.id, name: space.name, slug: space.slug },
+      directory: { id: directory.id, name: directory.name },
+      items,
+    };
   }
 
   private buildTree(pages: any[], parentId: string | null): any[] {
