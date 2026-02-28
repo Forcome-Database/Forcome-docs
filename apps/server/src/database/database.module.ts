@@ -28,6 +28,7 @@ import { NotificationRepo } from '@docmost/db/repos/notification/notification.re
 import { WatcherRepo } from '@docmost/db/repos/watcher/watcher.repo';
 import { AiTemplateRepo } from '@docmost/db/repos/ai-template/ai-template.repo';
 import { DirectoryRepo } from '@docmost/db/repos/directory/directory.repo';
+import { TopicRepo } from '@docmost/db/repos/topic/topic.repo';
 import { PageListener } from '@docmost/db/listeners/page.listener';
 import { PostgresJSDialect } from 'kysely-postgres-js';
 import * as postgres from 'postgres';
@@ -88,6 +89,7 @@ import { normalizePostgresUrl } from '../common/helpers';
     WatcherRepo,
     AiTemplateRepo,
     DirectoryRepo,
+    TopicRepo,
     PageListener,
   ],
   exports: [
@@ -108,6 +110,7 @@ import { normalizePostgresUrl } from '../common/helpers';
     WatcherRepo,
     AiTemplateRepo,
     DirectoryRepo,
+    TopicRepo,
   ],
 })
 export class DatabaseModule
