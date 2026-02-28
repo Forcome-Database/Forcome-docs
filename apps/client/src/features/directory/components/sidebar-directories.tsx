@@ -10,6 +10,7 @@ import {
 } from "@mantine/core";
 import {
   IconChevronRight,
+  IconFileDescription,
   IconFolder,
   IconPlus,
   IconTag,
@@ -18,10 +19,14 @@ import { useGetDirectoriesQuery } from "../queries/directory-query";
 import { useGetTopicsQuery } from "@/features/topic/queries/topic-query";
 import { IDirectory } from "../types/directory.types";
 import { ITopic } from "@/features/topic/types/topic.types";
-import { useNavigate, useParams } from "react-router-dom";
-import { useCreatePageMutation } from "@/features/page/queries/page-query";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { createPage } from "@/features/page/services/page-service";
 import { buildPageUrl } from "@/features/page/page.utils";
 import { useTranslation } from "react-i18next";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { getSidebarPages } from "@/features/page/services/page-service";
+import { IPage } from "@/features/page/types/page.types";
+import { notifications } from "@mantine/notifications";
 
 interface SidebarDirectoriesProps {
   spaceId: string;
@@ -53,20 +58,19 @@ function DirectoryNode({
   const [opened, setOpened] = useState(false);
   const navigate = useNavigate();
   const { spaceSlug } = useParams();
-  const createPageMutation = useCreatePageMutation();
 
   const handleCreatePage = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     try {
-      const page = await createPageMutation.mutateAsync({
+      const page = await createPage({
         spaceId,
         directoryId: directory.id,
-      } as any);
+      });
       const pageUrl = buildPageUrl(spaceSlug, page.slugId, page.title);
       navigate(pageUrl);
     } catch {
-      // error handled by mutation
+      notifications.show({ message: t("Failed to create page"), color: "red" });
     }
   };
 
@@ -78,7 +82,6 @@ function DirectoryNode({
         px={8}
         w="100%"
         style={{ borderRadius: 4 }}
-        className="sidebar-dir-node"
       >
         <Group gap={6} wrap="nowrap" justify="space-between">
           <Group gap={6} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
@@ -134,19 +137,37 @@ function DirectoryContent({
   const { data: topicData } = useGetTopicsQuery(directoryId);
   const topics = topicData?.items || [];
 
-  if (topics.length === 0) {
-    return (
-      <Text size="xs" c="dimmed" py={4} px={8}>
-        {t("No topics yet")}
-      </Text>
-    );
-  }
+  // Also query pages directly under this directory (no topic)
+  const { data: pagesData } = useInfiniteQuery({
+    queryKey: ["dir-pages", spaceId, directoryId],
+    queryFn: ({ pageParam }) =>
+      getSidebarPages({
+        spaceId,
+        directoryId,
+        cursor: pageParam,
+      }),
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => lastPage.meta?.nextCursor ?? undefined,
+  });
+
+  const directPages =
+    pagesData?.pages
+      .flatMap((p) => p.items)
+      .filter((page) => !page.topicId) || [];
 
   return (
     <Stack gap={0}>
       {topics.map((topic) => (
         <TopicNode key={topic.id} topic={topic} spaceId={spaceId} />
       ))}
+      {directPages.map((page) => (
+        <PageItem key={page.id} page={page} />
+      ))}
+      {topics.length === 0 && directPages.length === 0 && (
+        <Text size="xs" c="dimmed" py={4} px={8}>
+          {t("No topics yet")}
+        </Text>
+      )}
     </Stack>
   );
 }
@@ -162,21 +183,20 @@ function TopicNode({
   const [opened, setOpened] = useState(false);
   const navigate = useNavigate();
   const { spaceSlug } = useParams();
-  const createPageMutation = useCreatePageMutation();
 
   const handleCreatePage = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     try {
-      const page = await createPageMutation.mutateAsync({
+      const page = await createPage({
         spaceId,
         directoryId: topic.directoryId,
         topicId: topic.id,
-      } as any);
+      });
       const pageUrl = buildPageUrl(spaceSlug, page.slugId, page.title);
       navigate(pageUrl);
     } catch {
-      // error handled by mutation
+      notifications.show({ message: t("Failed to create page"), color: "red" });
     }
   };
 
@@ -188,7 +208,6 @@ function TopicNode({
         px={8}
         w="100%"
         style={{ borderRadius: 4 }}
-        className="sidebar-topic-node"
       >
         <Group gap={6} wrap="nowrap" justify="space-between">
           <Group gap={6} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
@@ -226,11 +245,77 @@ function TopicNode({
       </UnstyledButton>
       <Collapse in={opened}>
         <div style={{ paddingLeft: 16 }}>
-          <Text size="xs" c="dimmed" py={4} px={8}>
-            {t("No pages yet")}
-          </Text>
+          <TopicPages topicId={topic.id} spaceId={spaceId} />
         </div>
       </Collapse>
     </>
+  );
+}
+
+function TopicPages({
+  topicId,
+  spaceId,
+}: {
+  topicId: string;
+  spaceId: string;
+}) {
+  const { t } = useTranslation();
+  const { data: pagesData } = useInfiniteQuery({
+    queryKey: ["topic-pages", spaceId, topicId],
+    queryFn: ({ pageParam }) =>
+      getSidebarPages({
+        spaceId,
+        topicId,
+        cursor: pageParam,
+      }),
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => lastPage.meta?.nextCursor ?? undefined,
+  });
+
+  const pages = pagesData?.pages.flatMap((p) => p.items) || [];
+
+  if (pages.length === 0) {
+    return (
+      <Text size="xs" c="dimmed" py={4} px={8}>
+        {t("No pages yet")}
+      </Text>
+    );
+  }
+
+  return (
+    <Stack gap={0}>
+      {pages.map((page) => (
+        <PageItem key={page.id} page={page} />
+      ))}
+    </Stack>
+  );
+}
+
+function PageItem({ page }: { page: Partial<IPage> }) {
+  const { spaceSlug } = useParams();
+  const pageUrl = buildPageUrl(spaceSlug, page.slugId, page.title);
+
+  return (
+    <UnstyledButton
+      component={Link}
+      to={pageUrl}
+      py={3}
+      px={8}
+      w="100%"
+      style={{ borderRadius: 4 }}
+    >
+      <Group gap={6} wrap="nowrap">
+        {page.icon ? (
+          <Text size="xs" style={{ flexShrink: 0 }}>
+            {page.icon}
+          </Text>
+        ) : (
+          <IconFileDescription size={16} style={{ flexShrink: 0 }} />
+        )}
+        <Text size="sm" truncate="end">
+          {page.title || "untitled"}
+        </Text>
+      </Group>
+    </UnstyledButton>
   );
 }

@@ -336,7 +336,21 @@ export class PageController {
       throw new ForbiddenException();
     }
 
-    return this.pageService.getSidebarPages(spaceId, pagination, dto.pageId);
+    const containerFilter =
+      dto.directoryId || dto.topicId || dto.filterUncategorized
+        ? {
+            directoryId: dto.directoryId,
+            topicId: dto.topicId,
+            filterUncategorized: dto.filterUncategorized,
+          }
+        : undefined;
+
+    return this.pageService.getSidebarPages(
+      spaceId,
+      pagination,
+      dto.pageId,
+      containerFilter,
+    );
   }
 
   @HttpCode(HttpStatus.OK)
