@@ -10,8 +10,9 @@ import {
   ActionIcon,
   Text,
   Tooltip,
+  Group,
 } from "@mantine/core";
-import { IconCornerDownRightDouble, IconDots } from "@tabler/icons-react";
+import { IconCornerDownRightDouble, IconDots, IconFolder, IconTag } from "@tabler/icons-react";
 import { Link, useParams } from "react-router-dom";
 import classes from "./breadcrumb.module.css";
 import { SpaceTreeNode } from "@/features/page/tree/types.ts";
@@ -19,6 +20,8 @@ import { buildPageUrl } from "@/features/page/page.utils.ts";
 import { usePageQuery } from "@/features/page/queries/page-query.ts";
 import { extractPageSlugId } from "@/lib";
 import { useMediaQuery } from "@mantine/hooks";
+import { useDirectoryQuery } from "@/features/directory/queries/directory-query.ts";
+import { useTopicQuery } from "@/features/topic/queries/topic-query.ts";
 
 function getTitle(name: string, icon: string) {
   if (icon) {
@@ -37,6 +40,12 @@ export default function Breadcrumb() {
     pageId: extractPageSlugId(pageSlug),
   });
   const isMobile = useMediaQuery("(max-width: 48em)");
+
+  // Fetch directory/topic info for prefix breadcrumbs
+  const directoryId = currentPage?.directoryId;
+  const topicId = currentPage?.topicId;
+  const { data: directory } = useDirectoryQuery(directoryId || "");
+  const { data: topic } = useTopicQuery(topicId || "");
 
   useEffect(() => {
     if (treeData?.length > 0 && currentPage) {
@@ -62,22 +71,59 @@ export default function Breadcrumb() {
       </Button.Group>
     ));
 
-  const MobileHiddenNodesTooltipContent = () =>
-    breadcrumbNodes?.map((node) => (
-      <Button.Group orientation="vertical" key={node.id}>
-        <Button
-          justify="start"
-          component={Link}
-          to={buildPageUrl(spaceSlug, node.slugId, node.name)}
-          variant="default"
-          style={{ border: "none" }}
-        >
-          <Text fz={"sm"} className={classes.truncatedText}>
-            {getTitle(node.name, node.icon)}
-          </Text>
-        </Button>
-      </Button.Group>
-    ));
+  const MobileHiddenNodesTooltipContent = () => (
+    <>
+      {directory && (
+        <Button.Group orientation="vertical" key="mobile-dir-prefix">
+          <Button
+            justify="start"
+            variant="default"
+            style={{ border: "none", cursor: "default" }}
+            disabled
+          >
+            <Group gap={4} wrap="nowrap">
+              <IconFolder size={14} style={{ flexShrink: 0 }} />
+              <Text fz="sm" c="dimmed" className={classes.truncatedText}>
+                {directory.icon ? `${directory.icon} ${directory.name}` : directory.name}
+              </Text>
+            </Group>
+          </Button>
+        </Button.Group>
+      )}
+      {topic && (
+        <Button.Group orientation="vertical" key="mobile-topic-prefix">
+          <Button
+            justify="start"
+            variant="default"
+            style={{ border: "none", cursor: "default" }}
+            disabled
+          >
+            <Group gap={4} wrap="nowrap">
+              <IconTag size={14} style={{ flexShrink: 0 }} />
+              <Text fz="sm" c="dimmed" className={classes.truncatedText}>
+                {topic.icon ? `${topic.icon} ${topic.name}` : topic.name}
+              </Text>
+            </Group>
+          </Button>
+        </Button.Group>
+      )}
+      {breadcrumbNodes?.map((node) => (
+        <Button.Group orientation="vertical" key={node.id}>
+          <Button
+            justify="start"
+            component={Link}
+            to={buildPageUrl(spaceSlug, node.slugId, node.name)}
+            variant="default"
+            style={{ border: "none" }}
+          >
+            <Text fz={"sm"} className={classes.truncatedText}>
+              {getTitle(node.name, node.icon)}
+            </Text>
+          </Button>
+        </Button.Group>
+      ))}
+    </>
+  );
 
   const renderAnchor = useCallback(
     (node: SpaceTreeNode) => (
@@ -97,8 +143,39 @@ export default function Breadcrumb() {
     [spaceSlug],
   );
 
+  const getPrefixItems = () => {
+    const items: React.ReactNode[] = [];
+    if (directory) {
+      items.push(
+        <Tooltip label={directory.name} key="dir-prefix">
+          <Group gap={4} wrap="nowrap">
+            <IconFolder size={14} style={{ flexShrink: 0 }} />
+            <Text fz="sm" c="dimmed" className={classes.truncatedText}>
+              {directory.icon ? `${directory.icon} ${directory.name}` : directory.name}
+            </Text>
+          </Group>
+        </Tooltip>,
+      );
+    }
+    if (topic) {
+      items.push(
+        <Tooltip label={topic.name} key="topic-prefix">
+          <Group gap={4} wrap="nowrap">
+            <IconTag size={14} style={{ flexShrink: 0 }} />
+            <Text fz="sm" c="dimmed" className={classes.truncatedText}>
+              {topic.icon ? `${topic.icon} ${topic.name}` : topic.name}
+            </Text>
+          </Group>
+        </Tooltip>,
+      );
+    }
+    return items;
+  };
+
   const getBreadcrumbItems = () => {
     if (!breadcrumbNodes) return [];
+
+    const prefix = getPrefixItems();
 
     if (breadcrumbNodes.length > 3) {
       const firstNode = breadcrumbNodes[0];
@@ -106,6 +183,7 @@ export default function Breadcrumb() {
       const lastNode = breadcrumbNodes[breadcrumbNodes.length - 1];
 
       return [
+        ...prefix,
         renderAnchor(firstNode),
         <Popover
           width={250}
@@ -128,7 +206,7 @@ export default function Breadcrumb() {
       ];
     }
 
-    return breadcrumbNodes.map(renderAnchor);
+    return [...prefix, ...breadcrumbNodes.map(renderAnchor)];
   };
 
   const getMobileBreadcrumbItems = () => {
