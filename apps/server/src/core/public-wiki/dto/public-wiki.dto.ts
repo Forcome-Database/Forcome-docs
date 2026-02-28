@@ -12,6 +12,16 @@ export class PublicSidebarDto {
   @IsNotEmpty()
   @IsString()
   spaceSlug: string;
+
+  @IsOptional()
+  @IsString()
+  directoryId?: string;
+}
+
+export class PublicDirectoriesDto {
+  @IsNotEmpty()
+  @IsString()
+  spaceSlug: string;
 }
 
 export class PublicPageDto {
