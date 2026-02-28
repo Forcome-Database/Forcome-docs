@@ -8,6 +8,8 @@ import { queryClient } from "@/main.tsx";
 import { SpaceSelect } from "@/features/space/components/sidebar/space-select.tsx";
 import { useNavigate } from "react-router-dom";
 import { buildPageUrl } from "@/features/page/page.utils.ts";
+import { DirectorySelect } from "@/features/directory/components/directory-select.tsx";
+import { TopicSelect } from "@/features/topic/components/topic-select.tsx";
 
 interface CopyPageModalProps {
   pageId: string;
@@ -24,6 +26,8 @@ export default function CopyPageModal({
 }: CopyPageModalProps) {
   const { t } = useTranslation();
   const [targetSpace, setTargetSpace] = useState<ISpace>(null);
+  const [directoryId, setDirectoryId] = useState<string | null>(null);
+  const [topicId, setTopicId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const handleCopy = async () => {
@@ -33,6 +37,8 @@ export default function CopyPageModal({
       const copiedPage = await duplicatePage({
         pageId,
         spaceId: targetSpace.id,
+        directoryId,
+        topicId,
       });
       queryClient.removeQueries({
         predicate: (item) =>
@@ -52,6 +58,8 @@ export default function CopyPageModal({
       });
       onClose();
       setTargetSpace(null);
+      setDirectoryId(null);
+      setTopicId(null);
     } catch (err) {
       notifications.show({
         message: err.response?.data.message || "An error occurred",
@@ -61,8 +69,15 @@ export default function CopyPageModal({
     }
   };
 
-  const handleChange = (space: ISpace) => {
+  const handleSpaceChange = (space: ISpace) => {
     setTargetSpace(space);
+    setDirectoryId(null);
+    setTopicId(null);
+  };
+
+  const handleDirectoryChange = (dirId: string | null) => {
+    setDirectoryId(dirId);
+    setTopicId(null);
   };
 
   return (
@@ -90,8 +105,24 @@ export default function CopyPageModal({
           <SpaceSelect
             value={currentSpaceSlug}
             clearable={false}
-            onChange={handleChange}
+            onChange={handleSpaceChange}
           />
+
+          {targetSpace && (
+            <>
+              <DirectorySelect
+                spaceId={targetSpace.id}
+                value={directoryId}
+                onChange={handleDirectoryChange}
+              />
+              <TopicSelect
+                directoryId={directoryId}
+                value={topicId}
+                onChange={setTopicId}
+              />
+            </>
+          )}
+
           <Group justify="end" mt="md">
             <Button onClick={onClose} variant="default">
               {t("Cancel")}

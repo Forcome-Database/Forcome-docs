@@ -365,7 +365,7 @@ export class PageController {
       throw new ForbiddenException();
     }
 
-    return this.pageService.movePageToSpace(movedPage, dto.spaceId);
+    return this.pageService.movePageToSpace(movedPage, dto.spaceId, dto.directoryId, dto.topicId);
   }
 
   @HttpCode(HttpStatus.OK)
@@ -391,7 +391,7 @@ export class PageController {
         throw new ForbiddenException();
       }
 
-      return this.pageService.duplicatePage(copiedPage, dto.spaceId, user);
+      return this.pageService.duplicatePage(copiedPage, dto.spaceId, user, dto.directoryId, dto.topicId);
     } else {
       // If no spaceId, it's a duplicate in same space
       const ability = await this.spaceAbility.createForUser(
@@ -402,7 +402,7 @@ export class PageController {
         throw new ForbiddenException();
       }
 
-      return this.pageService.duplicatePage(copiedPage, undefined, user);
+      return this.pageService.duplicatePage(copiedPage, undefined, user, dto.directoryId, dto.topicId);
     }
   }
 

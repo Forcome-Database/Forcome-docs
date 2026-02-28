@@ -36,4 +36,12 @@ export class MovePageToSpaceDto {
   @IsNotEmpty()
   @IsString()
   spaceId: string;
+
+  @IsOptional()
+  @IsString()
+  directoryId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  topicId?: string | null;
 }

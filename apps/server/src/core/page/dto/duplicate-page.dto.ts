@@ -8,6 +8,14 @@ export class DuplicatePageDto {
   @IsOptional()
   @IsString()
   spaceId?: string;
+
+  @IsOptional()
+  @IsString()
+  directoryId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  topicId?: string | null;
 }
 
 export type CopyPageMapEntry = {

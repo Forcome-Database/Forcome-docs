@@ -326,12 +326,18 @@ export class PageService {
     });
   }
 
-  async movePageToSpace(rootPage: Page, spaceId: string) {
+  async movePageToSpace(rootPage: Page, spaceId: string, directoryId?: string | null, topicId?: string | null) {
     await executeTx(this.db, async (trx) => {
       // Update root page
       const nextPosition = await this.nextPagePosition(spaceId);
       await this.pageRepo.updatePage(
-        { spaceId, parentPageId: null, position: nextPosition, directoryId: null, topicId: null },
+        {
+          spaceId,
+          parentPageId: null,
+          position: nextPosition,
+          directoryId: directoryId ?? null,
+          topicId: topicId ?? null,
+        },
         rootPage.id,
         trx,
       );
@@ -387,6 +393,8 @@ export class PageService {
     rootPage: Page,
     targetSpaceId: string | undefined,
     authUser: User,
+    targetDirectoryId?: string | null,
+    targetTopicId?: string | null,
   ) {
     const spaceId = targetSpaceId || rootPage.spaceId;
     const isDuplicateInSameSpace =
@@ -502,8 +510,12 @@ export class PageService {
           ydoc: createYdocFromJson(prosemirrorJson),
           position: page.id === rootPage.id ? nextPosition : page.position,
           spaceId: spaceId,
-          directoryId: isDuplicateInSameSpace ? (page.directoryId ?? null) : null,
-          topicId: isDuplicateInSameSpace ? (page.topicId ?? null) : null,
+          directoryId: page.id === rootPage.id
+            ? (targetDirectoryId !== undefined ? (targetDirectoryId ?? null) : (isDuplicateInSameSpace ? (page.directoryId ?? null) : null))
+            : (isDuplicateInSameSpace ? (page.directoryId ?? null) : null),
+          topicId: page.id === rootPage.id
+            ? (targetTopicId !== undefined ? (targetTopicId ?? null) : (isDuplicateInSameSpace ? (page.topicId ?? null) : null))
+            : (isDuplicateInSameSpace ? (page.topicId ?? null) : null),
           workspaceId: page.workspaceId,
           creatorId: authUser.id,
           lastUpdatedById: authUser.id,

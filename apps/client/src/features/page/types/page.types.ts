@@ -54,11 +54,15 @@ export interface IMovePage {
 export interface IMovePageToSpace {
   pageId: string;
   spaceId: string;
+  directoryId?: string | null;
+  topicId?: string | null;
 }
 
 export interface ICopyPageToSpace {
   pageId: string;
   spaceId?: string;
+  directoryId?: string | null;
+  topicId?: string | null;
 }
 
 export interface SidebarPagesParams {
