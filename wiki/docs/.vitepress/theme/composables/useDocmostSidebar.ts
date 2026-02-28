@@ -74,15 +74,21 @@ function buildSidebarForRoute(path: string): SidebarItem[] {
   const spaceSlug = getSpaceSlugFromPath(path)
 
   if (spaceSlug) {
-    // 有明确的空间 slug —— 只显示该空间
     if (data[spaceSlug]) {
       const space = spaceList.find((s) => s.slug === spaceSlug)
+      const hasDir = space?.hasDirectories && selectedDirectoryId.value[spaceSlug]
+
+      if (hasDir) {
+        // 目录模式：主题/页面直接作为顶层分组，不再包裹空间名
+        return mapToSidebarItems(data[spaceSlug], spaceSlug, lang)
+      }
+
+      // 非目录模式：保持空间名作为分组标题
       return [{
         text: space?.name || spaceSlug,
         items: mapToSidebarItems(data[spaceSlug], spaceSlug, lang),
       }]
     }
-    // slug 在 Docmost 中不存在，返回空数组（不再回退显示所有空间）
     return []
   }
 
