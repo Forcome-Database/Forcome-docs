@@ -34,12 +34,12 @@ function mapToSidebarItems(
     // topic 节点 → 分组标题（无 link，只有 text + items）
     if (node.nodeType === 'topic') {
       const topicText = node.icon ? `${node.icon} ${node.name || '无标题'}` : (node.name || '无标题')
+      // collapsed 不设置（保持 undefined），让 SideBar.vue 走 sidebar-group-title 分组标题路径
       return {
         text: topicText,
         items: node.children?.length
           ? mapToSidebarItems(node.children, spaceSlug, lang)
           : undefined,
-        collapsed: false,
       }
     }
 

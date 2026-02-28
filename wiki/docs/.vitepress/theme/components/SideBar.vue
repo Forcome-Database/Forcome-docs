@@ -85,6 +85,13 @@ watch(docmostLoaded, (loaded) => {
   if (loaded) updateSidebar()
 })
 
+// 目录切换时更新（sidebarData 变化 = 新目录数据到达）
+watch(sidebarData, () => {
+  if (hasDocmost.value && isDocmostRoute(route.path) && docmostLoaded.value) {
+    updateSidebar()
+  }
+}, { deep: false })
+
 /**
  * 处理导航（移动端关闭侧边栏）
  */

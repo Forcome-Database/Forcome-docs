@@ -196,8 +196,10 @@ export class PublicWikiService {
       .orderBy('position', 'asc')
       .execute();
 
-    // Query all pages in this directory (including nested children via parentPageId)
-    const pages = await this.db
+    // Query all pages in the space, then filter for directory tree
+    // Child pages may not have directoryId set (only their ancestors do),
+    // so we fetch all space pages and let buildTree trace parentPageId chains.
+    const allPages = await this.db
       .selectFrom('pages')
       .select([
         'id',
@@ -207,13 +209,35 @@ export class PublicWikiService {
         'position',
         'parentPageId',
         'topicId',
+        'directoryId',
       ])
       .select((eb) => this.pageRepo.withHasChildren(eb))
-      .where('directoryId', '=', directoryId)
       .where('spaceId', '=', space.id)
       .where('deletedAt', 'is', null)
       .orderBy('position', 'asc')
       .execute();
+
+    // Collect pages directly assigned to this directory + all their descendants
+    const directIds = new Set(
+      allPages.filter((p) => p.directoryId === directoryId).map((p) => p.id),
+    );
+    const relevantIds = new Set(directIds);
+    let frontier = [...directIds];
+    while (frontier.length > 0) {
+      const nextFrontier: string[] = [];
+      for (const p of allPages) {
+        if (
+          p.parentPageId &&
+          frontier.includes(p.parentPageId) &&
+          !relevantIds.has(p.id)
+        ) {
+          relevantIds.add(p.id);
+          nextFrontier.push(p.id);
+        }
+      }
+      frontier = nextFrontier;
+    }
+    const pages = allPages.filter((p) => relevantIds.has(p.id));
 
     // Build topic nodes with their pages
     const topicNodes = topics.map((topic) => {
