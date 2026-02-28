@@ -114,9 +114,12 @@ const closeDropdown = () => {
 
 // 处理目录项点击
 const handleDirectoryClick = (event: Event, child: any) => {
-  closeDropdown()
   if (child.directoryId && child.spaceSlug) {
+    event.preventDefault()
+    closeDropdown()
     selectDirectory(child.spaceSlug, child.directoryId)
+  } else {
+    closeDropdown()
   }
 }
 

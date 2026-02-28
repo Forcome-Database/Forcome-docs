@@ -126,6 +126,10 @@ export function useDocmostSidebar() {
                 newSelectedDir[space.slug] = dirs[0].id
                 const result = await service.getSidebar(space.slug, dirs[0].id)
                 newSidebarData[space.slug] = result.items
+              } else {
+                // 目录列表为空时回退到传统侧边栏
+                const result = await service.getSidebar(space.slug)
+                newSidebarData[space.slug] = result.items
               }
             } else {
               // 无目录：直接加载传统侧边栏
