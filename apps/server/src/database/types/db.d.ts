@@ -223,6 +223,7 @@ export interface Pages {
   creatorId: string | null;
   deletedAt: Timestamp | null;
   deletedById: string | null;
+  directoryId: string | null;
   icon: string | null;
   id: Generated<string>;
   isLocked: Generated<boolean>;
@@ -233,6 +234,7 @@ export interface Pages {
   spaceId: string;
   textContent: string | null;
   title: string | null;
+  topicId: string | null;
   tsv: string | null;
   updatedAt: Generated<Timestamp>;
   workspaceId: string;

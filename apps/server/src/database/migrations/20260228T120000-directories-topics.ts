@@ -33,7 +33,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .createIndex('idx_directories_space')
     .on('directories')
     .columns(['space_id'])
-    .where('deleted_at', 'is', null)
+    .where(sql.ref('deleted_at'), 'is', null)
     .execute();
 
   // 2. topics table
@@ -71,14 +71,14 @@ export async function up(db: Kysely<any>): Promise<void> {
     .createIndex('idx_topics_directory')
     .on('topics')
     .columns(['directory_id'])
-    .where('deleted_at', 'is', null)
+    .where(sql.ref('deleted_at'), 'is', null)
     .execute();
 
   await db.schema
     .createIndex('idx_topics_space')
     .on('topics')
     .columns(['space_id'])
-    .where('deleted_at', 'is', null)
+    .where(sql.ref('deleted_at'), 'is', null)
     .execute();
 
   // 3. Add columns to pages table
@@ -100,14 +100,14 @@ export async function up(db: Kysely<any>): Promise<void> {
     .createIndex('idx_pages_directory_id')
     .on('pages')
     .columns(['directory_id'])
-    .where('deleted_at', 'is', null)
+    .where(sql.ref('deleted_at'), 'is', null)
     .execute();
 
   await db.schema
     .createIndex('idx_pages_topic_id')
     .on('pages')
     .columns(['topic_id'])
-    .where('deleted_at', 'is', null)
+    .where(sql.ref('deleted_at'), 'is', null)
     .execute();
 
   // 4. DB-level consistency triggers
