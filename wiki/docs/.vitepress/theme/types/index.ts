@@ -299,16 +299,28 @@ export interface DocmostSpace {
   name: string
   slug: string
   description?: string
+  hasDirectories?: boolean
+}
+
+/** Docmost 目录 */
+export interface DocmostDirectory {
+  id: string
+  name: string
+  slug: string
+  icon?: string
+  position: string
 }
 
 /** Docmost 侧边栏页面节点 */
 export interface DocmostSidebarNode {
+  nodeType?: 'topic' | 'page'
   id: string
-  slugId: string
-  title: string
+  name?: string
+  slugId?: string
+  title?: string
   icon?: string
   position: string
-  hasChildren: boolean
+  hasChildren?: boolean
   children: DocmostSidebarNode[]
 }
 

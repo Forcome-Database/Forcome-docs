@@ -23,7 +23,12 @@ const emit = defineEmits<{
 // 获取 VitePress 数据
 const { theme } = useData()
 const route = useRoute()
-const { spaces: docmostSpaces } = useDocmostSidebar()
+const {
+  spaces: docmostSpaces,
+  directories: docmostDirectories,
+  selectedDirectoryId,
+  selectDirectory,
+} = useDocmostSidebar()
 
 // 当前打开的下拉菜单
 const openDropdown = ref<string | null>(null)
@@ -60,18 +65,35 @@ const navItems = computed(() => {
   const coveredSlugs = extractStaticSlugs(staticNav)
   const lang = currentLang.value
 
-  // 筛选未被静态导航覆盖的空间，生成动态导航项
   const dynamicItems = docmostSpaces.value
     .filter((space) => !coveredSlugs.has(space.slug))
-    .map((space) => ({
-      text: space.name,
-      link: `/${lang}/docs/${space.slug}/`,
-      activeMatch: `^/${lang}/docs/${space.slug}`,
-    }))
+    .map((space) => {
+      const dirs = docmostDirectories.value[space.slug]
+
+      if (space.hasDirectories && dirs && dirs.length > 0) {
+        // 有目录 → 生成下拉菜单
+        return {
+          text: space.name,
+          link: `/${lang}/docs/${space.slug}/`,
+          activeMatch: `^/${lang}/docs/${space.slug}`,
+          items: dirs.map((dir) => ({
+            text: dir.icon ? `${dir.icon} ${dir.name}` : dir.name,
+            directoryId: dir.id,
+            spaceSlug: space.slug,
+            link: `/${lang}/docs/${space.slug}/`,
+          })),
+        }
+      }
+
+      // 无目录 → 普通链接
+      return {
+        text: space.name,
+        link: `/${lang}/docs/${space.slug}/`,
+        activeMatch: `^/${lang}/docs/${space.slug}`,
+      }
+    })
 
   if (dynamicItems.length === 0) return staticNav
-
-  // 动态项追加到静态项末尾
   return [...staticNav, ...dynamicItems]
 })
 
@@ -88,6 +110,14 @@ const toggleDropdown = (text: string) => {
 // 关闭下拉菜单
 const closeDropdown = () => {
   openDropdown.value = null
+}
+
+// 处理目录项点击
+const handleDirectoryClick = (event: Event, child: any) => {
+  closeDropdown()
+  if (child.directoryId && child.spaceSlug) {
+    selectDirectory(child.spaceSlug, child.directoryId)
+  }
 }
 
 // 检查链接是否激活（使用 route.path 支持 Docmost 动态路由）
@@ -186,11 +216,15 @@ const isDropdownActive = (item: any) => {
               >
                 <a
                   v-for="child in item.items"
-                  :key="child.text"
+                  :key="child.directoryId || child.text"
                   :href="child.link"
                   class="nav-dropdown-item"
-                  :class="{ 'is-active': isActive(child.link, child.activeMatch) }"
-                  @click="closeDropdown"
+                  :class="{
+                    'is-active': child.directoryId
+                      ? selectedDirectoryId[child.spaceSlug] === child.directoryId
+                      : isActive(child.link, child.activeMatch)
+                  }"
+                  @click="handleDirectoryClick($event, child)"
                 >
                   {{ child.text }}
                 </a>

@@ -9,6 +9,7 @@ import type {
   DocmostPage,
   DocmostSearchResult,
   DocmostAiStreamEvent,
+  DocmostDirectory,
 } from '../types'
 import { AppError } from './errors'
 
@@ -62,13 +63,24 @@ export class DocmostService {
   }
 
   /**
+   * 获取空间下的目录列表
+   */
+  async getDirectories(spaceSlug: string): Promise<DocmostDirectory[]> {
+    const result = await this.post<{ items: DocmostDirectory[] }>('directories', { spaceSlug })
+    return result.items
+  }
+
+  /**
    * 获取空间侧边栏页面树
    */
-  async getSidebar(spaceSlug: string): Promise<{
+  async getSidebar(spaceSlug: string, directoryId?: string): Promise<{
     space: { id: string; name: string; slug: string }
+    directory?: { id: string; name: string }
     items: DocmostSidebarNode[]
   }> {
-    return this.post('sidebar', { spaceSlug })
+    const body: Record<string, string> = { spaceSlug }
+    if (directoryId) body.directoryId = directoryId
+    return this.post('sidebar', body)
   }
 
   /**
