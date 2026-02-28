@@ -18,6 +18,14 @@ export class MovePageDto {
   @IsOptional()
   @IsString()
   parentPageId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  directoryId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  topicId?: string | null;
 }
 
 export class MovePageToSpaceDto {

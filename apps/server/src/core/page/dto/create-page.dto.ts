@@ -26,6 +26,14 @@ export class CreatePageDto {
   spaceId: string;
 
   @IsOptional()
+  @IsUUID()
+  directoryId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  topicId?: string;
+
+  @IsOptional()
   content?: string | object;
 
   @ValidateIf((o) => o.content !== undefined)

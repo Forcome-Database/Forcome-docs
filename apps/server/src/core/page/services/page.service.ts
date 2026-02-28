@@ -124,6 +124,8 @@ export class PageService {
       icon: createPageDto.icon,
       parentPageId: parentPageId,
       spaceId: createPageDto.spaceId,
+      directoryId: createPageDto.directoryId || null,
+      topicId: createPageDto.topicId || null,
       creatorId: userId,
       workspaceId: workspaceId,
       lastUpdatedById: userId,
@@ -262,6 +264,11 @@ export class PageService {
     spaceId: string,
     pagination: PaginationOptions,
     pageId?: string,
+    containerFilter?: {
+      directoryId?: string;
+      topicId?: string;
+      filterUncategorized?: boolean;
+    },
   ): Promise<CursorPaginationResult<Partial<Page> & { hasChildren: boolean }>> {
     let query = this.db
       .selectFrom('pages')
@@ -273,6 +280,8 @@ export class PageService {
         'position',
         'parentPageId',
         'spaceId',
+        'directoryId',
+        'topicId',
         'creatorId',
         'deletedAt',
       ])
@@ -284,6 +293,18 @@ export class PageService {
       query = query.where('parentPageId', '=', pageId);
     } else {
       query = query.where('parentPageId', 'is', null);
+    }
+
+    if (containerFilter) {
+      if (containerFilter.directoryId) {
+        query = query.where('directoryId', '=', containerFilter.directoryId);
+      }
+      if (containerFilter.topicId) {
+        query = query.where('topicId', '=', containerFilter.topicId);
+      }
+      if (containerFilter.filterUncategorized) {
+        query = query.where('directoryId', 'is', null).where('topicId', 'is', null);
+      }
     }
 
     return executeWithCursorPagination(query, {
@@ -310,7 +331,7 @@ export class PageService {
       // Update root page
       const nextPosition = await this.nextPagePosition(spaceId);
       await this.pageRepo.updatePage(
-        { spaceId, parentPageId: null, position: nextPosition },
+        { spaceId, parentPageId: null, position: nextPosition, directoryId: null, topicId: null },
         rootPage.id,
         trx,
       );
@@ -321,7 +342,7 @@ export class PageService {
       if (pageIds.length > 1) {
         // Update sub pages
         await this.pageRepo.updatePages(
-          { spaceId },
+          { spaceId, directoryId: null, topicId: null },
           pageIds.filter((id) => id !== rootPage.id),
           trx,
         );
@@ -481,6 +502,8 @@ export class PageService {
           ydoc: createYdocFromJson(prosemirrorJson),
           position: page.id === rootPage.id ? nextPosition : page.position,
           spaceId: spaceId,
+          directoryId: isDuplicateInSameSpace ? (page.directoryId ?? null) : null,
+          topicId: isDuplicateInSameSpace ? (page.topicId ?? null) : null,
           workspaceId: page.workspaceId,
           creatorId: authUser.id,
           lastUpdatedById: authUser.id,
@@ -599,13 +622,19 @@ export class PageService {
       }
     }
 
-    await this.pageRepo.updatePage(
-      {
-        position: dto.position,
-        parentPageId: parentPageId,
-      },
-      dto.pageId,
-    );
+    const updateData: any = {
+      position: dto.position,
+      parentPageId: parentPageId,
+    };
+
+    if (dto.directoryId !== undefined) {
+      updateData.directoryId = dto.directoryId;
+    }
+    if (dto.topicId !== undefined) {
+      updateData.topicId = dto.topicId;
+    }
+
+    await this.pageRepo.updatePage(updateData, dto.pageId);
   }
 
   async getPageBreadCrumbs(childPageId: string) {
@@ -621,6 +650,8 @@ export class PageService {
             'position',
             'parentPageId',
             'spaceId',
+            'directoryId',
+            'topicId',
             'deletedAt',
           ])
           .select((eb) => this.pageRepo.withHasChildren(eb))
@@ -637,6 +668,8 @@ export class PageService {
                 'p.position',
                 'p.parentPageId',
                 'p.spaceId',
+                'p.directoryId',
+                'p.topicId',
                 'p.deletedAt',
               ])
               .select(
