@@ -940,7 +940,7 @@ onUnmounted(() => {
 .docmost-subpages-grid .subpage-card {
   display: flex;
   flex-direction: column;
-  padding: 24px;
+  padding: 16px 20px;
   border: 1px solid var(--c-border);
   border-radius: 12px;
   background-color: var(--c-bg-soft, #f5f5f2);
@@ -965,7 +965,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 40px;
   height: 40px;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
   border-radius: 10px;
   background-color: var(--c-bg, #fff);
   border: 1px solid var(--c-border);
@@ -983,7 +983,7 @@ onUnmounted(() => {
   font-weight: 700;
   color: var(--c-text-1);
   line-height: 1.4;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .docmost-subpages-grid .subpage-card-desc {
