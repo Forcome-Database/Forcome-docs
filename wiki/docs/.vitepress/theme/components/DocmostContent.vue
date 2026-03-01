@@ -928,7 +928,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
-  margin: 20px 0;
+  margin: 24px 0;
 }
 
 @media (max-width: 640px) {
@@ -940,11 +940,10 @@ onUnmounted(() => {
 .docmost-subpages-grid .subpage-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 20px;
+  padding: 24px;
   border: 1px solid var(--c-border);
   border-radius: 12px;
-  background-color: var(--c-bg-soft, #f9f9f7);
+  background-color: var(--c-bg-soft, #f5f5f2);
   text-decoration: none;
   color: inherit;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -964,12 +963,13 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 16px;
+  border-radius: 10px;
   background-color: var(--c-bg, #fff);
   border: 1px solid var(--c-border);
-  font-size: 18px;
+  font-size: 20px;
   color: var(--c-text-3);
   flex-shrink: 0;
 }
@@ -979,16 +979,17 @@ onUnmounted(() => {
 }
 
 .docmost-subpages-grid .subpage-card-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   color: var(--c-text-1);
   line-height: 1.4;
+  margin-bottom: 6px;
 }
 
 .docmost-subpages-grid .subpage-card-desc {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--c-text-3);
-  line-height: 1.5;
+  line-height: 1.6;
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
