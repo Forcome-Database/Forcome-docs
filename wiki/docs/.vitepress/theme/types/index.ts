@@ -319,6 +319,7 @@ export interface DocmostSidebarNode {
   slugId?: string
   title?: string
   icon?: string
+  excerpt?: string
   position: string
   hasChildren?: boolean
   children: DocmostSidebarNode[]

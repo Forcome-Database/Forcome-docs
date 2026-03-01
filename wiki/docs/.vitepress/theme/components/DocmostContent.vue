@@ -200,7 +200,7 @@ function findChildrenInSidebar(slugId: string, nodes: DocmostSidebarNode[]): Doc
 }
 
 /**
- * 处理内容中的 subpages 占位符，替换为子页面链接列表
+ * 处理内容中的 subpages 占位符，替换为子页面卡片网格
  */
 function processSubpagesBlocks(container: HTMLElement) {
   const els = container.querySelectorAll('div[data-type="subpages"]')
@@ -217,27 +217,40 @@ function processSubpagesBlocks(container: HTMLElement) {
       el.remove()
       return
     }
-    const wrapper = document.createElement('div')
-    wrapper.className = 'docmost-subpages'
+    const grid = document.createElement('div')
+    grid.className = 'docmost-subpages-grid'
     children.forEach((child) => {
-      const link = document.createElement('a')
-      link.href = `/${lang}/docs/${spaceSlug}/${child.slugId}`
-      link.className = 'subpage-link'
-      const icon = document.createElement('span')
-      icon.className = 'subpage-icon'
+      const card = document.createElement('a')
+      card.href = `/${lang}/docs/${spaceSlug}/${child.slugId}`
+      card.className = 'subpage-card'
+
+      // 图标徽章
+      const badge = document.createElement('span')
+      badge.className = 'subpage-card-icon'
       if (child.icon) {
-        icon.textContent = child.icon
+        badge.textContent = child.icon
       } else {
-        icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>'
+        badge.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>'
       }
-      link.appendChild(icon)
-      const title = document.createElement('span')
-      title.className = 'subpage-title'
+      card.appendChild(badge)
+
+      // 标题
+      const title = document.createElement('div')
+      title.className = 'subpage-card-title'
       title.textContent = child.title || '无标题'
-      link.appendChild(title)
-      wrapper.appendChild(link)
+      card.appendChild(title)
+
+      // 摘要
+      if (child.excerpt) {
+        const desc = document.createElement('div')
+        desc.className = 'subpage-card-desc'
+        desc.textContent = child.excerpt
+        card.appendChild(desc)
+      }
+
+      grid.appendChild(card)
     })
-    el.replaceWith(wrapper)
+    el.replaceWith(grid)
   })
 }
 
@@ -910,40 +923,75 @@ onUnmounted(() => {
   margin-bottom: 0;
 }
 
-/* ===== Subpages 子页面列表 ===== */
-.docmost-subpages {
+/* ===== Subpages 子页面卡片网格 ===== */
+.docmost-subpages-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin: 20px 0;
+}
+
+@media (max-width: 640px) {
+  .docmost-subpages-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.docmost-subpages-grid .subpage-card {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 8px 0;
-}
-
-.docmost-subpages .subpage-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  border-radius: 4px;
-  color: var(--c-text-1);
-  font-weight: 500;
-  font-size: 14px;
+  gap: 8px;
+  padding: 20px;
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  background-color: var(--c-bg-soft, #f9f9f7);
   text-decoration: none;
-  transition: background-color 0.15s;
+  color: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.docmost-subpages .subpage-link:hover {
-  background-color: var(--c-hover, rgba(0, 0, 0, 0.04));
+:root.dark .docmost-subpages-grid .subpage-card {
+  background-color: var(--c-bg-soft, #1e1e1e);
+}
+
+.docmost-subpages-grid .subpage-card:hover {
+  border-color: var(--c-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   text-decoration: none;
 }
 
-.docmost-subpages .subpage-icon {
-  display: inline-flex;
+.docmost-subpages-grid .subpage-card-icon {
+  display: flex;
   align-items: center;
-  flex-shrink: 0;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background-color: var(--c-bg, #fff);
+  border: 1px solid var(--c-border);
+  font-size: 18px;
   color: var(--c-text-3);
+  flex-shrink: 0;
 }
 
-.docmost-subpages .subpage-title {
-  border-bottom: 1px solid var(--c-border);
+:root.dark .docmost-subpages-grid .subpage-card-icon {
+  background-color: var(--c-bg, #242424);
+}
+
+.docmost-subpages-grid .subpage-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-text-1);
+  line-height: 1.4;
+}
+
+.docmost-subpages-grid .subpage-card-desc {
+  font-size: 13px;
+  color: var(--c-text-3);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 </style>

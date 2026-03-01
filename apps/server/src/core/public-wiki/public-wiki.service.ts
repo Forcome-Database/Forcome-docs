@@ -155,6 +155,7 @@ export class PublicWikiService {
         'position',
         'parentPageId',
         'spaceId',
+        'textContent',
       ])
       .select((eb) => this.pageRepo.withHasChildren(eb))
       .where('spaceId', '=', space.id)
@@ -210,6 +211,7 @@ export class PublicWikiService {
         'parentPageId',
         'topicId',
         'directoryId',
+        'textContent',
       ])
       .select((eb) => this.pageRepo.withHasChildren(eb))
       .where('spaceId', '=', space.id)
@@ -250,8 +252,9 @@ export class PublicWikiService {
         icon: p.icon,
         position: p.position,
         hasChildren: p.hasChildren,
-        // Pass all pages so buildTree can find children via parentPageId
-        // (child pages may not have topicId set, only their ancestors do)
+        excerpt: p.textContent
+          ? p.textContent.substring(0, 120).replace(/\s+/g, ' ').trim()
+          : '',
         children: p.hasChildren ? this.buildTree(pages, p.id) : [],
       }));
 
@@ -277,7 +280,9 @@ export class PublicWikiService {
       icon: p.icon,
       position: p.position,
       hasChildren: p.hasChildren,
-      // Pass all pages so buildTree can find children via parentPageId
+      excerpt: p.textContent
+        ? p.textContent.substring(0, 120).replace(/\s+/g, ' ').trim()
+        : '',
       children: p.hasChildren ? this.buildTree(pages, p.id) : [],
     }));
 
@@ -305,6 +310,9 @@ export class PublicWikiService {
         icon: p.icon,
         position: p.position,
         hasChildren: p.hasChildren,
+        excerpt: p.textContent
+          ? p.textContent.substring(0, 120).replace(/\s+/g, ' ').trim()
+          : '',
         children: p.hasChildren ? this.buildTree(pages, p.id) : [],
       }));
   }
