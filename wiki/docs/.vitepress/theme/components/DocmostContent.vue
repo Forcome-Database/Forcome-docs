@@ -184,6 +184,64 @@ function tryNavigateToFirstPage() {
 }
 
 /**
+ * 在侧边栏树中查找指定 slugId 页面的子页面
+ */
+function findChildrenInSidebar(slugId: string, nodes: DocmostSidebarNode[]): DocmostSidebarNode[] {
+  for (const node of nodes) {
+    if (node.slugId === slugId) {
+      return (node.children || []).filter((c) => c.slugId)
+    }
+    if (node.children?.length) {
+      const found = findChildrenInSidebar(slugId, node.children)
+      if (found.length) return found
+    }
+  }
+  return []
+}
+
+/**
+ * 处理内容中的 subpages 占位符，替换为子页面链接列表
+ */
+function processSubpagesBlocks(container: HTMLElement) {
+  const els = container.querySelectorAll('div[data-type="subpages"]')
+  if (els.length === 0 || !routeParams.value?.slugId) return
+
+  const { spaceSlug, slugId, lang } = routeParams.value
+  const nodes = sidebarData.value[spaceSlug]
+  if (!nodes?.length) return
+
+  const children = findChildrenInSidebar(slugId!, nodes)
+
+  els.forEach((el) => {
+    if (children.length === 0) {
+      el.remove()
+      return
+    }
+    const wrapper = document.createElement('div')
+    wrapper.className = 'docmost-subpages'
+    children.forEach((child) => {
+      const link = document.createElement('a')
+      link.href = `/${lang}/docs/${spaceSlug}/${child.slugId}`
+      link.className = 'subpage-link'
+      const icon = document.createElement('span')
+      icon.className = 'subpage-icon'
+      if (child.icon) {
+        icon.textContent = child.icon
+      } else {
+        icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>'
+      }
+      link.appendChild(icon)
+      const title = document.createElement('span')
+      title.className = 'subpage-title'
+      title.textContent = child.title || '无标题'
+      link.appendChild(title)
+      wrapper.appendChild(link)
+    })
+    el.replaceWith(wrapper)
+  })
+}
+
+/**
  * 将侧边栏树展平为有序列表（用于上/下页导航）
  */
 function flattenTree(nodes: DocmostSidebarNode[]): { slugId: string; title: string; icon?: string }[] {
@@ -275,6 +333,7 @@ async function loadPage() {
     await nextTick()
     if (contentRef.value) {
       await processSpecialBlocks(contentRef.value)
+      processSubpagesBlocks(contentRef.value)
     }
     window.dispatchEvent(new Event('docmost-content-loaded'))
   } catch (err: any) {
@@ -849,5 +908,42 @@ onUnmounted(() => {
 
 .docmost-html-content div[data-type="callout"] > p:last-child {
   margin-bottom: 0;
+}
+
+/* ===== Subpages 子页面列表 ===== */
+.docmost-subpages {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.docmost-subpages .subpage-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--c-text-1);
+  font-weight: 500;
+  font-size: 14px;
+  text-decoration: none;
+  transition: background-color 0.15s;
+}
+
+.docmost-subpages .subpage-link:hover {
+  background-color: var(--c-hover, rgba(0, 0, 0, 0.04));
+  text-decoration: none;
+}
+
+.docmost-subpages .subpage-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--c-text-3);
+}
+
+.docmost-subpages .subpage-title {
+  border-bottom: 1px solid var(--c-border);
 }
 </style>
