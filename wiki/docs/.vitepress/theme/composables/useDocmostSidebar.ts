@@ -80,7 +80,19 @@ function buildSidebarForRoute(path: string): SidebarItem[] {
 
       if (hasDir) {
         // 目录模式：主题/页面直接作为顶层分组，不再包裹空间名
-        return mapToSidebarItems(data[spaceSlug], spaceSlug, lang)
+        const items = mapToSidebarItems(data[spaceSlug], spaceSlug, lang)
+        const hasTopicGroups = items.some((item) => !item.link && item.items)
+
+        if (!hasTopicGroups && items.length > 0) {
+          // 无主题 → 用目录名作为分组标题
+          const dirId = selectedDirectoryId.value[spaceSlug]
+          const dirs = directories.value[spaceSlug] || []
+          const dir = dirs.find((d) => d.id === dirId)
+          const dirName = dir ? (dir.icon ? `${dir.icon} ${dir.name}` : dir.name) : spaceSlug
+          return [{ text: dirName, items }]
+        }
+
+        return items
       }
 
       // 非目录模式：保持空间名作为分组标题
