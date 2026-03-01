@@ -4,7 +4,7 @@
  * 从 Docmost API 获取页面内容并根据设置以 HTML 或 Markdown 模式渲染
  */
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRoute } from 'vitepress'
+import { useRoute, useRouter } from 'vitepress'
 import { createDocmostService } from '../services/docmost'
 import { useDocmostSidebar } from '../composables/useDocmostSidebar'
 import { rewriteAttachmentUrls, processSpecialBlocks } from '../composables/useContentProcessor'
@@ -13,6 +13,7 @@ import { renderMarkdownToHtml } from '../utils/markdown'
 import type { DocmostPage, DocmostSidebarNode } from '../types'
 
 const route = useRoute()
+const router = useRouter()
 const docmostService = createDocmostService()
 const { spaces, sidebarData } = useDocmostSidebar()
 
@@ -132,6 +133,57 @@ const editPageUrl = computed(() => {
 
 
 /**
+ * 在侧边栏树中找到第一个页面的 slugId
+ * topic 节点没有 slugId，需要递归进入 children
+ */
+function findFirstPageSlugId(nodes: DocmostSidebarNode[]): string | null {
+  for (const node of nodes) {
+    if (node.nodeType === 'topic') {
+      if (node.children?.length) {
+        const found = findFirstPageSlugId(node.children)
+        if (found) return found
+      }
+      continue
+    }
+    if (node.slugId) return node.slugId
+    if (node.children?.length) {
+      const found = findFirstPageSlugId(node.children)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+/**
+ * 自动跳转到侧边栏第一篇文章
+ * - 进入空间根路径（无 slugId）时跳转
+ * - 切换目录后当前页面不在新侧边栏中时跳转
+ */
+function tryNavigateToFirstPage() {
+  if (!routeParams.value) return
+  const { lang, spaceSlug, slugId } = routeParams.value
+  const nodes = sidebarData.value[spaceSlug]
+  if (!nodes?.length) return
+
+  if (!slugId) {
+    const firstSlugId = findFirstPageSlugId(nodes)
+    if (firstSlugId) {
+      router.go(`/${lang}/docs/${spaceSlug}/${firstSlugId}`)
+    }
+    return
+  }
+
+  // 当前页面是否在侧边栏中（切换目录后可能不在）
+  const flat = flattenTree(nodes)
+  if (!flat.some((p) => p.slugId === slugId)) {
+    const firstSlugId = findFirstPageSlugId(nodes)
+    if (firstSlugId) {
+      router.go(`/${lang}/docs/${spaceSlug}/${firstSlugId}`)
+    }
+  }
+}
+
+/**
  * 将侧边栏树展平为有序列表（用于上/下页导航）
  */
 function flattenTree(nodes: DocmostSidebarNode[]): { slugId: string; title: string; icon?: string }[] {
@@ -177,11 +229,22 @@ async function loadPage() {
   // 首次加载时获取渲染格式设置
   await loadRenderFormat()
 
-  const { slugId } = routeParams.value
+  const { slugId, spaceSlug, lang } = routeParams.value
   if (!slugId) {
-    // 空间根路径，不显示页面内容
+    // 空间根路径：尝试跳转到第一篇文章
     page.value = null
     error.value = null
+
+    const nodes = sidebarData.value[spaceSlug]
+    if (nodes?.length) {
+      const firstSlugId = findFirstPageSlugId(nodes)
+      if (firstSlugId) {
+        router.go(`/${lang}/docs/${spaceSlug}/${firstSlugId}`)
+        return
+      }
+    }
+
+    // 侧边栏数据尚未加载，显示占位（watch 会在数据到达后触发跳转）
     const space = spaces.value.find((s) => s.slug === routeParams.value!.spaceSlug)
     const displayName = space?.name || routeParams.value!.spaceSlug
     if (typeof document !== 'undefined') {
@@ -223,6 +286,11 @@ async function loadPage() {
 watch(() => route.path.replace(/#.*$/, ''), () => {
   loadPage()
 }, { immediate: true })
+
+// 侧边栏数据变化时自动跳转（处理延迟加载 + 目录切换）
+watch(sidebarData, () => {
+  tryNavigateToFirstPage()
+}, { deep: false })
 
 // 监听主题变化，重新渲染 Mermaid 图表
 let themeObserver: MutationObserver | null = null
