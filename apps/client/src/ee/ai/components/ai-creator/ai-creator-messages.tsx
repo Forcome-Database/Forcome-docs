@@ -1,6 +1,5 @@
 import { Box, Text, Group, SimpleGrid, Paper, ThemeIcon } from "@mantine/core";
 import {
-  IconSparkles,
   IconFileCode,
   IconBook,
   IconClipboardList,
@@ -49,7 +48,7 @@ function WelcomePage() {
     <div className={classes.welcomePage}>
       <div className={classes.welcomeHeader}>
         <div className={classes.welcomeAvatar}>
-          <IconSparkles size={24} />
+          <img src="/icons/app-icon-192x192.png" alt="" width={80} height={80} />
         </div>
         <Text size="lg" fw={600} mt="sm">
           {t("AI Assistant")}

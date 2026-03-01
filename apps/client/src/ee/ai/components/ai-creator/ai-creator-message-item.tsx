@@ -4,7 +4,6 @@ import {
   IconArrowBarDown,
   IconReplace,
   IconUser,
-  IconSparkles,
 } from "@tabler/icons-react";
 import { useAtomValue } from "jotai";
 import { NodeSelection } from "@tiptap/pm/state";
@@ -208,7 +207,7 @@ export function AiCreatorMessageItem({ message }: Props) {
     <div className={classes.messageAi}>
       <div className={classes.messageBubbleRow + " " + classes.messageBubbleRowAi}>
         <div className={classes.avatarAi}>
-          <IconSparkles size={16} />
+          <img src="/icons/app-icon-192x192.png" alt="" width={28} height={28} />
         </div>
         <div className={classes.messageAiBubbleWrap}>
           <div

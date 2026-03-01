@@ -58,14 +58,13 @@
 }
 
 .welcomeAvatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #6366f1, #a78bfa);
+  width: 80px;
+  height: 80px;
+  border-radius: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  overflow: hidden;
 }
 
 .templateGrid {
@@ -130,12 +129,11 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #a78bfa);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: white;
+  overflow: hidden;
 }
 
 /* User bubble */

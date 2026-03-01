@@ -6,7 +6,7 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
-import { IconSparkles, IconX, IconPlus } from "@tabler/icons-react";
+import { IconX, IconPlus } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
 import { NodeSelection } from "@tiptap/pm/state";
 import { pageEditorAtom } from "@/features/editor/atoms/editor-atoms";
@@ -86,9 +86,7 @@ export default function AiCreatorPanel() {
       {/* Header */}
       <div className={classes.panelHeader}>
         <Group gap="xs">
-          <div className={classes.sparkleIcon}>
-            <IconSparkles size={14} />
-          </div>
+          <img src="/icons/app-icon-192x192.png" alt="" width={24} height={24} style={{ borderRadius: 6 }} />
           <Text fw={600} size="sm">
             {t("AI Assistant")}
           </Text>
