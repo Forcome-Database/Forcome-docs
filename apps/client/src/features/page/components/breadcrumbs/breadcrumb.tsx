@@ -54,60 +54,25 @@ export default function Breadcrumb() {
     }
   }, [currentPage?.id, treeData]);
 
-  const HiddenNodesTooltipContent = () =>
-    breadcrumbNodes?.slice(1, -1).map((node) => (
-      <Button.Group orientation="vertical" key={node.id}>
-        <Button
-          justify="start"
-          component={Link}
-          to={buildPageUrl(spaceSlug, node.slugId, node.name)}
-          variant="default"
-          style={{ border: "none" }}
-        >
-          <Text fz={"sm"} className={classes.truncatedText}>
-            {getTitle(node.name, node.icon)}
-          </Text>
-        </Button>
-      </Button.Group>
-    ));
+  // Derive directory/topic info: prefer API query data, fall back to tree node data (for child pages)
+  const dirNodeFromPath = breadcrumbNodes?.find((n) => n.nodeType === "directory");
+  const topicNodeFromPath = breadcrumbNodes?.find((n) => n.nodeType === "topic");
+  const dirInfo = directory
+    ? { name: directory.name, icon: directory.icon }
+    : dirNodeFromPath
+      ? { name: dirNodeFromPath.name, icon: dirNodeFromPath.icon }
+      : null;
+  const topicInfo = topic
+    ? { name: topic.name, icon: topic.icon }
+    : topicNodeFromPath
+      ? { name: topicNodeFromPath.name, icon: topicNodeFromPath.icon }
+      : null;
 
-  const MobileHiddenNodesTooltipContent = () => (
-    <>
-      {directory && (
-        <Button.Group orientation="vertical" key="mobile-dir-prefix">
-          <Button
-            justify="start"
-            variant="default"
-            style={{ border: "none", cursor: "default" }}
-            disabled
-          >
-            <Group gap={4} wrap="nowrap">
-              <IconFolder size={14} style={{ flexShrink: 0 }} />
-              <Text fz="sm" c="dimmed" className={classes.truncatedText}>
-                {directory.icon ? `${directory.icon} ${directory.name}` : directory.name}
-              </Text>
-            </Group>
-          </Button>
-        </Button.Group>
-      )}
-      {topic && (
-        <Button.Group orientation="vertical" key="mobile-topic-prefix">
-          <Button
-            justify="start"
-            variant="default"
-            style={{ border: "none", cursor: "default" }}
-            disabled
-          >
-            <Group gap={4} wrap="nowrap">
-              <IconTag size={14} style={{ flexShrink: 0 }} />
-              <Text fz="sm" c="dimmed" className={classes.truncatedText}>
-                {topic.icon ? `${topic.icon} ${topic.name}` : topic.name}
-              </Text>
-            </Group>
-          </Button>
-        </Button.Group>
-      )}
-      {breadcrumbNodes?.map((node) => (
+  const HiddenNodesTooltipContent = () =>
+    breadcrumbNodes
+      ?.filter((node) => node.nodeType !== "directory" && node.nodeType !== "topic")
+      .slice(1, -1)
+      .map((node) => (
         <Button.Group orientation="vertical" key={node.id}>
           <Button
             justify="start"
@@ -121,7 +86,61 @@ export default function Breadcrumb() {
             </Text>
           </Button>
         </Button.Group>
-      ))}
+      ));
+
+  const MobileHiddenNodesTooltipContent = () => (
+    <>
+      {dirInfo && (
+        <Button.Group orientation="vertical" key="mobile-dir-prefix">
+          <Button
+            justify="start"
+            variant="default"
+            style={{ border: "none", cursor: "default" }}
+            disabled
+          >
+            <Group gap={4} wrap="nowrap">
+              <IconFolder size={14} style={{ flexShrink: 0 }} />
+              <Text fz="sm" c="dimmed" className={classes.truncatedText}>
+                {dirInfo.icon ? `${dirInfo.icon} ${dirInfo.name}` : dirInfo.name}
+              </Text>
+            </Group>
+          </Button>
+        </Button.Group>
+      )}
+      {topicInfo && (
+        <Button.Group orientation="vertical" key="mobile-topic-prefix">
+          <Button
+            justify="start"
+            variant="default"
+            style={{ border: "none", cursor: "default" }}
+            disabled
+          >
+            <Group gap={4} wrap="nowrap">
+              <IconTag size={14} style={{ flexShrink: 0 }} />
+              <Text fz="sm" c="dimmed" className={classes.truncatedText}>
+                {topicInfo.icon ? `${topicInfo.icon} ${topicInfo.name}` : topicInfo.name}
+              </Text>
+            </Group>
+          </Button>
+        </Button.Group>
+      )}
+      {breadcrumbNodes
+        ?.filter((node) => node.nodeType !== "directory" && node.nodeType !== "topic")
+        .map((node) => (
+          <Button.Group orientation="vertical" key={node.id}>
+            <Button
+              justify="start"
+              component={Link}
+              to={buildPageUrl(spaceSlug, node.slugId, node.name)}
+              variant="default"
+              style={{ border: "none" }}
+            >
+              <Text fz={"sm"} className={classes.truncatedText}>
+                {getTitle(node.name, node.icon)}
+              </Text>
+            </Button>
+          </Button.Group>
+        ))}
     </>
   );
 
@@ -145,25 +164,25 @@ export default function Breadcrumb() {
 
   const getPrefixItems = () => {
     const items: React.ReactNode[] = [];
-    if (directory) {
+    if (dirInfo) {
       items.push(
-        <Tooltip label={directory.name} key="dir-prefix">
+        <Tooltip label={dirInfo.name} key="dir-prefix">
           <Group gap={4} wrap="nowrap">
             <IconFolder size={14} style={{ flexShrink: 0 }} />
             <Text fz="sm" c="dimmed" className={classes.truncatedText}>
-              {directory.icon ? `${directory.icon} ${directory.name}` : directory.name}
+              {dirInfo.icon ? `${dirInfo.icon} ${dirInfo.name}` : dirInfo.name}
             </Text>
           </Group>
         </Tooltip>,
       );
     }
-    if (topic) {
+    if (topicInfo) {
       items.push(
-        <Tooltip label={topic.name} key="topic-prefix">
+        <Tooltip label={topicInfo.name} key="topic-prefix">
           <Group gap={4} wrap="nowrap">
             <IconTag size={14} style={{ flexShrink: 0 }} />
             <Text fz="sm" c="dimmed" className={classes.truncatedText}>
-              {topic.icon ? `${topic.icon} ${topic.name}` : topic.name}
+              {topicInfo.icon ? `${topicInfo.icon} ${topicInfo.name}` : topicInfo.name}
             </Text>
           </Group>
         </Tooltip>,
@@ -176,11 +195,14 @@ export default function Breadcrumb() {
     if (!breadcrumbNodes) return [];
 
     const prefix = getPrefixItems();
+    // Filter out directory/topic nodes from tree path since they're already rendered by getPrefixItems()
+    const pageNodes = breadcrumbNodes.filter(
+      (node) => node.nodeType !== "directory" && node.nodeType !== "topic",
+    );
 
-    if (breadcrumbNodes.length > 3) {
-      const firstNode = breadcrumbNodes[0];
-      //const secondLastNode = breadcrumbNodes[breadcrumbNodes.length - 2];
-      const lastNode = breadcrumbNodes[breadcrumbNodes.length - 1];
+    if (pageNodes.length > 3) {
+      const firstNode = pageNodes[0];
+      const lastNode = pageNodes[pageNodes.length - 1];
 
       return [
         ...prefix,
@@ -201,12 +223,11 @@ export default function Breadcrumb() {
             <HiddenNodesTooltipContent />
           </Popover.Dropdown>
         </Popover>,
-        //renderAnchor(secondLastNode),
         renderAnchor(lastNode),
       ];
     }
 
-    return [...prefix, ...breadcrumbNodes.map(renderAnchor)];
+    return [...prefix, ...pageNodes.map(renderAnchor)];
   };
 
   const getMobileBreadcrumbItems = () => {

@@ -344,9 +344,12 @@ async function loadPage() {
 
     // 等待 DOM 更新后进行阶段2处理并触发 TOC 重建
     await nextTick()
-    if (contentRef.value) {
-      await processSpecialBlocks(contentRef.value)
-      processSubpagesBlocks(contentRef.value)
+    // 捕获容器引用一次，避免 await processSpecialBlocks 期间
+    // 目录切换导致 contentRef.value 变为 null 的竞态条件
+    const container = contentRef.value
+    if (container) {
+      await processSpecialBlocks(container)
+      processSubpagesBlocks(container)
     }
     window.dispatchEvent(new Event('docmost-content-loaded'))
   } catch (err: any) {
