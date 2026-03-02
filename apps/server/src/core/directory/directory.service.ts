@@ -5,6 +5,7 @@ import { generateJitteredKeyBetween } from 'fractional-indexing-jittered';
 import { PaginationOptions } from '@docmost/db/pagination/pagination-options';
 import { User, Workspace } from '@docmost/db/types/entity.types';
 import slugify = require('@sindresorhus/slugify');
+import { nanoIdGen } from '../../common/helpers/nanoid.utils';
 
 @Injectable()
 export class DirectoryService {
@@ -31,7 +32,7 @@ export class DirectoryService {
     user: User,
     workspace: Workspace,
   ) {
-    const slug = slugify(dto.name);
+    const slug = slugify(dto.name) || nanoIdGen();
 
     const slugExists = await this.directoryRepo.slugExists(slug, dto.spaceId);
     if (slugExists) {
@@ -63,7 +64,7 @@ export class DirectoryService {
         dto.directoryId,
         workspaceId,
       );
-      const newSlug = slugify(dto.name);
+      const newSlug = slugify(dto.name) || nanoIdGen();
       const slugExists = await this.directoryRepo.slugExists(
         newSlug,
         directory.spaceId,

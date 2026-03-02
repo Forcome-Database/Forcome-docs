@@ -10,6 +10,7 @@ import { generateJitteredKeyBetween } from 'fractional-indexing-jittered';
 import { PaginationOptions } from '@docmost/db/pagination/pagination-options';
 import { User, Workspace } from '@docmost/db/types/entity.types';
 import slugify = require('@sindresorhus/slugify');
+import { nanoIdGen } from '../../common/helpers/nanoid.utils';
 
 @Injectable()
 export class TopicService {
@@ -44,7 +45,7 @@ export class TopicService {
       throw new NotFoundException('Directory not found');
     }
 
-    const slug = slugify(dto.name);
+    const slug = slugify(dto.name) || nanoIdGen();
 
     const slugExists = await this.topicRepo.slugExists(slug, dto.directoryId);
     if (slugExists) {
@@ -74,7 +75,7 @@ export class TopicService {
       updateData.name = dto.name;
       // Regenerate slug when name changes
       const topic = await this.topicRepo.findById(dto.topicId, workspaceId);
-      const newSlug = slugify(dto.name);
+      const newSlug = slugify(dto.name) || nanoIdGen();
       const slugExists = await this.topicRepo.slugExists(
         newSlug,
         topic.directoryId,
