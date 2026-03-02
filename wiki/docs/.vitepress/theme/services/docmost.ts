@@ -9,6 +9,7 @@ import type {
   DocmostPage,
   DocmostSearchResult,
   DocmostAiStreamEvent,
+  AiHistoryMessage,
 } from '../types'
 import { AppError } from './errors'
 
@@ -87,16 +88,18 @@ export class DocmostService {
    * AI 问答（SSE 流式响应）
    * @param query 用户问题
    * @param pageSlugId 当前页面 slugId（可选，用于上下文定位）
+   * @param history 多轮对话历史（可选）
    */
-  async *aiAnswers(query: string, pageSlugId?: string): AsyncGenerator<DocmostAiStreamEvent> {
+  async *aiAnswers(query: string, pageSlugId?: string, history?: AiHistoryMessage[]): AsyncGenerator<DocmostAiStreamEvent> {
     this.abort()
     this.abortController = new AbortController()
 
     let response: Response
 
     try {
-      const body: Record<string, string> = { query }
+      const body: Record<string, any> = { query }
       if (pageSlugId) body.pageSlugId = pageSlugId
+      if (history && history.length > 0) body.history = history
 
       response = await fetch(`${this.config.baseUrl}/ai/answers`, {
         method: 'POST',
