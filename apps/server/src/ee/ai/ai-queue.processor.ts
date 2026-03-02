@@ -7,6 +7,14 @@ import { KyselyDB } from '@docmost/db/types/kysely.types';
 import { sql } from 'kysely';
 import { EnvironmentService } from '../../integrations/environment/environment.service';
 import { AiSearchService } from './services/ai-search.service';
+import { StorageService } from '../../integrations/storage/storage.service';
+import { chunkText } from './utils/chunker';
+import {
+  extractImageNodes,
+  extractDiagramNodes,
+  extractDrawioText,
+  extractExcalidrawText,
+} from './utils/content-extractor';
 
 @Processor(QueueName.AI_QUEUE)
 export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
@@ -16,6 +24,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
     @InjectKysely() private readonly db: KyselyDB,
     private readonly environmentService: EnvironmentService,
     private readonly aiSearchService: AiSearchService,
+    private readonly storageService: StorageService,
   ) {
     super();
   }
@@ -145,6 +154,22 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
       ON page_embeddings ("pageId")
     `.execute(this.db);
 
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_page_embeddings_chunk
+      ON page_embeddings ("pageId", "chunkIndex")
+    `.execute(this.db);
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_page_embeddings_metadata_type
+      ON page_embeddings USING GIN (metadata jsonb_path_ops)
+    `.execute(this.db);
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_page_embeddings_hnsw
+      ON page_embeddings USING hnsw (embedding vector_cosine_ops)
+      WITH (m = 16, ef_construction = 64)
+    `.execute(this.db);
+
     this.logger.log('page_embeddings table created successfully');
   }
 
@@ -164,7 +189,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
 
     const pages = await this.db
       .selectFrom('pages')
-      .select(['id', 'title', 'textContent'])
+      .select(['id', 'title', 'textContent', 'content'])
       .where('workspaceId', '=', workspaceId)
       .where('deletedAt', 'is', null)
       .execute();
@@ -174,7 +199,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
         const text = `${page.title || ''}\n${page.textContent || ''}`.trim();
         if (!text) continue;
 
-        await this.upsertPageEmbedding(page.id, workspaceId, text);
+        await this.upsertPageEmbedding(page.id, workspaceId, text, page.title || 'Untitled', page.content);
       } catch (err: any) {
         this.logger.error(
           `Failed to generate embedding for page ${page.id}: ${err?.message}`,
@@ -214,7 +239,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
       try {
         const page = await this.db
           .selectFrom('pages')
-          .select(['id', 'title', 'textContent'])
+          .select(['id', 'title', 'textContent', 'content'])
           .where('id', '=', pageId)
           .where('deletedAt', 'is', null)
           .executeTakeFirst();
@@ -224,7 +249,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
         const text = `${page.title || ''}\n${page.textContent || ''}`.trim();
         if (!text) continue;
 
-        await this.upsertPageEmbedding(page.id, workspaceId, text);
+        await this.upsertPageEmbedding(page.id, workspaceId, text, page.title || 'Untitled', page.content);
       } catch (err: any) {
         this.logger.error(
           `Failed to generate embedding for page ${pageId}: ${err?.message}`,
@@ -237,31 +262,162 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
     pageId: string,
     workspaceId: string,
     text: string,
+    pageTitle: string,
+    prosemirrorContent?: any,
   ): Promise<void> {
-    const embedding = await this.aiSearchService.generateEmbedding(text);
-    const embeddingStr = `[${embedding.join(',')}]`;
     const modelName = this.environmentService.getAiEmbeddingModel();
-    const dimension =
-      this.environmentService.getAiEmbeddingDimension() || 1536;
+    const dimension = this.environmentService.getAiEmbeddingDimension() || 1536;
 
     const page = await this.db
       .selectFrom('pages')
-      .select(['spaceId'])
+      .select(['spaceId', 'directoryId', 'topicId'])
       .where('id', '=', pageId)
       .executeTakeFirst();
 
     if (!page) return;
 
     // Delete existing embeddings for this page
-    await sql`
-      DELETE FROM page_embeddings WHERE "pageId" = ${pageId}
-    `.execute(this.db);
+    await sql`DELETE FROM page_embeddings WHERE "pageId" = ${pageId}`.execute(this.db);
 
-    // Insert new embedding
-    await sql`
-      INSERT INTO page_embeddings ("pageId", "spaceId", "workspaceId", "modelName", "modelDimensions", embedding)
-      VALUES (${pageId}, ${page.spaceId}, ${workspaceId}, ${modelName}, ${dimension}, ${embeddingStr}::vector)
-    `.execute(this.db);
+    // === Text chunking + contextual embedding ===
+    const chunks = chunkText(text);
+    for (const chunk of chunks) {
+      try {
+        const contextPrefix = await this.aiSearchService.generateContextPrefix(pageTitle, text, chunk.text);
+        const embeddingText = `${contextPrefix}\n${chunk.text}`;
+        const embedding = await this.aiSearchService.generateEmbedding(embeddingText);
+        const embeddingStr = `[${embedding.join(',')}]`;
+
+        await sql`
+          INSERT INTO page_embeddings ("pageId", "spaceId", "workspaceId", "directoryId", "topicId",
+            "modelName", "modelDimensions", embedding, "chunkIndex", "chunkStart", "chunkLength", metadata)
+          VALUES (${pageId}, ${page.spaceId}, ${workspaceId}, ${page.directoryId ?? null}, ${page.topicId ?? null},
+            ${modelName}, ${dimension}, ${embeddingStr}::vector,
+            ${chunk.chunkIndex}, ${chunk.chunkStart}, ${chunk.chunkLength},
+            ${JSON.stringify({ type: 'text', contextPrefix })}::jsonb)
+        `.execute(this.db);
+      } catch (err: any) {
+        this.logger.warn(`Failed to embed chunk ${chunk.chunkIndex} of page ${pageId}: ${err?.message}`);
+      }
+    }
+
+    // === Diagram text extraction ===
+    if (prosemirrorContent) {
+      const diagrams = extractDiagramNodes(prosemirrorContent);
+      for (const diagram of diagrams) {
+        try {
+          const attachment = await this.db
+            .selectFrom('attachments')
+            .select(['id', 'filePath', 'fileName'])
+            .where('id', '=', diagram.attachmentId)
+            .executeTakeFirst();
+
+          if (!attachment?.filePath) continue;
+
+          const fileBuffer = await this.storageService.read(attachment.filePath);
+          const fileContent = fileBuffer.toString('utf-8');
+
+          let diagramText = '';
+          if (diagram.type === 'drawio') {
+            diagramText = extractDrawioText(fileContent);
+          } else if (diagram.type === 'excalidraw') {
+            diagramText = extractExcalidrawText(fileContent);
+          }
+
+          if (!diagramText.trim()) continue;
+
+          const embText = `图表「${diagram.title || attachment.fileName || ''}」内容：${diagramText}`;
+          const embedding = await this.aiSearchService.generateEmbedding(embText);
+          const embeddingStr = `[${embedding.join(',')}]`;
+
+          await sql`
+            INSERT INTO page_embeddings ("pageId", "spaceId", "workspaceId", "directoryId", "topicId",
+              "modelName", "modelDimensions", embedding, "chunkIndex", "chunkStart", "chunkLength",
+              "attachmentId", metadata)
+            VALUES (${pageId}, ${page.spaceId}, ${workspaceId}, ${page.directoryId ?? null}, ${page.topicId ?? null},
+              ${modelName}, ${dimension}, ${embeddingStr}::vector,
+              ${chunks.length}, 0, 0, ${diagram.attachmentId},
+              ${JSON.stringify({ type: 'diagram', diagramType: diagram.type, title: diagram.title || '' })}::jsonb)
+          `.execute(this.db);
+        } catch (err: any) {
+          this.logger.warn(`Failed to extract diagram ${diagram.attachmentId}: ${err?.message}`);
+        }
+      }
+
+      // === Image VLM captioning ===
+      const images = extractImageNodes(prosemirrorContent);
+      for (const img of images) {
+        try {
+          // Check attachments.textContent cache first
+          const attachment = await this.db
+            .selectFrom('attachments')
+            .select(['id', 'filePath', 'fileName', 'textContent', 'mimeType'])
+            .where('id', '=', img.attachmentId)
+            .executeTakeFirst();
+
+          if (!attachment?.filePath) continue;
+
+          let description = attachment.textContent;
+
+          if (!description) {
+            // Generate description via VLM
+            try {
+              const imageBuffer = await this.storageService.read(attachment.filePath);
+              const base64 = imageBuffer.toString('base64');
+              const mimeType = attachment.mimeType || 'image/png';
+
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const { generateText } = require('ai');
+              const model = this.aiSearchService.getCompletionModel();
+
+              const result = await generateText({
+                model,
+                maxTokens: 200,
+                messages: [{
+                  role: 'user',
+                  content: [
+                    { type: 'image', image: `data:${mimeType};base64,${base64}` },
+                    { type: 'text', text: '用一段话描述这张图片的内容，包括关键信息和数据（不超过100字）。' },
+                  ],
+                }],
+              });
+
+              description = result.text?.trim() || '';
+
+              // Cache to attachments.textContent
+              if (description) {
+                await sql`
+                  UPDATE attachments SET "textContent" = ${description} WHERE id = ${img.attachmentId}
+                `.execute(this.db);
+              }
+            } catch (vlmErr: any) {
+              this.logger.warn(`VLM caption failed for ${img.attachmentId}: ${vlmErr?.message}`);
+              continue;
+            }
+          }
+
+          if (!description) continue;
+
+          const embText = `图片「${img.alt || attachment.fileName || ''}」：${description}`;
+          const embedding = await this.aiSearchService.generateEmbedding(embText);
+          const embeddingStr = `[${embedding.join(',')}]`;
+
+          await sql`
+            INSERT INTO page_embeddings ("pageId", "spaceId", "workspaceId", "directoryId", "topicId",
+              "modelName", "modelDimensions", embedding, "chunkIndex", "chunkStart", "chunkLength",
+              "attachmentId", metadata)
+            VALUES (${pageId}, ${page.spaceId}, ${workspaceId}, ${page.directoryId ?? null}, ${page.topicId ?? null},
+              ${modelName}, ${dimension}, ${embeddingStr}::vector,
+              ${chunks.length + 1}, 0, 0, ${img.attachmentId},
+              ${JSON.stringify({ type: 'image', description, alt: img.alt || '', attachmentId: img.attachmentId })}::jsonb)
+          `.execute(this.db);
+        } catch (err: any) {
+          this.logger.warn(`Failed to process image ${img.attachmentId}: ${err?.message}`);
+        }
+      }
+    }
+
+    this.logger.log(`Generated ${chunks.length} chunk embeddings for page ${pageId}`);
   }
 
   private async deletePageEmbeddings(pageIds: string[]): Promise<void> {
