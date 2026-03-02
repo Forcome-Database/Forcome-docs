@@ -20,10 +20,14 @@ import AIChat from './components/AIChat.vue'
 import NotFound from './components/NotFound.vue'
 import DocmostContent from './components/DocmostContent.vue'
 import { useDocmostSidebar } from './composables/useDocmostSidebar'
+import { useAuth } from './composables/useAuth'
 
 // 获取 VitePress 数据
 const { frontmatter, page } = useData()
 const route = useRoute()
+
+// Auth 初始化
+const { initAuth } = useAuth()
 
 // Docmost 数据预加载
 const { loadSpaces, isAvailable: hasDocmost, isDocmostRoute: checkDocmostRoute } = useDocmostSidebar()
@@ -139,6 +143,8 @@ provide('layout', {
 
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
+  // 初始化认证状态
+  initAuth()
   // 初始化 Docmost 数据（在 Layout 层确保最早加载）
   if (hasDocmost.value) {
     loadSpaces()

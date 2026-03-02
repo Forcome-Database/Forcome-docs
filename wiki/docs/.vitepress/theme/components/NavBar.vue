@@ -12,6 +12,7 @@ import SearchIcon from './icons/SearchIcon.vue'
 import ThemeToggle from './ThemeToggle.vue'
 import LangSwitch from './LangSwitch.vue'
 import { useDocmostSidebar } from '../composables/useDocmostSidebar'
+import UserMenu from './UserMenu.vue'
 
 // 定义事件
 const emit = defineEmits<{
@@ -293,10 +294,8 @@ const isDropdownActive = (item: any) => {
         <!-- 主题切换 -->
         <ThemeToggle />
 
-        <!-- 登录按钮 -->
-        <a href="/login" class="login-button">
-          登录
-        </a>
+        <!-- 用户菜单 / 登录按钮 -->
+        <UserMenu />
       </div>
     </div>
   </header>
@@ -631,30 +630,6 @@ const isDropdownActive = (item: any) => {
   white-space: nowrap;
 }
 
-/* 登录按钮 */
-.login-button {
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  color: rgba(38, 37, 30, 1);
-  text-decoration: none;
-  transition: color var(--transition-fast);
-}
-
-:root.dark .login-button {
-  color: rgba(236, 236, 231, 1);
-}
-
-.login-button:hover {
-  color: rgba(122, 121, 116, 1);
-}
-
-:root.dark .login-button:hover {
-  color: rgba(156, 155, 150, 1);
-}
-
 /* ===== 响应式布局 ===== */
 
 /* 平板端 (< 1024px) */
@@ -681,10 +656,6 @@ const isDropdownActive = (item: any) => {
 
   .ai-text,
   .ai-kbd {
-    display: none;
-  }
-
-  .login-button {
     display: none;
   }
 }

@@ -35,6 +35,10 @@ import MermaidWrapper from './components/MermaidWrapper.vue'
 // 导入 Docmost 动态内容组件
 import DocmostContent from './components/DocmostContent.vue'
 
+// 导入登录页面组件
+import LoginPage from './pages/LoginPage.vue'
+import LoginCallback from './pages/LoginCallback.vue'
+
 function isDocmostRoute(path: string): boolean {
   return /^\/(zh|en|vi)\/docs\//.test(path)
 }
@@ -48,6 +52,51 @@ const theme: Theme = {
 
     // 拦截 Docmost 路由：阻止 VitePress 查找 .md 文件，避免 404
     router.onBeforePageLoad = (to: string) => {
+      // --- Login routes ---
+      if (to === '/login' || to === '/login/') {
+        router.route.path = to
+        router.route.component = markRaw(LoginPage)
+        router.route.data = {
+          relativePath: 'login/index.md',
+          filePath: '',
+          title: 'Login',
+          description: '',
+          headers: [],
+          frontmatter: { sidebar: false, layout: 'page' },
+          params: {},
+          isNotFound: false,
+          lastUpdated: 0,
+        } as any
+        return false
+      }
+
+      if (to.startsWith('/login/callback')) {
+        router.route.path = to
+        router.route.component = markRaw(LoginCallback)
+        router.route.data = {
+          relativePath: 'login/callback/index.md',
+          filePath: '',
+          title: 'Login Callback',
+          description: '',
+          headers: [],
+          frontmatter: { sidebar: false, layout: 'page' },
+          params: {},
+          isNotFound: false,
+          lastUpdated: 0,
+        } as any
+        return false
+      }
+
+      // --- Auth guard ---
+      if (typeof document !== 'undefined') {
+        const hasAuth = document.cookie.split(';').some(c => c.trim().startsWith('authToken='))
+        if (!hasAuth && to !== '/') {
+          const redirectParam = encodeURIComponent(to)
+          window.location.href = `/login?redirect=${redirectParam}`
+          return false
+        }
+      }
+
       if (isDocmostRoute(to)) {
         // relativePath 必须以 locale 前缀开头（如 "zh/docs/..."），
         // VitePress 通过它解析当前 locale，决定 themeConfig（nav、sidebar 等）
