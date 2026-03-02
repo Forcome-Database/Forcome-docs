@@ -73,6 +73,12 @@ function redirectToLogin() {
     "/invites",
   ];
   if (!exemptPaths.some((path) => window.location.pathname.startsWith(path))) {
+    const wikiUrl = import.meta.env.VITE_WIKI_URL;
+    if (wikiUrl) {
+      window.location.href = `${wikiUrl}/login?redirect=${encodeURIComponent(window.location.href)}`;
+      return;
+    }
+
     const redirectTo = window.location.pathname;
     const params = new URLSearchParams({ redirect: redirectTo });
     window.location.href = `${APP_ROUTE.AUTH.LOGIN}?${params.toString()}`;
