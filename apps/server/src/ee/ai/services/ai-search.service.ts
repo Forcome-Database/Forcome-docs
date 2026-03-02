@@ -121,24 +121,9 @@ export class AiSearchService {
     return embedding;
   }
 
-  /** 用 LLM 为 chunk 生成文档级上下文前缀（Contextual Embedding） */
-  async generateContextPrefix(pageTitle: string, fullText: string, chunkText: string): Promise<string> {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { generateText } = require('ai');
-      const model = this.getCompletionModel();
-      const { text } = await generateText({
-        model,
-        maxTokens: 80,
-        messages: [{
-          role: 'user',
-          content: `<document title="${pageTitle}">\n${fullText.slice(0, 3000)}\n</document>\n\n<chunk>\n${chunkText.slice(0, 800)}\n</chunk>\n\n用一句话描述这个片段在文档中的位置和主题（不超过50字），格式："本段来自《XX》，讨论……"`,
-        }],
-      });
-      return text.trim();
-    } catch {
-      return `本段来自《${pageTitle}》`;
-    }
+  /** 为 chunk 生成文档级上下文前缀（模板方式，零成本） */
+  generateContextPrefix(pageTitle: string, _fullText: string, _chunkText: string): string {
+    return `本段来自《${pageTitle}》`;
   }
 
   // ==================== 检索：Chunk 级向量搜索 ====================
