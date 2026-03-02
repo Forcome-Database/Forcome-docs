@@ -391,10 +391,10 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
 
               description = result.text?.trim() || '';
 
-              // Cache to attachments.textContent
+              // Cache to attachments.text_content
               if (description) {
                 await sql`
-                  UPDATE attachments SET "textContent" = ${description} WHERE id = ${img.attachmentId}
+                  UPDATE attachments SET text_content = ${description} WHERE id = ${img.attachmentId}
                 `.execute(this.db);
               }
             } catch (vlmErr: any) {
