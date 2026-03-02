@@ -1,13 +1,17 @@
 import { type Kysely, sql } from 'kysely';
 
 export async function up(db: Kysely<any>): Promise<void> {
-  // 尝试创建 pg_jieba 扩展（如果已安装）
-  try {
-    await sql`CREATE EXTENSION IF NOT EXISTS pg_jieba`.execute(db);
-  } catch {
+  // 先检查 pg_jieba 扩展是否在系统中可用（不触发事务中止）
+  const available = await sql<{ cnt: string }>`
+    SELECT COUNT(*)::text as cnt FROM pg_available_extensions WHERE name = 'pg_jieba'
+  `.execute(db);
+
+  if (!available.rows.length || available.rows[0].cnt === '0') {
     // pg_jieba 未安装，跳过中文分词升级
     return;
   }
+
+  await sql`CREATE EXTENSION IF NOT EXISTS pg_jieba`.execute(db);
 
   // 双语 tsvector trigger：english + jiebacfg
   await sql`
