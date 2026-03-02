@@ -1,4 +1,5 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsString, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class PublicSidebarDto {
   @IsNotEmpty()
@@ -34,6 +35,14 @@ export class PublicSearchDto {
   limit?: number;
 }
 
+export class AiHistoryMessageDto {
+  @IsString()
+  role: 'user' | 'assistant';
+
+  @IsString()
+  content: string;
+}
+
 export class PublicAiAnswerDto {
   @IsNotEmpty()
   @IsString()
@@ -42,4 +51,10 @@ export class PublicAiAnswerDto {
   @IsOptional()
   @IsString()
   pageSlugId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AiHistoryMessageDto)
+  history?: AiHistoryMessageDto[];
 }

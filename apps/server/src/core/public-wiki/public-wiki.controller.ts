@@ -94,6 +94,7 @@ export class PublicWikiController {
         dto.query,
         workspace.id,
         dto.pageSlugId,
+        dto.history,
       )) {
         res.raw.write(`data: ${chunk}\n\n`);
       }
