@@ -267,6 +267,14 @@ export class EnvironmentService {
     return this.configService.get<string>('OPENAI_API_URL');
   }
 
+  getAiRerankModel(): string {
+    return this.configService.get<string>('AI_RERANK_MODEL');
+  }
+
+  getAiRerankApiUrl(): string {
+    return this.configService.get<string>('AI_RERANK_API_URL');
+  }
+
   getGeminiApiKey(): string {
     return this.configService.get<string>('GEMINI_API_KEY');
   }
