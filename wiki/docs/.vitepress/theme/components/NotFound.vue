@@ -80,7 +80,10 @@ const homeLink = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: calc(100vh - var(--navbar-height));
+  flex: 1;
+  min-width: 0;
+  height: calc(100vh - var(--navbar-height));
+  overflow: hidden;
   padding: var(--spacing-6);
   text-align: center;
 }
@@ -134,6 +137,7 @@ const homeLink = computed(() => {
 .not-found-link:hover {
   background-color: var(--c-brand-light);
   transform: translateY(-1px);
+  text-decoration: none;
 }
 
 .not-found-link:active {

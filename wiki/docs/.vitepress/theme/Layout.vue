@@ -19,12 +19,18 @@ import SearchModal from './components/SearchModal.vue'
 import AIChat from './components/AIChat.vue'
 import NotFound from './components/NotFound.vue'
 import DocmostContent from './components/DocmostContent.vue'
+import LoginPage from './pages/LoginPage.vue'
+import LoginCallback from './pages/LoginCallback.vue'
 import { useDocmostSidebar } from './composables/useDocmostSidebar'
 import { useAuth } from './composables/useAuth'
 
 // 获取 VitePress 数据
 const { frontmatter, page } = useData()
 const route = useRoute()
+
+// 登录页判断
+const isLoginPage = computed(() => route.path === '/login' || route.path === '/login/')
+const isLoginCallback = computed(() => route.path.startsWith('/login/callback'))
 
 // Auth 初始化
 const { initAuth } = useAuth()
@@ -40,7 +46,7 @@ const isDocmostRoute = computed(() => checkDocmostRoute(route.path))
 /**
  * 是否为 404 页面（Docmost 路由不算 404）
  */
-const is404 = computed(() => page.value.isNotFound && !isDocmostRoute.value)
+const is404 = computed(() => page.value.isNotFound && !isDocmostRoute.value && !isLoginPage.value && !isLoginCallback.value)
 
 // 主题状态（初始化主题）
 useTheme()
@@ -180,9 +186,9 @@ onUnmounted(() => {
 
     <!-- 主体区域 -->
     <div class="layout-main">
-      <!-- 左侧边栏（桌面端，404 页面不显示） -->
+      <!-- 左侧边栏（桌面端，404/登录页面不显示） -->
       <SideBar
-        v-if="hasSidebar && !isMobile && !is404"
+        v-if="hasSidebar && !isMobile && !is404 && !isLoginPage && !isLoginCallback"
         :width="sidebarWidth"
         :is-open="isSidebarOpen"
         :is-dragging="isSidebarDragging"
@@ -191,26 +197,30 @@ onUnmounted(() => {
         @start-drag="startDrag"
       />
 
+      <!-- 登录/回调/404 — 脱离 content-wrapper，全宽渲染 -->
+      <LoginPage v-if="isLoginPage" />
+      <LoginCallback v-else-if="isLoginCallback" />
+      <NotFound v-else-if="is404" />
+
       <!-- 主内容区 -->
       <main
+        v-else
         id="main-content"
         class="content-container"
-        :style="{ marginLeft: hasSidebar && !isMobile && !is404 ? `${sidebarWidth}px` : '0' }"
+        :style="{ marginLeft: hasSidebar && !isMobile ? `${sidebarWidth}px` : '0' }"
         role="main"
         tabindex="-1"
       >
         <article class="content-wrapper vp-doc">
-          <!-- 404 页面 -->
-          <NotFound v-if="is404" />
           <!-- Docmost 动态内容 -->
-          <DocmostContent v-else-if="isDocmostRoute" />
+          <DocmostContent v-if="isDocmostRoute" />
           <!-- 正常 VitePress 内容 -->
           <Content v-else />
         </article>
       </main>
 
-      <!-- 右侧面板：目录 + 工具栏（桌面端，404 页面不显示） -->
-      <RightPanel v-if="!is404 && !isMobile" />
+      <!-- 右侧面板：目录 + 工具栏（桌面端，404/登录页面不显示） -->
+      <RightPanel v-if="!is404 && !isMobile && !isLoginPage && !isLoginCallback" />
     </div>
 
     <!-- 搜索模态框（需求 5.1-5.10） -->

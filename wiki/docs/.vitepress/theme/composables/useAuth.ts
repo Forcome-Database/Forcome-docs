@@ -12,6 +12,20 @@ function hasCookie(name: string): boolean {
   return document.cookie.split(';').some((c) => c.trim().startsWith(`${name}=`))
 }
 
+/**
+ * Set a non-httpOnly marker cookie so JS can detect login state.
+ * The real authToken is httpOnly and invisible to document.cookie.
+ */
+function setAuthMarker() {
+  if (typeof document === 'undefined') return
+  document.cookie = 'authMarker=1; path=/; max-age=7776000' // 90 days
+}
+
+function clearAuthMarker() {
+  if (typeof document === 'undefined') return
+  document.cookie = 'authMarker=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
+}
+
 function isInDingTalk(): boolean {
   if (typeof navigator === 'undefined') return false
   return /DingTalk/i.test(navigator.userAgent)
@@ -52,8 +66,13 @@ export function useAuth() {
     if (isInitialized.value) return
     isLoading.value = true
     try {
-      if (hasCookie('authToken')) {
-        await fetchUserInfo()
+      // authToken is httpOnly (invisible to JS), check authMarker instead
+      if (hasCookie('authMarker')) {
+        const ok = await fetchUserInfo()
+        if (!ok) {
+          // authMarker exists but session expired — clear stale marker
+          clearAuthMarker()
+        }
       }
     } finally {
       isLoading.value = false
@@ -68,6 +87,7 @@ export function useAuth() {
       isLoading.value = true
       const result = await authService.dingtalkCallback(authCode)
       currentUser.value = result.user
+      setAuthMarker() // non-httpOnly marker so JS can detect login
       return true
     } catch (err) {
       console.error('[Auth] DingTalk callback failed:', err)
@@ -84,6 +104,7 @@ export function useAuth() {
       isLoading.value = true
       const result = await authService.dingtalkH5Login(code)
       currentUser.value = result.user
+      setAuthMarker()
       return true
     } catch (err) {
       console.error('[Auth] H5 login failed:', err)
@@ -103,9 +124,7 @@ export function useAuth() {
       }
     }
     currentUser.value = null
-    if (typeof document !== 'undefined') {
-      document.cookie = 'authToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
-    }
+    clearAuthMarker()
   }
 
   return {

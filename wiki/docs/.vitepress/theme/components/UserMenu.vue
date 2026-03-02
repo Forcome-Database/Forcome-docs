@@ -45,7 +45,7 @@ async function handleLogout() {
       </button>
     </div>
   </div>
-  <a v-else-if="hasCookie('authToken')" href="#" class="login-button" style="opacity:0.5">
+  <a v-else-if="hasCookie('authMarker')" href="#" class="login-button" style="opacity:0.5">
     ...
   </a>
   <a v-else href="/login" class="login-button">
@@ -91,7 +91,7 @@ async function handleLogout() {
   position: absolute;
   top: 100%;
   right: 0;
-  margin-top: 8px;
+  padding-top: 8px;
   min-width: 200px;
   background: var(--c-bg);
   border: 1px solid var(--c-border);

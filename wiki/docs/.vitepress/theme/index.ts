@@ -88,11 +88,13 @@ const theme: Theme = {
       }
 
       // --- Auth guard ---
-      if (typeof document !== 'undefined') {
-        const hasAuth = document.cookie.split(';').some(c => c.trim().startsWith('authToken='))
+      // Skip auth check for login pages and homepage
+      if (typeof document !== 'undefined' && !to.startsWith('/login')) {
+        const hasAuth = document.cookie.split(';').some(c => c.trim().startsWith('authMarker='))
         if (!hasAuth && to !== '/') {
           const redirectParam = encodeURIComponent(to)
-          window.location.href = `/login?redirect=${redirectParam}`
+          // Use VitePress router navigation, not window.location.href (avoids full reload loop)
+          router.go(`/login?redirect=${redirectParam}`)
           return false
         }
       }

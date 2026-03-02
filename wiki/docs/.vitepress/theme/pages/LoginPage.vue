@@ -5,6 +5,7 @@ import { useAuth } from '../composables/useAuth'
 const { loadDingTalkConfig, loginWithH5Code, isLoading, isInDingTalk } = useAuth()
 const error = ref('')
 const h5Loading = ref(false)
+const mounted = ref(false)
 
 function getRedirectUrl(): string {
   if (typeof window === 'undefined') return '/'
@@ -74,6 +75,11 @@ async function handleH5SilentLogin() {
 }
 
 onMounted(async () => {
+  // Trigger entrance animations
+  requestAnimationFrame(() => {
+    mounted.value = true
+  })
+
   if (isInDingTalk()) {
     await handleH5SilentLogin()
   }
@@ -81,124 +87,424 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="login-page">
+  <div class="login-page" :class="{ 'is-mounted': mounted }">
+    <!-- Background decoration -->
+    <div class="login-bg">
+      <div class="login-bg-grain"></div>
+      <div class="login-bg-glow login-bg-glow--1"></div>
+      <div class="login-bg-glow login-bg-glow--2"></div>
+    </div>
+
+    <!-- Login card -->
     <div class="login-card">
-      <div class="login-header">
-        <img src="/images/logo/logo.png" alt="Logo" class="login-logo" />
-        <h1>FORCOME 知识库</h1>
-        <p class="login-subtitle">请登录后访问</p>
+      <!-- Brand section -->
+      <div class="login-brand">
+        <div class="login-logo-wrap">
+          <img src="/images/logo/logo.png" alt="Logo" class="login-logo" />
+        </div>
+        <h1 class="login-title">FORCOME 知识库</h1>
+        <p class="login-desc">企业协作知识管理平台</p>
       </div>
 
+      <!-- Divider -->
+      <div class="login-divider">
+        <span class="login-divider-text">登录以继续</span>
+      </div>
+
+      <!-- H5 auto-login loading state -->
       <div v-if="h5Loading" class="login-loading">
-        <div class="spinner"></div>
-        <p>正在自动登录...</p>
+        <div class="login-spinner">
+          <div class="login-spinner-ring"></div>
+        </div>
+        <p class="login-loading-text">正在自动登录...</p>
       </div>
 
+      <!-- Login actions -->
       <div v-else class="login-actions">
         <button
-          class="dingtalk-login-btn"
+          class="login-btn"
           :disabled="isLoading"
           @click="handleDingTalkLogin"
         >
-          <svg class="dingtalk-icon" viewBox="0 0 24 24" width="20" height="20">
-            <path
-              fill="currentColor"
-              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-.8 5.42s-.04.55-.29.64c-.25.09-.68-.22-.68-.22s-3.65-2.6-4.03-2.87c-.23-.17-.01-.42-.01-.42s4.33-3.87 4.69-4.22c.36-.35-.13-.19-.13-.19-1.28.85-5.41 3.4-5.94 3.73-.53.33-1.04.24-1.04.24l-2.08-.62s-.78-.33.56-.68c0 0 5.55-2.27 7.36-3.01 1.81-.74 5.29-2.2 5.29-2.2s1.07-.43.9.6z"
-            />
+          <svg class="login-btn-icon" viewBox="0 0 1024 1024" width="22" height="22" fill="currentColor">
+            <path d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm227.2 468.3s-89.8 72.4-124.4 101c-2 1.6-2.2 2-2.2 2l-0.2 0.6c0 0.2-0.2 0.8-0.2 1.6 0 2 1.4 5 4.4 8.8 15.2 19.6 76 99 76 99s5.8 8.4 3.4 13.2c-1.6 3-5 5-10.4 5H596c-5.4 0-11.8-2.6-18.4-7.8-10-7.8-54.8-57-54.8-57s-6.2-6.2-12.6-6.2c-3.4 0-6.8 1.6-9.6 6.4-8.6 14.6-24.8 39.4-37.4 55.4-5.2 6.6-14.2 14.8-29.6 14.8h-7.4c-8 0-11-5.4-11-8.2 0-2.2 1-4.8 4-8.8 0 0 73.6-95 73.6-95.2 2.2-3.2 3.4-6 3.4-8.2 0-3.2-2.2-5.4-4-6.8l-91-72.8c-3.2-2.6-4.2-5.4-4.2-7.4 0-4 3.6-8 10.2-8h90c0.8 0 3-0.2 3.6-0.2 5.2-0.6 7.6-4 9.2-6.4l52-78.2c3.4-5 7.6-7.4 11.2-7.4 3.2 0 6 2 7.2 5.8 0 0 21.8 67.2 23.4 72.8 0.6 2 2.4 4.6 6.8 4.6h95c6.6 0 10.4 4 10.4 8.2 0 2.4-1.2 5.2-5.2 8.4z"/>
           </svg>
-          钉钉扫码登录
+          <span class="login-btn-text">钉钉扫码登录</span>
+          <svg class="login-btn-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
         </button>
 
-        <p v-if="error" class="login-error">{{ error }}</p>
+        <p v-if="error" class="login-error">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 10.5a.75.75 0 110-1.5.75.75 0 010 1.5zM8.75 4.75v4a.75.75 0 01-1.5 0v-4a.75.75 0 011.5 0z"/>
+          </svg>
+          {{ error }}
+        </p>
       </div>
+
+      <!-- Footer -->
+      <p class="login-footer">使用企业钉钉账号安全登录</p>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* ===== Page container ===== */
 .login-page {
+  position: relative;
   display: flex;
-  justify-content: center;
   align-items: center;
-  min-height: 100vh;
-  background: var(--c-bg);
-  padding: 20px;
+  justify-content: center;
+  /* Flex-fill inside layout-main, full width */
+  flex: 1;
+  min-width: 0;
+  height: calc(100vh - var(--navbar-height));
+  overflow: hidden;
 }
 
+/* ===== Background ===== */
+.login-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.login-bg-grain {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+.login-bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+
+.login-bg-glow--1 {
+  width: 400px;
+  height: 400px;
+  top: -120px;
+  right: -80px;
+  background: var(--c-accent);
+  opacity: 0;
+}
+
+.login-bg-glow--2 {
+  width: 300px;
+  height: 300px;
+  bottom: -100px;
+  left: -60px;
+  background: #0089ff;
+  opacity: 0;
+}
+
+.is-mounted .login-bg-glow--1 {
+  opacity: 0.06;
+}
+
+.is-mounted .login-bg-glow--2 {
+  opacity: 0.05;
+}
+
+:global(.dark) .is-mounted .login-bg-glow--1 {
+  opacity: 0.08;
+}
+
+:global(.dark) .is-mounted .login-bg-glow--2 {
+  opacity: 0.06;
+}
+
+/* ===== Card ===== */
 .login-card {
-  max-width: 400px;
+  position: relative;
+  z-index: 1;
   width: 100%;
-  padding: 48px 32px;
-  border-radius: 12px;
+  max-width: 380px;
+  padding: 40px 36px 32px;
+  border-radius: 16px;
   background: var(--c-bg);
   border: 1px solid var(--c-border);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 6px 24px rgba(0, 0, 0, 0.06);
+
+  /* Entrance animation */
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.is-mounted .login-card {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+:global(.dark) .login-card {
+  background: var(--c-bg-soft);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.2),
+    0 6px 24px rgba(0, 0, 0, 0.25);
+}
+
+/* ===== Brand section ===== */
+.login-brand {
   text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: var(--c-bg-mute);
+  border: 1px solid var(--c-border);
+
+  /* Stagger entrance */
+  opacity: 0;
+  transform: scale(0.8);
+  transition:
+    opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.15s,
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.15s;
+}
+
+.is-mounted .login-logo-wrap {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .login-logo {
-  width: 64px;
-  height: 64px;
-  margin-bottom: 16px;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
 }
 
-.login-header h1 {
-  font-size: 24px;
-  font-weight: 600;
-  margin: 0 0 8px;
+.login-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--c-text-1);
+  margin: 0;
+  line-height: 1.2;
+
+  /* Stagger entrance */
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.4s ease 0.22s,
+    transform 0.4s ease 0.22s;
 }
 
-.login-subtitle {
-  color: var(--c-text-2);
-  margin: 0 0 32px;
+.is-mounted .login-title {
+  opacity: 1;
+  transform: translateY(0);
 }
 
-.dingtalk-login-btn {
-  display: inline-flex;
+.login-desc {
+  font-size: 13px;
+  color: var(--c-text-3);
+  margin: 6px 0 0;
+  letter-spacing: 0.02em;
+
+  /* Stagger entrance */
+  opacity: 0;
+  transition: opacity 0.4s ease 0.3s;
+}
+
+.is-mounted .login-desc {
+  opacity: 1;
+}
+
+/* ===== Divider ===== */
+.login-divider {
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 32px;
-  font-size: 16px;
-  font-weight: 500;
-  color: #fff;
-  background: #0089ff;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.2s;
+  margin-bottom: 24px;
 }
 
-.dingtalk-login-btn:hover {
-  background: #0070d6;
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--c-border);
 }
 
-.dingtalk-login-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.login-divider-text {
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--c-text-4);
+  white-space: nowrap;
+  letter-spacing: 0.04em;
 }
 
+/* ===== Loading state ===== */
 .login-loading {
-  padding: 32px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 0 8px;
 }
 
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid var(--c-border);
+.login-spinner {
+  width: 36px;
+  height: 36px;
+  margin-bottom: 14px;
+}
+
+.login-spinner-ring {
+  width: 100%;
+  height: 100%;
+  border: 2.5px solid var(--c-border);
   border-top-color: #0089ff;
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin: 0 auto 16px;
+  animation: login-spin 0.7s linear infinite;
 }
 
-@keyframes spin {
+@keyframes login-spin {
   to { transform: rotate(360deg); }
 }
 
+.login-loading-text {
+  font-size: 13px;
+  color: var(--c-text-3);
+}
+
+/* ===== Login button ===== */
+.login-actions {
+  /* Stagger entrance */
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.4s ease 0.38s,
+    transform 0.4s ease 0.38s;
+}
+
+.is-mounted .login-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.login-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 46px;
+  padding: 0 20px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: #0089ff;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 137, 255, 0.25);
+}
+
+.login-btn:hover {
+  background: #0078e5;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 137, 255, 0.3);
+}
+
+.login-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 137, 255, 0.2);
+}
+
+.login-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.login-btn-icon {
+  flex-shrink: 0;
+}
+
+.login-btn-text {
+  flex: 0 0 auto;
+}
+
+.login-btn-arrow {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.2s ease;
+}
+
+.login-btn:hover .login-btn-arrow {
+  transform: translateX(2px);
+  opacity: 1;
+}
+
+/* ===== Error message ===== */
 .login-error {
-  color: #e53e3e;
-  margin-top: 16px;
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--c-error);
+  background: rgba(239, 68, 68, 0.06);
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.12);
+}
+
+:global(.dark) .login-error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+/* ===== Footer ===== */
+.login-footer {
+  text-align: center;
+  font-size: 11px;
+  color: var(--c-text-4);
+  margin-top: 20px;
+  letter-spacing: 0.02em;
+}
+
+/* ===== Mobile responsive ===== */
+@media (max-width: 639px) {
+  .login-page {
+    padding: 0 16px;
+  }
+
+  .login-card {
+    max-width: none;
+    padding: 32px 24px 28px;
+    border-radius: 14px;
+  }
+}
+
+/* Small height screens - prevent card from being cut off */
+@media (max-height: 560px) {
+  .login-page {
+    align-items: flex-start;
+    padding-top: 24px;
+    overflow-y: auto;
+  }
 }
 </style>

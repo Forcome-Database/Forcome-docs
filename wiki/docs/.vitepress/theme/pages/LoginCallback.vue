@@ -56,7 +56,9 @@ onMounted(async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 100vh;
+  flex: 1;
+  min-width: 0;
+  height: calc(100vh - var(--navbar-height));
   background: var(--c-bg);
 }
 
