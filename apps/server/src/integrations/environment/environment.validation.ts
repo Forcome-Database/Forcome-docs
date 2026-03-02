@@ -156,6 +156,20 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsUrl({ protocols: ['http', 'https'], require_tld: false })
   AI_RERANK_API_URL: string;
+
+  @IsOptional()
+  @IsString()
+  AI_LITE_MODEL: string;
+
+  @IsOptional()
+  @IsString()
+  AI_VLM_MODEL: string;
+
+  @IsOptional()
+  @ValidateIf((obj) => obj.AI_VLM_DRIVER)
+  @IsIn(['openai', 'openai-compatible', 'gemini', 'ollama'])
+  @IsString()
+  AI_VLM_DRIVER: string;
 }
 
 export function validate(config: Record<string, any>) {

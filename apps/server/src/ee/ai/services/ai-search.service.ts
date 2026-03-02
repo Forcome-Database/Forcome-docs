@@ -80,6 +80,28 @@ export class AiSearchService {
     if (!driver || !modelName) {
       throw new BadRequestException('AI completion model is not configured.');
     }
+    return this.buildLanguageModel(driver, modelName);
+  }
+
+  getLiteModel() {
+    const driver = this.environmentService.getAiDriver();
+    const modelName = this.environmentService.getAiLiteModel();
+    if (!driver || !modelName) {
+      throw new BadRequestException('AI lite model is not configured.');
+    }
+    return this.buildLanguageModel(driver, modelName);
+  }
+
+  getVlmModel() {
+    const driver = this.environmentService.getAiVlmDriver();
+    const modelName = this.environmentService.getAiVlmModel();
+    if (!driver || !modelName) {
+      throw new BadRequestException('AI VLM model is not configured.');
+    }
+    return this.buildLanguageModel(driver, modelName);
+  }
+
+  private buildLanguageModel(driver: string, modelName: string) {
     switch (driver) {
       case 'openai': {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -121,9 +143,28 @@ export class AiSearchService {
     return embedding;
   }
 
-  /** 为 chunk 生成文档级上下文前缀（模板方式，零成本） */
-  generateContextPrefix(pageTitle: string, _fullText: string, _chunkText: string): string {
-    return `本段来自《${pageTitle}》`;
+  /** 为 chunk 生成文档级上下文前缀（LLM 生成，使用 lite model） */
+  async generateContextPrefix(pageTitle: string, fullText: string, chunkText: string): Promise<string> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { generateText } = require('ai');
+      const model = this.getLiteModel();
+
+      const docSnippet = fullText.slice(0, 1000);
+      const { text } = await generateText({
+        model,
+        maxTokens: 80,
+        messages: [{
+          role: 'user',
+          content: `文档标题：${pageTitle}\n文档摘要：${docSnippet}\n\n当前片段：${chunkText.slice(0, 300)}\n\n请用一句话（不超过50字）概括该片段在文档中的上下文位置和主题，格式："本段来自《标题》，讲述……"。只返回这句话。`,
+        }],
+      });
+
+      return text?.trim() || `本段来自《${pageTitle}》`;
+    } catch (err: any) {
+      this.logger.warn(`Context prefix generation failed, using template fallback: ${err?.message}`);
+      return `本段来自《${pageTitle}》`;
+    }
   }
 
   // ==================== 检索：Chunk 级向量搜索 ====================
@@ -312,7 +353,7 @@ export class AiSearchService {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { generateText } = require('ai');
-      const model = this.getCompletionModel();
+      const model = this.getLiteModel();
 
       const candidateList = candidates.slice(0, 15).map((c, i) => {
         const preview = (c.chunkText || c.textContent || '').slice(0, 300);
@@ -387,11 +428,11 @@ export class AiSearchService {
     images?: { data: string; mimeType: string }[],
     history?: { role: string; content: string }[],
   ): AsyncGenerator<string> {
-    // 1. 获取当前页面
-    let currentPage: { title: string; slugId: string; spaceSlug: string; textContent: string } | null = null;
+    // 1. 获取当前页面（含 content JSON，用于提取图片信息）
+    let currentPage: { title: string; slugId: string; spaceSlug: string; textContent: string; content?: any } | null = null;
     if (pageSlugId) {
       const rows = await sql`
-        SELECT p.title, p.slug_id as "slugId", p.text_content as "textContent", s.slug as "spaceSlug"
+        SELECT p.title, p.slug_id as "slugId", p.text_content as "textContent", p.content, s.slug as "spaceSlug"
         FROM pages p JOIN spaces s ON s.id = p.space_id
         WHERE p.slug_id = ${pageSlugId} AND p.workspace_id = ${workspaceId} AND p.deleted_at IS NULL
         LIMIT 1
@@ -403,15 +444,30 @@ export class AiSearchService {
     const hybridResults = await this.hybridSearch(query, workspaceId, 15);
     const reranked = await this.rerank(query, hybridResults, 5);
 
-    // 3. 当前页面：智能 chunk 截取
+    // 3. 当前页面：带内联图片的完整内容
     const contextParts: string[] = [];
     let idx = 1;
+    const appUrl = this.environmentService.getAppUrl();
 
     if (currentPage) {
-      const currentChunks = await this.searchCurrentPageChunks(query, workspaceId, currentPage.slugId);
-      if (currentChunks.length > 0) {
-        const relevantText = currentChunks.slice(0, 3).map((c) => c.chunkText).join('\n...\n');
-        contextParts.push(`[${idx}] (当前页面) ${currentPage.title || 'Untitled'}:\n${relevantText}`);
+      if (currentPage.content) {
+        // 获取图片描述 map（attachmentId → description）
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { extractImageNodes, prosemirrorToTextWithImages } = require('../utils/content-extractor');
+        const pageImages = extractImageNodes(currentPage.content);
+        const descMap = new Map<string, string>();
+        for (const img of pageImages) {
+          const embRow = await sql`
+            SELECT metadata FROM page_embeddings
+            WHERE "attachmentId" = ${img.attachmentId} AND "deletedAt" IS NULL
+            LIMIT 1
+          `.execute(this.db);
+          const meta = (embRow.rows[0] as any)?.metadata;
+          if (meta?.description) descMap.set(img.attachmentId, meta.description);
+        }
+        // ProseMirror → 带内联图片的 markdown 文本
+        const fullText = prosemirrorToTextWithImages(currentPage.content, appUrl, descMap);
+        contextParts.push(`[${idx}] (当前页面) ${currentPage.title || 'Untitled'}:\n${fullText.slice(0, 8000)}`);
       } else {
         contextParts.push(`[${idx}] (当前页面) ${currentPage.title || 'Untitled'}:\n${(currentPage.textContent || '').slice(0, 4000)}`);
       }
@@ -426,8 +482,11 @@ export class AiSearchService {
       const metaType = s.metadata?.type;
 
       if (metaType === 'image') {
-        contextParts.push(`[${idx}] (图片) ${s.title} — ${s.metadata?.description || ''}:\n${content}`);
-        if (s.metadata?.attachmentId) sourceImages.push({ attachmentId: s.metadata.attachmentId, description: s.metadata.description });
+        const imgAttId = s.metadata?.attachmentId;
+        const imgAlt = s.metadata?.alt || s.metadata?.description || '图片';
+        const imgUrl = imgAttId ? `${appUrl}/api/files/${imgAttId}/${imgAlt}` : '';
+        contextParts.push(`[${idx}] (图片) ${s.title} — ${s.metadata?.description || ''}${imgUrl ? `\n链接: ![${imgAlt}](${imgUrl})` : ''}:\n${content}`);
+        if (imgAttId) sourceImages.push({ attachmentId: imgAttId, description: s.metadata.description });
       } else if (metaType === 'diagram') {
         contextParts.push(`[${idx}] (图表) ${s.title}:\n${content}`);
       } else {
@@ -443,13 +502,19 @@ export class AiSearchService {
     const currentPageHint = currentPage
       ? (isChinese ? '用户正在查看标记为（当前页面）的页面，回答时优先参考该页面内容。' : 'The user is viewing the page marked (当前页面), prioritize it.')
       : '';
-    const imageHint = sourceImages.length > 0
-      ? (isChinese ? '上下文中包含图片描述，如果相关请在回答中提及。' : 'Context includes image descriptions, reference if relevant.')
+    const hasImageContext = sourceImages.length > 0 || context.includes('![');
+    const imageHint = hasImageContext
+      ? (isChinese ? '文档中的图片已用 ![描述](链接) 格式标记，回答时直接保留这些markdown图片链接，让图片在对应步骤处显示。' : 'Images are marked as ![alt](url). Keep these markdown links in your answer at the appropriate steps.')
+      : '';
+
+    const multiSource = idx > 2; // idx starts at 1, incremented per source; >2 means multiple sources
+    const citationHint = multiSource
+      ? (isChinese ? '引用不同来源时使用 [N] 标注来源编号。' : 'Use [N] to cite when referencing different sources.')
       : '';
 
     const systemPrompt = isChinese
-      ? `根据以下文档内容回答用户的问题。${currentPageHint}${imageHint}如果文档中没有足够的信息，请如实说明。在回答中使用 [N] 格式引用来源编号。\n\n文档内容：\n${context}`
-      : `Answer based on the provided context. ${currentPageHint}${imageHint}If insufficient info, say so. Use [N] to cite sources.\n\nContext:\n${context}`;
+      ? `根据以下文档内容回答用户的问题。${currentPageHint}${imageHint}${citationHint}如果文档中没有足够的信息，请如实说明。\n\n文档内容：\n${context}`
+      : `Answer based on the provided context. ${currentPageHint}${imageHint}${citationHint}If insufficient info, say so.\n\nContext:\n${context}`;
 
     // 6. Messages (多轮 + 多模态)
     const messages: any[] = [{ role: 'system', content: systemPrompt }];
@@ -466,7 +531,7 @@ export class AiSearchService {
 
     if (images?.length) {
       const userContent: any[] = [
-        ...images.map((img) => ({ type: 'image' as const, image: `data:${img.mimeType};base64,${img.data}` })),
+        ...images.map((img) => ({ type: 'image' as const, image: Buffer.from(img.data, 'base64'), mimeType: img.mimeType })),
         { type: 'text' as const, text: query },
       ];
       messages.push({ role: 'user', content: userContent });

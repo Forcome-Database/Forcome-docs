@@ -267,6 +267,21 @@ export class EnvironmentService {
     return this.configService.get<string>('OPENAI_API_URL');
   }
 
+  getAiLiteModel(): string {
+    return this.configService.get<string>('AI_LITE_MODEL')
+      || this.configService.get<string>('AI_COMPLETION_MODEL');
+  }
+
+  getAiVlmModel(): string {
+    return this.configService.get<string>('AI_VLM_MODEL')
+      || this.configService.get<string>('AI_COMPLETION_MODEL');
+  }
+
+  getAiVlmDriver(): string {
+    return this.configService.get<string>('AI_VLM_DRIVER')
+      || this.configService.get<string>('AI_DRIVER');
+  }
+
   getAiRerankModel(): string {
     return this.configService.get<string>('AI_RERANK_MODEL');
   }

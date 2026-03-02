@@ -353,7 +353,11 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
 
       // === Image VLM captioning ===
       const images = extractImageNodes(prosemirrorContent);
+      this.logger.log(`Found ${images.length} images in page ${pageId}`);
+
+      let imgIdx = 0;
       for (const img of images) {
+        imgIdx++;
         try {
           // Check attachments.textContent cache first
           const attachment = await this.db
@@ -362,20 +366,26 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
             .where('id', '=', img.attachmentId)
             .executeTakeFirst();
 
-          if (!attachment?.filePath) continue;
+          if (!attachment) {
+            this.logger.warn(`Image attachment not found: ${img.attachmentId}`);
+            continue;
+          }
 
           let description = attachment.textContent;
 
-          if (!description) {
+          if (description) {
+            this.logger.debug(`Using cached description for ${img.attachmentId}: ${description.slice(0, 50)}...`);
+          } else if (attachment.filePath) {
             // Generate description via VLM
             try {
               const imageBuffer = await this.storageService.read(attachment.filePath);
-              const base64 = imageBuffer.toString('base64');
               const mimeType = attachment.mimeType || 'image/png';
 
               // eslint-disable-next-line @typescript-eslint/no-require-imports
               const { generateText } = require('ai');
-              const model = this.aiSearchService.getCompletionModel();
+              const model = this.aiSearchService.getVlmModel();
+
+              this.logger.log(`Calling VLM for image ${img.attachmentId} (${attachment.fileName}, ${imageBuffer.length} bytes)`);
 
               const result = await generateText({
                 model,
@@ -383,7 +393,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
                 messages: [{
                   role: 'user',
                   content: [
-                    { type: 'image', image: `data:${mimeType};base64,${base64}` },
+                    { type: 'image', image: imageBuffer, mimeType },
                     { type: 'text', text: '用一段话描述这张图片的内容，包括关键信息和数据（不超过100字）。' },
                   ],
                 }],
@@ -396,14 +406,20 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
                 await sql`
                   UPDATE attachments SET text_content = ${description} WHERE id = ${img.attachmentId}
                 `.execute(this.db);
+                this.logger.log(`VLM caption success for ${img.attachmentId}: ${description.slice(0, 60)}...`);
               }
             } catch (vlmErr: any) {
               this.logger.warn(`VLM caption failed for ${img.attachmentId}: ${vlmErr?.message}`);
-              continue;
+              // Fallback: use filename/alt as basic description
+              description = `图片：${img.alt || attachment.fileName || `第${imgIdx}张图片`}`;
+              this.logger.log(`Using fallback description for ${img.attachmentId}: ${description}`);
             }
           }
 
-          if (!description) continue;
+          // If still no description (no filePath and no cache), use filename/alt
+          if (!description) {
+            description = `图片：${img.alt || attachment?.fileName || `第${imgIdx}张图片`}`;
+          }
 
           const embText = `图片「${img.alt || attachment.fileName || ''}」：${description}`;
           const embedding = await this.aiSearchService.generateEmbedding(embText);
@@ -415,7 +431,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
               "attachmentId", metadata)
             VALUES (${pageId}, ${page.spaceId}, ${workspaceId}, ${page.directoryId ?? null}, ${page.topicId ?? null},
               ${modelName}, ${dimension}, ${embeddingStr}::vector,
-              ${chunks.length + 1}, 0, 0, ${img.attachmentId},
+              ${chunks.length + imgIdx}, 0, 0, ${img.attachmentId},
               ${JSON.stringify({ type: 'image', description, alt: img.alt || '', attachmentId: img.attachmentId })}::jsonb)
           `.execute(this.db);
         } catch (err: any) {
