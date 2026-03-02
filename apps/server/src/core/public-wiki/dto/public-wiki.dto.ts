@@ -60,6 +60,14 @@ class AiImageDto {
   mimeType: string;
 }
 
+export class AiHistoryMessageDto {
+  @IsString()
+  role: 'user' | 'assistant';
+
+  @IsString()
+  content: string;
+}
+
 export class PublicAiAnswerDto {
   @IsNotEmpty()
   @IsString()
@@ -74,4 +82,10 @@ export class PublicAiAnswerDto {
   @ValidateNested({ each: true })
   @Type(() => AiImageDto)
   images?: AiImageDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AiHistoryMessageDto)
+  history?: AiHistoryMessageDto[];
 }

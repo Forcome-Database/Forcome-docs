@@ -10,6 +10,7 @@ import type {
   DocmostSearchResult,
   DocmostAiStreamEvent,
   DocmostDirectory,
+  AiHistoryMessage,
 } from '../types'
 import { AppError } from './errors'
 
@@ -107,11 +108,13 @@ export class DocmostService {
    * @param query 用户问题
    * @param pageSlugId 当前页面 slugId（可选，用于上下文定位）
    * @param images 附带的图片列表（可选，base64 编码）
+   * @param history 多轮对话历史（可选）
    */
   async *aiAnswers(
     query: string,
     pageSlugId?: string,
     images?: { data: string; mimeType: string }[],
+    history?: AiHistoryMessage[],
   ): AsyncGenerator<DocmostAiStreamEvent> {
     this.abort()
     this.abortController = new AbortController()
@@ -122,6 +125,7 @@ export class DocmostService {
       const body: Record<string, any> = { query }
       if (pageSlugId) body.pageSlugId = pageSlugId
       if (images?.length) body.images = images
+      if (history && history.length > 0) body.history = history
 
       response = await fetch(`${this.config.baseUrl}/ai/answers`, {
         method: 'POST',

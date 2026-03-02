@@ -104,6 +104,7 @@ export class AiSearchService {
     query: string,
     workspaceId: string,
     limit = 5,
+    distanceThreshold = 0.8,
     filters?: { spaceId?: string; directoryId?: string; topicId?: string },
   ) {
     const queryEmbedding = await this.generateEmbedding(query);
@@ -118,6 +119,7 @@ export class AiSearchService {
       JOIN spaces s ON s.id = pe."spaceId"
       WHERE pe."workspaceId" = ${workspaceId}
         AND p.deleted_at IS NULL
+        AND (pe.embedding <=> ${embeddingStr}::vector) < ${distanceThreshold}
         ${filters?.spaceId ? sql`AND pe."spaceId" = ${filters.spaceId}` : sql``}
         ${filters?.directoryId ? sql`AND pe."directoryId" = ${filters.directoryId}` : sql``}
         ${filters?.topicId ? sql`AND pe."topicId" = ${filters.topicId}` : sql``}
@@ -140,6 +142,7 @@ export class AiSearchService {
     workspaceId: string,
     pageSlugId?: string,
     images?: { data: string; mimeType: string }[],
+    history?: { role: string; content: string }[],
   ): AsyncGenerator<string> {
     // 1. 如果指定了当前页面，优先获取该页面内容作为主要上下文
     let currentPage: { title: string; slugId: string; spaceSlug: string; textContent: string } | null = null;
@@ -159,7 +162,7 @@ export class AiSearchService {
       }
     }
 
-    // 2. 向量搜索补充上下文
+    // 2. 向量搜索补充上下文（带距离阈值过滤）
     const sources = await this.searchSimilarPages(query, workspaceId);
 
     // 3. 构建上下文：当前页面优先 + 向量搜索补充（去重）
@@ -173,7 +176,6 @@ export class AiSearchService {
     }
 
     for (const s of sources) {
-      // 去重：跳过当前页面
       if (currentPage && s.slugId === currentPage.slugId) continue;
       const content = (s.textContent || '').slice(0, 2000);
       contextParts.push(`[${idx}] ${s.title || 'Untitled'}:\n${content}`);
@@ -182,27 +184,38 @@ export class AiSearchService {
 
     const context = contextParts.join('\n\n');
 
-    const prompt = `Answer the following question based on the provided context from documentation pages.${currentPage ? ' The user is currently viewing the page marked as (当前页面), prioritize its content when answering.' : ''}
+    // 4. Prompt 语言跟随：检测 query 是否含中文
+    const isChinese = /[\u4e00-\u9fa5]/.test(query);
+    const currentPageHint = currentPage
+      ? (isChinese
+        ? '用户正在查看标记为（当前页面）的页面，回答时优先参考该页面内容。'
+        : 'The user is currently viewing the page marked as (当前页面), prioritize its content when answering.')
+      : '';
 
-Context:
-${context}
+    const systemPrompt = isChinese
+      ? `根据以下文档内容回答用户的问题。${currentPageHint}如果文档中没有足够的信息，请如实说明。\n\n文档内容：\n${context}`
+      : `Answer the following question based on the provided context from documentation pages. ${currentPageHint}If the context doesn't contain enough information, say so.\n\nContext:\n${context}`;
 
-Question: ${query}
+    // 5. 构建 messages 数组（支持多轮对话）
+    const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
+      { role: 'system', content: systemPrompt },
+    ];
 
-Provide a helpful and concise answer. If the context doesn't contain enough information, say so.`;
+    if (history && history.length > 0) {
+      for (const msg of history) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          messages.push({ role: msg.role, content: msg.content });
+        }
+      }
+    }
+
+    messages.push({ role: 'user', content: query });
 
     const model = this.getCompletionModel();
 
     let result: any;
     if (images?.length) {
-      // 多模态模式：使用 messages 格式携带图片
-      const systemPrompt = `Answer the following question based on the provided context from documentation pages.${currentPage ? ' The user is currently viewing the page marked as (当前页面), prioritize its content when answering.' : ''}
-
-Context:
-${context}
-
-Provide a helpful and concise answer. If the context doesn't contain enough information, say so.`;
-
+      // 多模态模式：图片 + 多轮对话历史
       const userContent: any[] = [
         ...images.map((img) => ({
           type: 'image' as const,
@@ -211,16 +224,25 @@ Provide a helpful and concise answer. If the context doesn't contain enough info
         { type: 'text' as const, text: query },
       ];
 
-      result = streamText({
-        model,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userContent }],
-      });
+      // 保留历史消息，最后一条用户消息替换为多模态内容
+      const imageMessages: any[] = [
+        { role: 'system', content: systemPrompt },
+      ];
+      if (history && history.length > 0) {
+        for (const msg of history) {
+          if (msg.role === 'user' || msg.role === 'assistant') {
+            imageMessages.push({ role: msg.role, content: msg.content });
+          }
+        }
+      }
+      imageMessages.push({ role: 'user', content: userContent });
+
+      result = streamText({ model, messages: imageMessages });
     } else {
-      result = streamText({ model, prompt });
+      result = streamText({ model, messages });
     }
 
-    // 构建 sources 列表（当前页面放第一位）
+    // 6. 构建 sources 列表（当前页面放第一位）
     const allSources: { title: string; slugId: string; spaceSlug: string }[] = [];
     if (currentPage) {
       allSources.push({ title: currentPage.title, slugId: currentPage.slugId, spaceSlug: currentPage.spaceSlug });

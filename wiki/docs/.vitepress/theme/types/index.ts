@@ -128,6 +128,21 @@ export interface ChatMessage {
   isStreaming?: boolean
   /** 附带的图片列表 */
   images?: ChatMessageImage[]
+  /** AI 来源引用（仅 assistant 消息） */
+  sources?: AiSource[]
+}
+
+/** AI 来源引用 */
+export interface AiSource {
+  title: string
+  slugId: string
+  spaceSlug: string
+}
+
+/** 发送给后端的历史消息 */
+export interface AiHistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
 }
 
 /** 对话状态 */
@@ -390,8 +405,3 @@ export interface AIChatEmits {
   (e: 'close'): void
 }
 
-/** AIChatMessage 组件 Props */
-export interface AIChatMessageProps {
-  /** 消息对象 */
-  message: ChatMessage
-}
