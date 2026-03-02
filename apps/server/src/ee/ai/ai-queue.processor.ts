@@ -144,6 +144,13 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
       ADD COLUMN IF NOT EXISTS "topicId" UUID
     `.execute(this.db);
 
+    // Ensure embedding column has explicit dimensions (required for HNSW index)
+    // If table was created by an older version without dimensions, this fixes it
+    await sql`
+      ALTER TABLE page_embeddings
+      ALTER COLUMN embedding TYPE vector(${sql.raw(String(dimension))})
+    `.execute(this.db);
+
     await sql`
       CREATE INDEX IF NOT EXISTS idx_page_embeddings_workspace
       ON page_embeddings ("workspaceId")
