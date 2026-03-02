@@ -282,4 +282,28 @@ export class EnvironmentService {
     const slugs = this.configService.get<string>('WIKI_PUBLIC_SPACE_SLUGS');
     return slugs ? slugs.split(',').map((s) => s.trim()) : [];
   }
+
+  getCookieDomain(): string | undefined {
+    return this.configService.get<string>('COOKIE_DOMAIN');
+  }
+
+  getWikiUrl(): string {
+    return this.configService.get<string>('WIKI_URL', '');
+  }
+
+  getDingtalkCorpId(): string {
+    return this.configService.get<string>('DINGTALK_CORP_ID', '');
+  }
+
+  getDingtalkAppKey(): string {
+    return this.configService.get<string>('DINGTALK_APP_KEY', '');
+  }
+
+  getDingtalkAppSecret(): string {
+    return this.configService.get<string>('DINGTALK_APP_SECRET', '');
+  }
+
+  getDingtalkAgentId(): string {
+    return this.configService.get<string>('DINGTALK_AGENT_ID', '');
+  }
 }

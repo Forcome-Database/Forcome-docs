@@ -174,11 +174,17 @@ export class AuthController {
   }
 
   setAuthCookie(res: FastifyReply, token: string) {
-    res.setCookie('authToken', token, {
+    const cookieOpts: any = {
       httpOnly: true,
       path: '/',
       expires: this.environmentService.getCookieExpiresIn(),
       secure: this.environmentService.isHttps(),
-    });
+      sameSite: 'lax',
+    };
+    const domain = this.environmentService.getCookieDomain();
+    if (domain) {
+      cookieOpts.domain = domain;
+    }
+    res.setCookie('authToken', token, cookieOpts);
   }
 }

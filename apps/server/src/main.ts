@@ -78,6 +78,7 @@ async function bootstrap() {
         '/api/workspace/create',
         '/api/workspace/joined',
         '/api/public-wiki',
+        '/api/auth/dingtalk',
       ];
 
       if (
