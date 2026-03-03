@@ -51,6 +51,7 @@ import {
 import classes from "./ai-creator.module.css";
 
 const ACCEPTED_FILES = ".pdf,.docx,.doc,.png,.jpg,.jpeg,.gif,.webp";
+const IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 const MAX_FILES = 5;
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
@@ -143,6 +144,31 @@ export function AiCreatorInput() {
     });
     setFiles((prev) => [...prev, ...validFiles].slice(0, MAX_FILES));
     e.target.value = "";
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.files;
+    if (!items || items.length === 0) return;
+
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const file = items[i];
+      if (!IMAGE_MIMETYPES.has(file.type)) continue;
+      if (file.size > MAX_FILE_SIZE) {
+        notifications.show({ color: "red", message: `${file.name} exceeds 20MB` });
+        continue;
+      }
+      // Rename clipboard screenshots to something meaningful
+      const name = file.name === "image.png" || file.name === ""
+        ? `paste-${Date.now()}.${file.type.split("/")[1]}`
+        : file.name;
+      imageFiles.push(new File([file], name, { type: file.type }));
+    }
+
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      setFiles((prev) => [...prev, ...imageFiles].slice(0, MAX_FILES));
+    }
   };
 
   const handleStop = () => {
@@ -410,6 +436,7 @@ export function AiCreatorInput() {
           value={prompt}
           onChange={handlePromptChange}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           disabled={isStreaming}
         />
 
