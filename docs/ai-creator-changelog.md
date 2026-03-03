@@ -220,3 +220,112 @@ if (customLayout && component) {
 面板进行了全面 UI 重构（参考 LobeHub 风格），详见 **[ai-creator-ui-refactor.md](./ai-creator-ui-refactor.md)**。
 
 主要变更：取消三模式系统 → 统一对话模式、可拖拽面板宽度、模板卡片欢迎页、气泡消息+头像、hljs 代码高亮、DOMPurify XSS 防护、LobeHub 风格大输入框+底部工具栏、自动/手动插入切换。
+
+---
+
+## 2026-03-03 深度审计修复 + 粘贴图片功能
+
+**提交记录**:
+- `ff73309` fix(ai): 修复AI创作模块10个功能问题 (P0-P3)
+- `7c08bd8` feat(ai): 支持在输入框直接粘贴图片
+- `fd85bcf` fix(ai): 修复粘贴图片缩略图不显示
+
+**统计**: 11 文件变更, +1012/-53 行
+
+### 审计方法
+
+通过三个并行 Explore 代理（前端组件 / 后端服务 / 前端交互）深度审查全部 AI 模块代码，覆盖：
+- 前端 29 个文件（组件、hooks、service、atoms、types）
+- 后端 14 个文件（controller、service、DTO、queue、constants）
+
+### Bug 修复清单
+
+#### P0 — CRITICAL
+
+| # | 问题 | 修复 | 文件 |
+|---|------|------|------|
+| 1 | **选区过期致内容错位** — 流式生成 5-30s 期间编辑器内容可能变化，旧 `{from,to}` 指向错误位置 | 发送时保存 `SelectionSnapshot`(text+from+to)，插入前 `isSelectionStillValid()` 验证，不匹配回退追加模式并通知用户 | `ai-creator-input.tsx`, `ai-creator-utils.ts`, `ai-creator.types.ts` |
+| 2 | **空消息残留** — 网络错误/中断时预添加的空 assistant 消息留在历史，影响后续对话 | 新增 `removeLastEmptyAssistant()`，在 onError / handleStop / catch 三处调用 | `ai-creator-input.tsx` |
+
+#### P1 — HIGH
+
+| # | 问题 | 修复 | 文件 |
+|---|------|------|------|
+| 3 | **代码复制按钮失效** — 事件委托查找 `.code-copy-btn` 但渲染器从未生成该按钮 | `bubbleMarked` code renderer 追加 `<button class="code-copy-btn">` + SVG 图标，CSS 绝对定位右上角 hover 显示 | `ai-creator-message-item.tsx`, `.module.css` |
+| 4 | **多轮对话上下文断裂** — 选区修改模式下，历史消息不含选区信息 | 构建 history 时注入截断的 `selectionContext`（≤200 字符） | `ai-creator-input.tsx` |
+| 5 | **Stop 不清理** — 停止后截断内容或空消息留在对话中 | `handleStop` 调用 `removeLastEmptyAssistant()` | `ai-creator-input.tsx` |
+| 6 | **onComplete 双重调用** — SSE `[DONE]` 路径和 reader done 路径都调用 onComplete | `let completed = false` 幂等标志，两路径互斥 | `ai-service.ts` |
+
+#### P2 — MEDIUM
+
+| # | 问题 | 修复 | 文件 |
+|---|------|------|------|
+| 7 | **历史消息无长度限制** — 恶意客户端可发巨量 content 导致 token 爆炸 | 每条 `content.slice(0, 10000)` + `typeof` 类型检查 | `ai.controller.ts` |
+| 8 | **DOMPurify 允许任意 URI** — `<img src="https://evil.com/track">` 可追踪用户 | `ALLOWED_URI_REGEXP: /^(?:https?\|data):/i` | `ai-creator-message-item.tsx` |
+
+#### P3 — LOW
+
+| # | 问题 | 修复 | 文件 |
+|---|------|------|------|
+| 9 | **extractTitle 重复定义** — 同函数在两个文件中各一份 | 新建 `ai-creator-utils.ts` 提取共享函数 | `ai-creator-utils.ts`（新建）|
+| 10 | **Jotai nullable atom 类型断言** — `_setX as` 模式重复 3+ 次 | 封装 `useTemplateAtom()` hook | `ai-creator-atoms.ts` |
+
+### 新功能：粘贴图片
+
+**需求**：用户在 AI 输入框中 `Ctrl+V` 直接粘贴截图/复制图片。
+
+**实现**：
+
+| 组件 | 改动 |
+|------|------|
+| `ai-creator-input.tsx` | `handlePaste` — 从 `clipboardData.files` 提取 `image/*`，验证大小/数量，截图重命名 `paste-{timestamp}.png` |
+| `ai-creator-file-list.tsx` | 图片文件渲染 48×48 圆角缩略图（`useMemo` + `URL.createObjectURL`）；非图片保留芯片样式；hover 显示 × 关闭按钮 |
+| `ai-creator.module.css` | `.fileThumb` / `.fileThumbImg` / `.fileThumbRemove` 样式 |
+
+### 踩坑
+
+#### 8. useMemo vs useRef 存储 ObjectURL
+
+**现象**：粘贴图片后缩略图显示为空白/破碎图标。
+
+**原因**：最初用 `useRef` + `useEffect` 创建 objectURL，但 `useEffect` 在渲染后执行，首次渲染时 `urlsRef.current` 还是空数组。且 ref 变更不触发重渲染，永远看不到图片。
+
+**解决**：改用 `useMemo` 同步创建 URL（渲染时即可用），`useEffect` 仅负责清理旧 URL。
+
+```typescript
+// ❌ 错误：useRef + useEffect，首次渲染时 URL 为空
+const urlsRef = useRef<string[]>([]);
+useEffect(() => {
+  urlsRef.current = files.filter(isImage).map(f => URL.createObjectURL(f));
+}, [files]);
+// render: <img src={urlsRef.current[i]} />  ← 空！
+
+// ✅ 正确：useMemo 同步创建，渲染时立即可用
+const imageUrls = useMemo(() => {
+  const map = new Map<number, string>();
+  files.forEach((file, i) => {
+    if (isImageFile(file)) map.set(i, URL.createObjectURL(file));
+  });
+  return map;
+}, [files]);
+// render: <img src={imageUrls.get(i)} />  ← 有值！
+```
+
+### 文件变更清单
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `ai-creator-utils.ts` | **新建** | 共享工具函数（extractTitle, stripTimestamp, isSelectionStillValid） |
+| `ai-creator-atoms.ts` | 修改 | 新增 `useTemplateAtom` hook |
+| `ai-creator.types.ts` | 修改 | 新增 `SelectionSnapshot` 接口 |
+| `ai-creator-input.tsx` | 修改 | 选区快照验证、错误清理、历史上下文、粘贴图片 handlePaste |
+| `ai-creator-message-item.tsx` | 修改 | 代码复制按钮、DOMPurify URI 限制、使用共享 utils |
+| `ai-creator-file-list.tsx` | 修改 | 图片缩略图预览（useMemo + ObjectURL） |
+| `ai-creator.module.css` | 修改 | 代码复制按钮样式 + 缩略图样式 |
+| `ai-service.ts` | 修改 | onComplete 幂等保护 |
+| `ai.controller.ts` | 修改 | 历史消息长度限制 |
+
+### 设计文档
+
+- `docs/plans/2026-03-03-ai-creator-bugfix-design.md` — 审计结果与修复设计
+- `docs/plans/2026-03-03-ai-creator-bugfix-impl-plan.md` — 分步实施计划
