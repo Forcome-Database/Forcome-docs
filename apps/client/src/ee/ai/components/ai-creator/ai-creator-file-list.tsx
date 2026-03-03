@@ -1,5 +1,5 @@
 import { useAtom } from "jotai";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { aiCreatorFilesAtom } from "./ai-creator-atoms";
 import classes from "./ai-creator.module.css";
 
@@ -9,21 +9,28 @@ function isImageFile(file: File): boolean {
 
 export function AiCreatorFileList() {
   const [files, setFiles] = useAtom(aiCreatorFilesAtom);
-  const urlsRef = useRef<string[]>([]);
 
-  // Clean up object URLs on unmount or when files change
-  useEffect(() => {
-    // Revoke old URLs
-    urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
-    // Create new URLs for image files
-    urlsRef.current = files
-      .filter(isImageFile)
-      .map((file) => URL.createObjectURL(file));
-
-    return () => {
-      urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
-    };
+  // Create object URLs synchronously (so they're available on first render)
+  const imageUrls = useMemo(() => {
+    const map = new Map<number, string>();
+    files.forEach((file, index) => {
+      if (isImageFile(file)) {
+        map.set(index, URL.createObjectURL(file));
+      }
+    });
+    return map;
   }, [files]);
+
+  // Revoke old URLs on cleanup
+  const prevUrlsRef = useRef<Map<number, string>>(new Map());
+  useEffect(() => {
+    // Revoke previous URLs that are no longer in use
+    prevUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    prevUrlsRef.current = imageUrls;
+    return () => {
+      prevUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [imageUrls]);
 
   if (files.length === 0) return null;
 
@@ -31,17 +38,14 @@ export function AiCreatorFileList() {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Build a map: imageFileIndex -> objectURL index
-  let imgIdx = 0;
-
   return (
     <div className={classes.fileChips}>
       {files.map((file, index) => {
-        if (isImageFile(file)) {
-          const url = urlsRef.current[imgIdx++];
+        const thumbUrl = imageUrls.get(index);
+        if (thumbUrl) {
           return (
             <span className={classes.fileThumb} key={`${file.name}-${index}`}>
-              <img src={url} alt={file.name} className={classes.fileThumbImg} />
+              <img src={thumbUrl} alt={file.name} className={classes.fileThumbImg} />
               <button
                 className={classes.fileThumbRemove}
                 onClick={() => removeFile(index)}
