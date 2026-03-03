@@ -8,7 +8,7 @@ import {
 import { useAtomValue } from "jotai";
 import { NodeSelection } from "@tiptap/pm/state";
 import { pageEditorAtom, titleEditorAtom } from "@/features/editor/atoms/editor-atoms";
-import { aiCreatorSelectionAtom, aiCreatorSelectionRangeAtom } from "./ai-creator-atoms";
+import { aiCreatorSelectionAtom, aiCreatorSelectionRangeAtom, agentModeAtom, agentStepsAtom } from "./ai-creator-atoms";
 import { notifications } from "@mantine/notifications";
 import { AiCreatorMessage } from "./ai-creator.types";
 import { Marked } from "marked";
@@ -17,6 +17,9 @@ import DOMPurify from "dompurify";
 import { markdownToHtml } from "@docmost/editor-ext";
 import { useTranslation } from "react-i18next";
 import { useCallback } from "react";
+import { useParams } from "react-router-dom";
+import { extractPageSlugId } from "@/lib";
+import { AiCreatorAgentSteps } from "./ai-creator-agent-steps";
 import classes from "./ai-creator.module.css";
 
 // Create an ISOLATED marked instance for bubble rendering (with hljs highlight)
@@ -78,16 +81,22 @@ function renderEditorHtml(content: string): string {
 
 interface Props {
   message: AiCreatorMessage;
+  isLast?: boolean;
 }
 
 import { extractTitle, stripTimestamp } from './ai-creator-utils';
 
-export function AiCreatorMessageItem({ message }: Props) {
+export function AiCreatorMessageItem({ message, isLast }: Props) {
   const { t } = useTranslation();
+  const { pageSlug } = useParams();
+  const pageId = extractPageSlugId(pageSlug);
   const editor = useAtomValue(pageEditorAtom);
   const titleEditor = useAtomValue(titleEditorAtom);
   const selection = useAtomValue(aiCreatorSelectionAtom);
   const selectionRange = useAtomValue(aiCreatorSelectionRangeAtom);
+  const agentMode = useAtomValue(agentModeAtom);
+  const allSteps = useAtomValue(agentStepsAtom);
+  const agentSteps = allSteps[pageId] || [];
   const isUser = message.role === "user";
 
   const handleCopy = useCallback(() => {
@@ -209,6 +218,9 @@ export function AiCreatorMessageItem({ message }: Props) {
             className={classes.messageAiBubble}
             onClick={handleCodeBlockCopy}
           >
+            {isLast && agentMode && agentSteps.length > 0 && (
+              <AiCreatorAgentSteps steps={agentSteps} />
+            )}
             <div
               className={classes.aiContent}
               dangerouslySetInnerHTML={{ __html: renderedHtml }}

@@ -111,8 +111,8 @@ export function AiCreatorMessages() {
 
   return (
     <Box px="sm" py="xs">
-      {messages.map((msg) => (
-        <AiCreatorMessageItem key={msg.id} message={msg} />
+      {messages.map((msg, idx) => (
+        <AiCreatorMessageItem key={msg.id} message={msg} isLast={idx === messages.length - 1} />
       ))}
       {isStreaming && (
         <Group gap={8} p="xs">

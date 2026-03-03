@@ -11,6 +11,7 @@ import {
   IconRotate,
   IconEdit,
   IconTrash,
+  IconBrain,
 } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
 import { NodeSelection } from "@tiptap/pm/state";
@@ -33,6 +34,7 @@ import {
   aiCreatorStreamingAtom,
   aiCreatorAutoInsertAtom,
   useTemplateAtom,
+  agentModeAtom,
 } from "./ai-creator-atoms";
 import { AiCreatorFileList } from "./ai-creator-file-list";
 import { AI_TEMPLATE_OPTIONS } from "./ai-creator.types";
@@ -48,6 +50,7 @@ import AiTemplateEditor from "@/ee/ai/components/ai-templates/ai-template-editor
 import {
   creatorGenerate,
 } from "@/ee/ai/services/ai-service";
+import { useAgent } from "@/ee/ai/hooks/use-agent";
 import classes from "./ai-creator.module.css";
 
 const ACCEPTED_FILES = ".pdf,.docx,.doc,.png,.jpg,.jpeg,.gif,.webp";
@@ -72,7 +75,9 @@ export function AiCreatorInput() {
   const [allMessages, setAllMessages] = useAtom(aiCreatorMessagesAtom);
   const [isStreaming, setIsStreaming] = useAtom(aiCreatorStreamingAtom);
   const [autoInsert, setAutoInsert] = useAtom(aiCreatorAutoInsertAtom);
+  const [agentMode, setAgentMode] = useAtom(agentModeAtom);
   const [prompt, setPrompt] = useState("");
+  const { run: runAgent, stop: stopAgent } = useAgent(pageId);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -172,7 +177,11 @@ export function AiCreatorInput() {
   };
 
   const handleStop = () => {
-    abortRef.current?.abort();
+    if (agentMode) {
+      stopAgent();
+    } else {
+      abortRef.current?.abort();
+    }
     removeLastEmptyAssistant();
     setIsStreaming(false);
   };
@@ -251,6 +260,66 @@ export function AiCreatorInput() {
         }))
         .slice(-10);
 
+      // ========== Agent 模式 ==========
+      if (agentMode) {
+        runAgent(
+          {
+            files,
+            prompt: fullPrompt,
+            pageId,
+            templateId: template || undefined,
+            insertMode: shouldAppend ? "append" : selection ? "replace" : "create",
+            pageTitle,
+            pageContent: editor.state.doc.textBetween(0, Math.min(5000, editor.state.doc.content.size)),
+            selectedText: selection || undefined,
+            selectionRange: selectionRange || undefined,
+            history: history.length > 0 ? history : undefined,
+          },
+          {
+            onContent: (chunk) => {
+              accumulatedContent += chunk;
+              updateLastMessage(() => accumulatedContent);
+            },
+            onDone: (finalContent, insertMode) => {
+              // Use finalContent if available (otherwise use accumulated)
+              const content = finalContent || accumulatedContent;
+              if (autoInsert && content && editor) {
+                let markdown = content;
+                if (titleEditor) {
+                  const currentTitle = titleEditor.state.doc.textContent.trim();
+                  if (!currentTitle) {
+                    const [title, remaining] = extractTitle(markdown);
+                    if (title) {
+                      titleEditor.commands.setContent(title);
+                      markdown = remaining;
+                    }
+                  }
+                }
+                const html = renderMarkdownToEditorHtml(markdown);
+                if (html) {
+                  if (insertMode === "replace" && selectionSnapshot && isSelectionStillValid(editor, selectionSnapshot)) {
+                    editor.chain().focus().setTextSelection(selectionSnapshot).insertContent(html).run();
+                  } else {
+                    editor.chain().focus("end").insertContent(html).run();
+                  }
+                }
+              }
+              setIsStreaming(false);
+              setFiles([]);
+              const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+              updateLastMessage((c) => c + `\n\n---\n*${elapsed}s*`);
+            },
+            onError: (msg) => {
+              removeLastEmptyAssistant();
+              notifications.show({ color: "red", message: msg });
+              setIsStreaming(false);
+            },
+          },
+        );
+        return;
+      }
+
+      // ========== 普通模式 ==========
       abortRef.current = await creatorGenerate(
         {
           files,
@@ -543,6 +612,21 @@ export function AiCreatorInput() {
                 onClick={() => setAutoInsert(!autoInsert)}
               >
                 {autoInsert ? <IconPencil size={16} /> : <IconPencilOff size={16} />}
+              </ActionIcon>
+            </Tooltip>
+
+            {/* Agent deep mode toggle */}
+            <Tooltip
+              label={agentMode ? t("Deep mode ON: Agent researches before writing") : t("Deep mode: Enable AI agent for research & multi-step generation")}
+              openDelay={300}
+            >
+              <ActionIcon
+                variant={agentMode ? "filled" : "subtle"}
+                color={agentMode ? "violet" : "gray"}
+                size="sm"
+                onClick={() => setAgentMode(!agentMode)}
+              >
+                <IconBrain size={16} />
               </ActionIcon>
             </Tooltip>
           </div>
