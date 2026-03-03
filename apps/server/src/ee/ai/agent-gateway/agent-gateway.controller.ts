@@ -9,11 +9,13 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { FastifyRequest, FastifyReply } from 'fastify';
+import * as http from 'http';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { AuthUser } from '../../../common/decorators/auth-user.decorator';
 import { AuthWorkspace } from '../../../common/decorators/auth-workspace.decorator';
 import { AgentGatewayService } from './agent-gateway.service';
 import { AgentStopDto } from './dto/agent-stop.dto';
+import { EnvironmentService } from '../../../integrations/environment/environment.service';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const MAX_FILES = 5;
@@ -23,7 +25,10 @@ const MAX_FILES = 5;
 export class AgentGatewayController {
   private readonly logger = new Logger(AgentGatewayController.name);
 
-  constructor(private agentGatewayService: AgentGatewayService) {}
+  constructor(
+    private agentGatewayService: AgentGatewayService,
+    private environmentService: EnvironmentService,
+  ) {}
 
   @Post('run')
   async runAgent(
@@ -76,43 +81,57 @@ export class AgentGatewayController {
       },
     };
 
-    try {
-      const agentResp = await this.agentGatewayService.forwardToAgent('/agent/run', agentBody);
+    // Set SSE headers immediately
+    res.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
 
-      res.raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      });
+    // Use Node.js http.request for true chunked streaming (fetch buffers SSE)
+    const agentUrl = new URL('/agent/run', this.environmentService.getAgentServiceUrl());
+    const postData = JSON.stringify(agentBody);
 
-      const reader = agentResp.body?.getReader();
-      if (!reader) {
-        res.raw.write(`data: ${JSON.stringify({ type: 'error', message: 'Agent 无响应' })}\n\n`);
-        res.raw.end();
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        res.raw.write(chunk);
-      }
-
-      res.raw.end();
-    } catch (error) {
-      this.logger.error('Agent run failed', error);
-      if (!res.raw.headersSent) {
-        res.raw.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
+    const proxyReq = http.request(
+      {
+        hostname: agentUrl.hostname,
+        port: agentUrl.port,
+        path: agentUrl.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData),
+          'X-Internal-Secret': this.environmentService.getAgentInternalSecret(),
+        },
+      },
+      (proxyRes) => {
+        if (proxyRes.statusCode !== 200) {
+          res.raw.write(`data: ${JSON.stringify({ type: 'error', message: `Agent 返回 ${proxyRes.statusCode}` })}\n\n`);
+          res.raw.end();
+          return;
+        }
+        // Pipe SSE chunks directly to client in real-time
+        proxyRes.on('data', (chunk: Buffer) => {
+          res.raw.write(chunk);
         });
-      }
-      res.raw.write(`data: ${JSON.stringify({ type: 'error', message: error?.message || 'Agent 服务不可用' })}\n\n`);
+        proxyRes.on('end', () => {
+          res.raw.end();
+        });
+        proxyRes.on('error', (err) => {
+          this.logger.error('Agent stream error', err);
+          res.raw.end();
+        });
+      },
+    );
+
+    proxyReq.on('error', (err) => {
+      this.logger.error('Agent connection error', err);
+      res.raw.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Agent 服务不可用' })}\n\n`);
       res.raw.end();
-    }
+    });
+
+    proxyReq.write(postData);
+    proxyReq.end();
   }
 
   @Post('stop')
