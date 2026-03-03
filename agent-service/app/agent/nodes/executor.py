@@ -1,7 +1,18 @@
+import re
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.agent.llm import get_chat_model
 from app.agent.state import AgentState
 from app.agent.events import emit
+
+
+def _strip_empty_images(md: str) -> str:
+    """Remove markdown images that have no real URL (empty, placeholder, or missing src)."""
+    # ![alt]()  ![alt](IMAGE_PLACEHOLDER...)  ![alt]  ![alt](   )
+    md = re.sub(r'!\[([^\]]*)\]\(\s*\)', r'> *\1*', md)                        # ![alt]()
+    md = re.sub(r'!\[([^\]]*)\]\(IMAGE_PLACEHOLDER[^)]*\)', r'> *\1*', md)     # ![alt](IMAGE_PLACEHOLDER_N)
+    md = re.sub(r'!\[([^\]]*)\]\((?!https?://|data:)[^)]*\)', r'> *\1*', md)   # ![alt](non-url)
+    md = re.sub(r'!\[([^\]]*)\](?!\()', r'> *\1*', md)                         # ![alt] without ()
+    return md
 
 EXECUTOR_SYSTEM_PROMPT = """你是一个专业的文档写作智能体。根据用户的指令和提供的调研资料，生成高质量的 Markdown 文档。
 
@@ -55,6 +66,9 @@ async def executor_node(state: AgentState) -> dict:
             await emit(tid, {"type": "content", "chunk": text})
 
     draft_content = "".join(content_chunks)
+
+    # Post-process: strip empty/placeholder image references
+    draft_content = _strip_empty_images(draft_content)
 
     await emit(tid, {"type": "step_done", "step": "generate", "result_summary": f"生成了 {len(draft_content)} 字符"})
 
