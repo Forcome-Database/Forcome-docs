@@ -2,6 +2,7 @@ import json
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.agent.llm import get_chat_model
 from app.agent.state import AgentState
+from app.agent.events import emit
 from app.tools.registry import get_tool_names
 
 PLANNER_SYSTEM_PROMPT = """你是一个智能文档助手的规划器。你的任务是分析用户的请求，并制定一个多步骤执行计划。
@@ -25,10 +26,14 @@ PLANNER_SYSTEM_PROMPT = """你是一个智能文档助手的规划器。你的�
 
 仅输出 JSON 数组，不要输出其他内容。"""
 
+
 async def planner_node(state: AgentState) -> dict:
     """分析用户意图，制定执行计划"""
+    tid = state.get("_task_id", "")
     llm = get_chat_model()
     tools = get_tool_names()
+
+    await emit(tid, {"type": "step_start", "step": "plan", "description": "正在分析需求并制定计划..."})
 
     context_parts = []
     if state.get("page_title"):
@@ -66,13 +71,10 @@ async def planner_node(state: AgentState) -> dict:
     for step in plan:
         step["status"] = "pending"
 
-    step_events = list(state.get("step_events", []))
-    step_events.append({"type": "step_start", "step": "plan", "description": "正在分析需求并制定计划..."})
-    step_events.append({"type": "step_done", "step": "plan", "result_summary": f"制定了 {len(plan)} 步执行计划"})
+    await emit(tid, {"type": "step_done", "step": "plan", "result_summary": f"制定了 {len(plan)} 步执行计划"})
 
     return {
         "plan": plan,
         "current_step": 0,
-        "step_events": step_events,
         "iteration_count": state.get("iteration_count", 0) + 1,
     }

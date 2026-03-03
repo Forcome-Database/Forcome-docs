@@ -1,6 +1,7 @@
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.agent.llm import get_chat_model
 from app.agent.state import AgentState
+from app.agent.events import emit
 
 EXECUTOR_SYSTEM_PROMPT = """你是一个专业的文档写作智能体。根据用户的指令和提供的调研资料，生成高质量的 Markdown 文档。
 
@@ -12,12 +13,13 @@ EXECUTOR_SYSTEM_PROMPT = """你是一个专业的文档写作智能体。根据�
 5. 如果用户要求修改选中的文本，只输出修改后的文本（不要输出整个文档）
 6. 图片位置用占位符标记: ![描述](IMAGE_PLACEHOLDER_N)"""
 
+
 async def executor_node(state: AgentState) -> dict:
     """综合调研结果，生成文档内容"""
+    tid = state.get("_task_id", "")
     llm = get_chat_model()
-    step_events = list(state.get("step_events", []))
 
-    step_events.append({"type": "step_start", "step": "generate", "description": "正在生成文档内容..."})
+    await emit(tid, {"type": "step_start", "step": "generate", "description": "正在生成文档内容..."})
 
     research_summary_parts = []
     for item in state.get("parsed_files", []):
@@ -50,13 +52,12 @@ async def executor_node(state: AgentState) -> dict:
         text = chunk.content
         if text:
             content_chunks.append(text)
-            step_events.append({"type": "content", "chunk": text})
+            await emit(tid, {"type": "content", "chunk": text})
 
     draft_content = "".join(content_chunks)
 
-    step_events.append({"type": "step_done", "step": "generate", "result_summary": f"生成了 {len(draft_content)} 字符"})
+    await emit(tid, {"type": "step_done", "step": "generate", "result_summary": f"生成了 {len(draft_content)} 字符"})
 
     return {
         "draft_content": draft_content,
-        "step_events": step_events,
     }

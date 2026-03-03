@@ -1,14 +1,16 @@
 from app.agent.state import AgentState
+from app.agent.events import emit
 from app.tools.registry import get_tool
 
 RESEARCH_ACTIONS = {"search", "parse", "crawl"}
 
+
 async def researcher_node(state: AgentState) -> dict:
     """执行计划中的调研步骤：文件解析、网络搜索、网页爬取"""
+    tid = state.get("_task_id", "")
     plan = state.get("plan", [])
     research_results = list(state.get("research_results", []))
     parsed_files = list(state.get("parsed_files", []))
-    step_events = list(state.get("step_events", []))
 
     for step in plan:
         if step["action"] not in RESEARCH_ACTIONS:
@@ -17,11 +19,7 @@ async def researcher_node(state: AgentState) -> dict:
             continue
 
         step["status"] = "running"
-        step_events.append({
-            "type": "step_start",
-            "step": step["action"],
-            "description": step["description"],
-        })
+        await emit(tid, {"type": "step_start", "step": step["action"], "description": step["description"]})
 
         tool_name = step.get("tool")
         tool_fn = get_tool(tool_name) if tool_name else None
@@ -57,17 +55,12 @@ async def researcher_node(state: AgentState) -> dict:
         except Exception as e:
             step["status"] = "skipped"
             result_summary = f"失败: {str(e)[:100]}"
-            step_events.append({"type": "error", "message": f"工具 {tool_name} 调用失败: {str(e)[:200]}"})
+            await emit(tid, {"type": "error", "message": f"工具 {tool_name} 调用失败: {str(e)[:200]}"})
 
-        step_events.append({
-            "type": "step_done",
-            "step": step["action"],
-            "result_summary": result_summary,
-        })
+        await emit(tid, {"type": "step_done", "step": step["action"], "result_summary": result_summary})
 
     return {
         "plan": plan,
         "research_results": research_results,
         "parsed_files": parsed_files,
-        "step_events": step_events,
     }

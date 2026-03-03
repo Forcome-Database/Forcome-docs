@@ -40,3 +40,6 @@ class AgentState(TypedDict):
     revision_feedback: str
     iteration_count: int
     max_iterations: int
+
+    # Internal (event routing)
+    _task_id: str
