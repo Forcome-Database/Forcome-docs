@@ -329,4 +329,12 @@ export class EnvironmentService {
   getDingtalkAgentId(): string {
     return this.configService.get<string>('DINGTALK_AGENT_ID', '');
   }
+
+  getAgentServiceUrl(): string {
+    return this.configService.get<string>('AGENT_SERVICE_URL') || 'http://agent-service:8100';
+  }
+
+  getAgentInternalSecret(): string {
+    return this.configService.get<string>('AGENT_INTERNAL_SECRET') || '';
+  }
 }

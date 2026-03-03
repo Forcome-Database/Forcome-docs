@@ -1,11 +1,23 @@
 import { Module } from '@nestjs/common';
-import { LicenseModule } from './licence/license.module';
-import { ApiKeyModule } from './api-key/api-key.module';
-import { MfaModule } from './mfa/mfa.module';
-import { AiModule } from './ai/ai.module';
-import { DingTalkModule } from './dingtalk/dingtalk.module';
+
+const eeImports = [
+  (() => {
+    try {
+      return require('./ai/ai.module').AiModule;
+    } catch {
+      return null;
+    }
+  })(),
+  (() => {
+    try {
+      return require('./ai/agent-gateway/agent-gateway.module').AgentGatewayModule;
+    } catch {
+      return null;
+    }
+  })(),
+].filter(Boolean);
 
 @Module({
-  imports: [LicenseModule, ApiKeyModule, MfaModule, AiModule, DingTalkModule],
+  imports: eeImports,
 })
 export class EeModule {}
