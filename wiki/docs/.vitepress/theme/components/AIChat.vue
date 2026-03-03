@@ -4,7 +4,7 @@
  * 支持多轮对话、来源引用卡片、推荐问题、流式 Markdown 渲染
  */
 import '../styles/ai-chat.css'
-import { ref, watch, onMounted, onUnmounted, computed, h } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed, h, type CSSProperties } from 'vue'
 import { Bubble, Sender, XProvider } from 'ant-design-x-vue'
 import { theme } from 'ant-design-vue'
 import { getAIChatModifierKey, getDifyMode, getDifyEmbedUrl, isEmbedConfigured } from '../composables/useAIChat'
@@ -20,6 +20,7 @@ import type { ChatMessage, ChatMessageImage, StoredChatHistory, DocmostSidebarNo
 import { StorageKey } from '../types'
 import AIChatSources from './AIChatSources.vue'
 import AIChatWelcome from './AIChatWelcome.vue'
+import { useAuth } from '../composables/useAuth'
 import CloseIcon from './icons/CloseIcon.vue'
 import TrashIcon from './icons/TrashIcon.vue'
 import HistoryIcon from './icons/HistoryIcon.vue'
@@ -255,23 +256,33 @@ const bubbleItems = computed(() => {
   })
 })
 
-// Bubble 角色配置
-const roles = {
+// 用户信息（头像）
+const { currentUser } = useAuth()
+
+const defaultUserAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect width='28' height='28' rx='14' fill='%23e8912d'/%3E%3Ccircle cx='14' cy='11' r='4' fill='white'/%3E%3Cpath d='M6.5 23.5a7.5 7.5 0 0115 0' fill='white'/%3E%3C/svg%3E"
+
+const avatarStyle: CSSProperties = { width: '28px', height: '28px', borderRadius: '50%', flexShrink: '0' }
+
+// Bubble 角色配置（响应式，跟随用户头像变化）
+const roles = computed(() => ({
   user: {
     placement: 'end' as const,
     variant: 'filled' as const,
     shape: 'round' as const,
-    avatar: { style: { display: 'none' } }
+    avatar: {
+      src: currentUser.value?.avatarUrl || defaultUserAvatar,
+      style: avatarStyle
+    }
   },
   assistant: {
     placement: 'start' as const,
     variant: 'borderless' as const,
     avatar: {
       src: '/images/logo/logo.png',
-      style: { width: '28px', height: '28px', borderRadius: '50%', flexShrink: '0' }
+      style: avatarStyle
     }
   }
-}
+}))
 
 // ===== 工具函数 =====
 function generateMessageId(role: 'user' | 'assistant'): string {
@@ -606,7 +617,10 @@ const onContentLoaded = () => updatePageTitle()
 
 // ===== 生命周期 =====
 onMounted(() => {
-  loadHistory()
+  // 每次打开面板都是新对话（历史记录通过历史按钮访问）
+  messages.value = []
+  conversationId.value = null
+  error.value = null
   updatePageTitle()
   document.addEventListener('keydown', handleKeydown)
   window.addEventListener('docmost-content-loaded', onContentLoaded)
