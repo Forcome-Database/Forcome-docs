@@ -11,7 +11,7 @@ EXECUTOR_SYSTEM_PROMPT = """你是一个专业的文档写作智能体。根据�
 3. 内容详实、有条理、专业
 4. 如果有引用来源，在文末标注
 5. 如果用户要求修改选中的文本，只输出修改后的文本（不要输出整个文档）
-6. 图片位置用占位符标记: ![描述](IMAGE_PLACEHOLDER_N)"""
+6. **严禁**生成没有实际 URL 的图片引用。不要写 ![xxx]() 或 ![xxx](IMAGE_PLACEHOLDER)。只有当调研资料中明确提供了图片的真实 URL（以 http 开头）时，才可以插入图片。如果原文档中有截图但你没有图片 URL，用文字描述代替（如：「*此处为 XXX 的操作截图*」）"""
 
 
 async def executor_node(state: AgentState) -> dict:
