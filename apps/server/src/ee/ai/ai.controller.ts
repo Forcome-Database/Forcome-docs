@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  PayloadTooLargeException,
   Post,
   Req,
   Res,
@@ -20,6 +21,17 @@ import { AuthUser } from '../../common/decorators/auth-user.decorator';
 import { Workspace, User } from '@docmost/db/types/entity.types';
 import { AiGenerateDto, AiAnswerDto } from './dto/ai.dto';
 import { FastifyReply, FastifyRequest } from 'fastify';
+
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+const ALLOWED_MIMETYPES = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/msword',
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+]);
 
 @Controller('ai')
 export class AiController {
@@ -127,7 +139,16 @@ export class AiController {
     for await (const part of parts) {
       if (part.type === 'file') {
         if (bufferedFiles.length < 5) {
+          if (!ALLOWED_MIMETYPES.has(part.mimetype)) {
+            this.logger.warn(`Rejected file upload: unsupported type ${part.mimetype}`);
+            continue;
+          }
           const buffer = await part.toBuffer();
+          if (buffer.length > MAX_FILE_SIZE) {
+            throw new PayloadTooLargeException(
+              `File "${part.filename}" exceeds the 20MB size limit`,
+            );
+          }
           bufferedFiles.push({
             buffer,
             mimetype: part.mimetype,
@@ -139,7 +160,7 @@ export class AiController {
       }
     }
 
-    const { prompt, template, insertMode, existingContentSummary, pageTitle } =
+    const { prompt, template, insertMode, existingContentSummary, pageTitle, history: historyRaw } =
       fields;
 
     if (!prompt) {
@@ -147,10 +168,25 @@ export class AiController {
       return;
     }
 
+    // Parse conversation history (max 10 recent messages)
+    let history: { role: 'user' | 'assistant'; content: string }[] = [];
+    if (historyRaw) {
+      try {
+        const parsed = JSON.parse(historyRaw);
+        if (Array.isArray(parsed)) {
+          history = parsed
+            .filter((m: any) => m.role && m.content)
+            .slice(-10);
+        }
+      } catch {
+        // Ignore invalid history JSON
+      }
+    }
+
     // Process uploaded files (already buffered)
     const contentParts = await this.aiFileService.processBufferedFiles(bufferedFiles);
 
-    // Build system prompt with three-layer resolution
+    // Build system prompt with three-layer resolution (without user prompt)
     let systemPrompt = '';
 
     // Prepend global system prompt from workspace settings
@@ -174,12 +210,10 @@ export class AiController {
     }
 
     if (insertMode === 'append' && existingContentSummary) {
-      systemPrompt += `当前页面标题：${pageTitle || '(无标题)'}\n`;
-      systemPrompt += `页面现有内容摘要：\n${existingContentSummary}\n\n`;
-      systemPrompt += '请续写内容，与已有内容风格和结构保持一致。\n\n';
+      systemPrompt += `Page title: ${pageTitle || '(Untitled)'}\n`;
+      systemPrompt += `Existing content summary:\n${existingContentSummary}\n\n`;
+      systemPrompt += 'Continue writing from where the existing content left off. Match the style, tone, and structure of the existing content.\n\n';
     }
-
-    systemPrompt += prompt;
 
     // Stream response
     res.raw.writeHead(200, {
@@ -190,9 +224,11 @@ export class AiController {
 
     try {
       let chunkCount = 0;
-      for await (const chunk of this.aiService.streamWithFiles(
+      for await (const chunk of this.aiService.streamWithContext(
         systemPrompt,
+        prompt,
         contentParts,
+        history,
       )) {
         chunkCount++;
         res.raw.write(`data: ${chunk}\n\n`);

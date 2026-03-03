@@ -33,10 +33,7 @@ export class AiService {
         const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
         const apiKey = this.environmentService.getOpenAiApiKey();
         const baseURL = this.environmentService.getOpenAiApiUrl();
-        const envKey = process.env.OPENAI_API_KEY;
-        this.logger.debug(`openai-compatible: baseURL=${baseURL}`);
-        this.logger.debug(`apiKey from configService: length=${apiKey?.length}, value="${apiKey}"`);
-        this.logger.debug(`apiKey from process.env:   length=${envKey?.length}, value="${envKey}"`);
+        this.logger.debug(`openai-compatible: baseURL=${baseURL}, apiKey=${ apiKey ? apiKey.slice(0, 4) + '****' : 'not set'}`);
         const provider = createOpenAICompatible({
           baseURL,
           apiKey,
@@ -159,6 +156,71 @@ export class AiService {
       yield JSON.stringify({ content: chunk });
     }
     this.logger.debug(`streamWithFiles finished, total chunks: ${chunks}`);
+  }
+
+  async *streamWithContext(
+    systemPrompt: string,
+    userPrompt: string,
+    contentParts: AiContentPart[],
+    history: { role: 'user' | 'assistant'; content: string }[] = [],
+  ): AsyncGenerator<string> {
+    const model = this.getModel();
+
+    const messages: any[] = [];
+
+    // System message (template + context)
+    if (systemPrompt.trim()) {
+      messages.push({ role: 'system', content: systemPrompt });
+    }
+
+    // Conversation history (already capped to 10 by controller)
+    for (const msg of history) {
+      messages.push({ role: msg.role, content: msg.content });
+    }
+
+    // Current user message with optional file attachments
+    const hasImages = contentParts.some((p) => p.type === 'image');
+
+    if (!hasImages) {
+      const textParts = contentParts
+        .filter((p) => p.type === 'text')
+        .map((p) => p.text)
+        .join('\n\n');
+
+      const fullUserMessage = textParts
+        ? `${textParts}\n\n---\n\n${userPrompt}`
+        : userPrompt;
+
+      messages.push({ role: 'user', content: fullUserMessage });
+    } else {
+      const userContent: any[] = [];
+      for (const part of contentParts) {
+        if (part.type === 'text') {
+          userContent.push({ type: 'text', text: part.text });
+        } else if (part.type === 'image') {
+          userContent.push({
+            type: 'image',
+            image: part.data,
+            mimeType: part.mimeType,
+          });
+        }
+      }
+      userContent.push({ type: 'text', text: userPrompt });
+      messages.push({ role: 'user', content: userContent });
+    }
+
+    this.logger.debug(
+      `Starting streamWithContext, ${messages.length} messages, history=${history.length}`,
+    );
+
+    const result = streamText({ model, messages });
+
+    let chunks = 0;
+    for await (const chunk of result.textStream) {
+      chunks++;
+      yield JSON.stringify({ content: chunk });
+    }
+    this.logger.debug(`streamWithContext finished, total chunks: ${chunks}`);
   }
 
   private buildPrompt(

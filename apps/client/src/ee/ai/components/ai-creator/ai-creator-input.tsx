@@ -74,7 +74,7 @@ export function AiCreatorInput() {
   const setTemplate = _setTemplate as (v: string | null) => void;
   const selection = useAtomValue(aiCreatorSelectionAtom);
   const selectionRange = useAtomValue(aiCreatorSelectionRangeAtom);
-  const [, setAllMessages] = useAtom(aiCreatorMessagesAtom);
+  const [allMessages, setAllMessages] = useAtom(aiCreatorMessagesAtom);
   const [isStreaming, setIsStreaming] = useAtom(aiCreatorStreamingAtom);
   const [autoInsert, _setAutoInsert] = useAtom(aiCreatorAutoInsertAtom);
   const setAutoInsert = _setAutoInsert as (v: boolean) => void;
@@ -183,16 +183,35 @@ export function AiCreatorInput() {
 
     try {
       let accumulatedContent = "";
+      // Determine insert mode: append when page has content and no selection
+      const shouldAppend = pageHasContent && !selection;
+
+      // Build conversation history from existing messages (max 10 recent)
+      const pageMessages = allMessages[pageId] || [];
+      // Exclude the two messages we just added (user + empty assistant)
+      const existingMessages = pageMessages.slice(0, -2);
+      const history = existingMessages
+        .filter((m) => m.content.trim().length > 0)
+        .map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.role === "assistant"
+            ? m.content.replace(/\n+---\n\*[\d.]+s\*\s*$/, '').trim()
+            : m.content,
+        }))
+        .slice(-10);
+
       abortRef.current = await creatorGenerate(
         {
           files,
           prompt: fullPrompt,
           template: template || undefined,
           pageId,
-          existingContentSummary: pageHasContent
+          insertMode: shouldAppend ? "append" : undefined,
+          existingContentSummary: shouldAppend
             ? editor.state.doc.textBetween(0, Math.min(500, editor.state.doc.content.size))
             : undefined,
           pageTitle,
+          history: history.length > 0 ? history : undefined,
         },
         (chunk) => {
           accumulatedContent += chunk.content;
