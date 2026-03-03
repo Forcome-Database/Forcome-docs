@@ -9,11 +9,45 @@ services:
       APP_SECRET: 'e0888f9c8c976c37b000634bf8e3e9cac2f844a23c7790ef76f9804d52af34ab'
       DATABASE_URL: 'postgresql://docmost:a158614924@db:5432/docmost'
       REDIS_URL: 'redis://redis:6379'
+      AGENT_SERVICE_URL: 'http://agent-service:8100'
+      AGENT_INTERNAL_SECRET: '${AGENT_INTERNAL_SECRET}'
     ports:
       - "3000:3000"
     restart: unless-stopped
     volumes:
       - docmost:/app/data/storage
+    networks:
+      - docmost-network
+
+  agent-service:
+    build:
+      context: ./agent-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+    environment:
+      - AI_DRIVER=${AI_DRIVER}
+      - AI_COMPLETION_MODEL=${AI_COMPLETION_MODEL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_URL=${OPENAI_API_URL:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AGENT_LLM_PROVIDER=${AGENT_LLM_PROVIDER:-}
+      - AGENT_LLM_MODEL=${AGENT_LLM_MODEL:-}
+      - AGENT_LLM_API_KEY=${AGENT_LLM_API_KEY:-}
+      - AGENT_LLM_API_URL=${AGENT_LLM_API_URL:-}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL:-https://api.firecrawl.dev}
+      - NANOBANA_API_KEY=${NANOBANA_API_KEY}
+      - AGENT_INTERNAL_SECRET=${AGENT_INTERNAL_SECRET}
+      - DOCMOST_INTERNAL_URL=http://docmost:3000
+      - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-3}
+    volumes:
+      - docmost:/app/data/storage
+    networks:
+      - docmost-network
 
   db:
     image: postgres:18
@@ -24,6 +58,8 @@ services:
     restart: unless-stopped
     volumes:
       - db_data:/var/lib/postgresql
+    networks:
+      - docmost-network
 
   redis:
     image: redis:8
@@ -31,8 +67,13 @@ services:
     restart: unless-stopped
     volumes:
       - redis_data:/data
+    networks:
+      - docmost-network
 
 volumes:
   docmost:
   db_data:
   redis_data:
+
+networks:
+  docmost-network:
