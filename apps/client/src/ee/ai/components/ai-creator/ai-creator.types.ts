@@ -7,6 +7,12 @@ export interface AiCreatorMessage {
   selectionRange?: { from: number; to: number };
 }
 
+export interface SelectionSnapshot {
+  text: string;
+  from: number;
+  to: number;
+}
+
 export interface AiTemplate {
   key: string;
   name: string;

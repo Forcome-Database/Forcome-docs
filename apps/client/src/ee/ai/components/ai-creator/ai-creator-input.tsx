@@ -32,9 +32,12 @@ import {
   aiCreatorMessagesAtom,
   aiCreatorStreamingAtom,
   aiCreatorAutoInsertAtom,
+  useTemplateAtom,
 } from "./ai-creator-atoms";
 import { AiCreatorFileList } from "./ai-creator-file-list";
 import { AI_TEMPLATE_OPTIONS } from "./ai-creator.types";
+import type { SelectionSnapshot } from "./ai-creator.types";
+import { extractTitle, isSelectionStillValid } from './ai-creator-utils';
 import {
   useAiTemplatesQuery,
   useResetAiTemplateMutation,
@@ -51,14 +54,6 @@ const ACCEPTED_FILES = ".pdf,.docx,.doc,.png,.jpg,.jpeg,.gif,.webp";
 const MAX_FILES = 5;
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
-function extractTitle(markdown: string): [string | null, string] {
-  const match = markdown.match(/^#\s+(.+)$/m);
-  if (!match) return [null, markdown];
-  const title = match[1].trim();
-  const remaining = markdown.replace(/^#\s+.+\n*/m, "").trim();
-  return [title, remaining];
-}
-
 function renderMarkdownToEditorHtml(content: string): string {
   return markdownToHtml(content) as string;
 }
@@ -70,14 +65,12 @@ export function AiCreatorInput() {
   const editor = useAtomValue(pageEditorAtom);
   const titleEditor = useAtomValue(titleEditorAtom);
   const [files, setFiles] = useAtom(aiCreatorFilesAtom);
-  const [template, _setTemplate] = useAtom(aiCreatorTemplateAtom);
-  const setTemplate = _setTemplate as (v: string | null) => void;
+  const [template, setTemplate] = useTemplateAtom();
   const selection = useAtomValue(aiCreatorSelectionAtom);
   const selectionRange = useAtomValue(aiCreatorSelectionRangeAtom);
   const [allMessages, setAllMessages] = useAtom(aiCreatorMessagesAtom);
   const [isStreaming, setIsStreaming] = useAtom(aiCreatorStreamingAtom);
-  const [autoInsert, _setAutoInsert] = useAtom(aiCreatorAutoInsertAtom);
-  const setAutoInsert = _setAutoInsert as (v: boolean) => void;
+  const [autoInsert, setAutoInsert] = useAtom(aiCreatorAutoInsertAtom);
   const [prompt, setPrompt] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -122,6 +115,21 @@ export function AiCreatorInput() {
     [pageId, setAllMessages],
   );
 
+  /** Remove the last message if it's an empty assistant message (error/abort cleanup) */
+  const removeLastEmptyAssistant = useCallback(() => {
+    setAllMessages((prev) => {
+      const msgs = [...(prev[pageId] || [])];
+      if (
+        msgs.length > 0 &&
+        msgs[msgs.length - 1].role === 'assistant' &&
+        !msgs[msgs.length - 1].content.trim()
+      ) {
+        msgs.pop();
+      }
+      return { ...prev, [pageId]: msgs };
+    });
+  }, [pageId, setAllMessages]);
+
   const handleFileUpload = () => fileInputRef.current?.click();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -139,6 +147,7 @@ export function AiCreatorInput() {
 
   const handleStop = () => {
     abortRef.current?.abort();
+    removeLastEmptyAssistant();
     setIsStreaming(false);
   };
 
@@ -181,6 +190,15 @@ export function AiCreatorInput() {
 
     const startTime = Date.now();
 
+    // Capture selection snapshot for validation before insertion (P0-1)
+    const selectionSnapshot: SelectionSnapshot | null = selectionRange
+      ? {
+          text: editor.state.doc.textBetween(selectionRange.from, selectionRange.to),
+          from: selectionRange.from,
+          to: selectionRange.to,
+        }
+      : null;
+
     try {
       let accumulatedContent = "";
       // Determine insert mode: append when page has content and no selection
@@ -194,9 +212,16 @@ export function AiCreatorInput() {
         .filter((m) => m.content.trim().length > 0)
         .map((m) => ({
           role: m.role as "user" | "assistant",
-          content: m.role === "assistant"
-            ? m.content.replace(/\n+---\n\*[\d.]+s\*\s*$/, '').trim()
-            : m.content,
+          content: (() => {
+            if (m.role === "assistant") {
+              return m.content.replace(/\n+---\n\*[\d.]+s\*\s*$/, '').trim();
+            }
+            // Include truncated selection context for multi-turn continuity (P1-2)
+            if (m.selectionContext) {
+              return `[修改选区内容]\n${m.selectionContext.slice(0, 200)}\n\n${m.content}`;
+            }
+            return m.content;
+          })(),
         }))
         .slice(-10);
 
@@ -218,6 +243,7 @@ export function AiCreatorInput() {
           updateLastMessage(() => accumulatedContent);
         },
         (error) => {
+          removeLastEmptyAssistant();
           notifications.show({ color: "red", message: error.error });
           setIsStreaming(false);
         },
@@ -237,9 +263,9 @@ export function AiCreatorInput() {
               }
             }
 
-            if (selectionRange) {
-              // Replace selection — handle code blocks specially
-              const $from = editor.state.doc.resolve(selectionRange.from);
+            if (selectionSnapshot && isSelectionStillValid(editor, selectionSnapshot)) {
+              // Selection still valid — replace it
+              const $from = editor.state.doc.resolve(selectionSnapshot.from);
               const isInCodeBlock = $from.parent.type.name === "codeBlock";
               const isCodeBlockNodeSelected =
                 editor.state.selection instanceof NodeSelection &&
@@ -257,20 +283,31 @@ export function AiCreatorInput() {
                     plainCode ? editor.state.schema.text(plainCode) : undefined,
                   );
                   const { tr } = editor.state;
-                  tr.replaceWith(selectionRange.from, selectionRange.to, newNode);
+                  tr.replaceWith(selectionSnapshot.from, selectionSnapshot.to, newNode);
                   editor.view.dispatch(tr);
                 } else {
                   const { tr } = editor.state;
-                  tr.insertText(plainCode, selectionRange.from, selectionRange.to);
+                  tr.insertText(plainCode, selectionSnapshot.from, selectionSnapshot.to);
                   editor.view.dispatch(tr);
                 }
               } else {
                 const html = renderMarkdownToEditorHtml(markdown);
                 if (html) {
-                  editor.chain().focus().setTextSelection(selectionRange).insertContent(html).run();
+                  editor.chain().focus().setTextSelection(selectionSnapshot).insertContent(html).run();
                 }
               }
+            } else if (selectionSnapshot) {
+              // Selection became stale — fallback to append (P0-1)
+              const html = renderMarkdownToEditorHtml(markdown);
+              if (html) {
+                editor.chain().focus("end").insertContent(html).run();
+              }
+              notifications.show({
+                color: "yellow",
+                message: t("Selection changed during generation. Content appended to end."),
+              });
             } else {
+              // No selection — append to end
               const html = renderMarkdownToEditorHtml(markdown);
               if (html) {
                 editor.chain().focus("end").insertContent(html).run();
@@ -284,6 +321,7 @@ export function AiCreatorInput() {
         },
       );
     } catch (error: any) {
+      removeLastEmptyAssistant();
       notifications.show({ color: "red", message: error.message });
       setIsStreaming(false);
     }

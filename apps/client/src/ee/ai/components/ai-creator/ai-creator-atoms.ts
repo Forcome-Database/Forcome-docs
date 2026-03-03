@@ -1,4 +1,4 @@
-import { atom } from 'jotai';
+import { atom, useAtom } from 'jotai';
 import { atomWithWebStorage } from '@/lib/jotai-helper';
 import { AiCreatorMessage } from './ai-creator.types';
 
@@ -22,3 +22,12 @@ export const aiCreatorMessagesAtom = atom<
 >({});
 
 export const aiCreatorStreamingAtom = atom<boolean>(false);
+
+/**
+ * Type-safe hook for the nullable template atom.
+ * Eliminates the `_setX as (v: T | null) => void` pattern.
+ */
+export function useTemplateAtom(): [string | null, (value: string | null) => void] {
+  const [value, setValue] = useAtom(aiCreatorTemplateAtom);
+  return [value, setValue as (v: string | null) => void];
+}

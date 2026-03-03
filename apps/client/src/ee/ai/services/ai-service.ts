@@ -38,6 +38,7 @@ export async function generateAiContentStream(
   const abortController = new AbortController();
 
   (async () => {
+    let completed = false;
     try {
       const response = await fetch("/api/ai/generate/stream", {
         method: "POST",
@@ -75,7 +76,7 @@ export async function generateAiContentStream(
             if (line.startsWith("data: ")) {
               const data = line.slice(6);
               if (data === "[DONE]") {
-                onComplete?.();
+                if (!completed) { completed = true; onComplete?.(); }
                 return;
               }
               try {
@@ -91,7 +92,7 @@ export async function generateAiContentStream(
             }
           }
         }
-        onComplete?.();
+        if (!completed) { completed = true; onComplete?.(); }
       } finally {
         reader.releaseLock();
       }
@@ -114,6 +115,7 @@ export async function creatorGenerate(
   const abortController = new AbortController();
 
   (async () => {
+    let completed = false;
     try {
       const formData = new FormData();
       data.files.forEach((file) => formData.append("files", file));
@@ -158,7 +160,7 @@ export async function creatorGenerate(
             if (line.startsWith("data: ")) {
               const sseData = line.slice(6);
               if (sseData === "[DONE]") {
-                onComplete?.();
+                if (!completed) { completed = true; onComplete?.(); }
                 return;
               }
               try {
@@ -174,7 +176,7 @@ export async function creatorGenerate(
             }
           }
         }
-        onComplete?.();
+        if (!completed) { completed = true; onComplete?.(); }
       } finally {
         reader.releaseLock();
       }

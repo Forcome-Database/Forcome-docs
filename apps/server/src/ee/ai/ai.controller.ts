@@ -175,7 +175,11 @@ export class AiController {
         const parsed = JSON.parse(historyRaw);
         if (Array.isArray(parsed)) {
           history = parsed
-            .filter((m: any) => m.role && m.content)
+            .filter((m: any) => m.role && m.content && typeof m.content === 'string')
+            .map((m: any) => ({
+              role: m.role as 'user' | 'assistant',
+              content: m.content.slice(0, 10000),
+            }))
             .slice(-10);
         }
       } catch {

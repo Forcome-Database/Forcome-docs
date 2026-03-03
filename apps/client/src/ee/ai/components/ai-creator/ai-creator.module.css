@@ -243,6 +243,33 @@
   overflow: hidden;
 }
 
+.aiContent :global(pre.code-block-wrapper .code-copy-btn) {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: light-dark(var(--mantine-color-gray-5), var(--mantine-color-gray-5));
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.aiContent :global(pre.code-block-wrapper:hover .code-copy-btn) {
+  opacity: 1;
+}
+
+.aiContent :global(pre.code-block-wrapper .code-copy-btn:hover) {
+  background: light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));
+  color: light-dark(var(--mantine-color-gray-8), var(--mantine-color-white));
+}
+
 .aiContent :global(pre.code-block-wrapper)::before {
   content: attr(data-language);
   display: block;

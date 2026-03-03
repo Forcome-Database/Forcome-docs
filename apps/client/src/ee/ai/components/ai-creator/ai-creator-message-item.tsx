@@ -35,7 +35,8 @@ const bubbleMarked = new Marked({
         highlighted = text;
       }
       const langLabel = language || lang || "";
-      return `<pre class="code-block-wrapper" data-language="${langLabel}"><code class="hljs language-${langLabel}">${highlighted}</code></pre>`;
+      const copyIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+      return `<pre class="code-block-wrapper" data-language="${langLabel}"><button class="code-copy-btn" title="Copy">${copyIcon}</button><code class="hljs language-${langLabel}">${highlighted}</code></pre>`;
     },
   },
 });
@@ -50,8 +51,14 @@ const PURIFY_CONFIG = {
     'blockquote', 'hr',
     'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
     'img', 'div',
+    'button', 'svg', 'rect', 'path', 'line', 'circle',
   ],
-  ALLOWED_ATTR: ['class', 'href', 'target', 'rel', 'src', 'alt', 'title', 'data-language'],
+  ALLOWED_ATTR: [
+    'class', 'href', 'target', 'rel', 'src', 'alt', 'title', 'data-language',
+    'viewBox', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+    'd', 'x', 'y', 'width', 'height', 'rx', 'ry', 'xmlns',
+  ],
+  ALLOWED_URI_REGEXP: /^(?:https?|data):/i,
 };
 
 /** Render markdown for display in the chat bubble (with hljs highlight) */
@@ -73,19 +80,7 @@ interface Props {
   message: AiCreatorMessage;
 }
 
-/** Extract first H1 from markdown, return [title, remainingMarkdown] */
-function extractTitle(markdown: string): [string | null, string] {
-  const match = markdown.match(/^#\s+(.+)$/m);
-  if (!match) return [null, markdown];
-  const title = match[1].trim();
-  const remaining = markdown.replace(/^#\s+.+\n*/m, '').trim();
-  return [title, remaining];
-}
-
-/** Strip trailing elapsed-time line (e.g. "\n\n---\n*2.5s*") */
-function stripTimestamp(content: string): string {
-  return content.replace(/\n+---\n\*[\d.]+s\*\s*$/, '').trim();
-}
+import { extractTitle, stripTimestamp } from './ai-creator-utils';
 
 export function AiCreatorMessageItem({ message }: Props) {
   const { t } = useTranslation();
