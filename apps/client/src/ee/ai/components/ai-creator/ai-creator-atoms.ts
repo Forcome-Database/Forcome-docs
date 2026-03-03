@@ -31,3 +31,9 @@ export function useTemplateAtom(): [string | null, (value: string | null) => voi
   const [value, setValue] = useAtom(aiCreatorTemplateAtom);
   return [value, setValue as (v: string | null) => void];
 }
+
+// Agent mode atoms
+import { AgentStepInfo } from '../../types/agent.types';
+
+export const agentModeAtom = atomWithWebStorage<boolean>('aiAgentMode', false);
+export const agentStepsAtom = atom<Record<string, AgentStepInfo[]>>({});
