@@ -17,7 +17,10 @@ class Settings(BaseSettings):
     tavily_api_key: str = ""
     firecrawl_api_key: str = ""
     firecrawl_api_url: str = "https://api.firecrawl.dev"
-    nanobana_api_key: str = ""
+
+    # Image generation (OpenAI-compatible endpoint)
+    agent_image_api_url: str = "https://api.forcome.com/v1beta"
+    agent_image_model: str = "gemini-3-pro-image-preview"
 
     # Internal communication
     agent_internal_secret: str = ""
