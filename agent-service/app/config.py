@@ -45,6 +45,6 @@ class Settings(BaseSettings):
     def llm_api_url(self) -> str:
         return self.agent_llm_api_url or self.openai_api_url
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    model_config = {"env_file": ["../.env", ".env"], "extra": "ignore"}
 
 settings = Settings()
