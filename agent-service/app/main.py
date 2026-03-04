@@ -42,8 +42,10 @@ async def lifespan(app: FastAPI):
     global _compiled_graph, _checkpointer, _pool
 
     if settings.database_url:
+        # Strip query params like ?schema=public that psycopg doesn't support
+        db_url = settings.database_url.split("?")[0]
         _pool = AsyncConnectionPool(
-            conninfo=settings.database_url,
+            conninfo=db_url,
             open=False,
         )
         await _pool.open()
