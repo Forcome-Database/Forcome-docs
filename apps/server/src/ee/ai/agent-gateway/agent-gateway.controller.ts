@@ -15,6 +15,7 @@ import { AuthUser } from '../../../common/decorators/auth-user.decorator';
 import { AuthWorkspace } from '../../../common/decorators/auth-workspace.decorator';
 import { AgentGatewayService } from './agent-gateway.service';
 import { AgentStopDto } from './dto/agent-stop.dto';
+import { AgentResumeDto } from './dto/agent-resume.dto';
 import { EnvironmentService } from '../../../integrations/environment/environment.service';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -126,6 +127,69 @@ export class AgentGatewayController {
 
     proxyReq.on('error', (err) => {
       this.logger.error('Agent connection error', err);
+      res.raw.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Agent 服务不可用' })}\n\n`);
+      res.raw.end();
+    });
+
+    proxyReq.write(postData);
+    proxyReq.end();
+  }
+
+  @Post('resume')
+  async resumeAgent(
+    @Body() dto: AgentResumeDto,
+    @Res() res: FastifyReply,
+  ): Promise<void> {
+    // Set SSE headers immediately
+    res.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+
+    // Build POST data
+    const postData = JSON.stringify({
+      thread_id: dto.threadId,
+      resume_value: dto.resumeValue,
+    });
+
+    // Use Node.js http.request for true chunked streaming (fetch buffers SSE)
+    const agentUrl = new URL('/agent/resume', this.environmentService.getAgentServiceUrl());
+
+    const proxyReq = http.request(
+      {
+        hostname: agentUrl.hostname,
+        port: agentUrl.port,
+        path: agentUrl.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData),
+          'X-Internal-Secret': this.environmentService.getAgentInternalSecret(),
+        },
+      },
+      (proxyRes) => {
+        if (proxyRes.statusCode !== 200) {
+          res.raw.write(`data: ${JSON.stringify({ type: 'error', message: `Agent resume failed: ${proxyRes.statusCode}` })}\n\n`);
+          res.raw.end();
+          return;
+        }
+        // Pipe SSE chunks directly to client in real-time
+        proxyRes.on('data', (chunk: Buffer) => {
+          res.raw.write(chunk);
+        });
+        proxyRes.on('end', () => {
+          res.raw.end();
+        });
+        proxyRes.on('error', (err) => {
+          this.logger.error('Agent resume stream error', err);
+          res.raw.end();
+        });
+      },
+    );
+
+    proxyReq.on('error', (err) => {
+      this.logger.error('Agent resume connection error', err);
       res.raw.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Agent 服务不可用' })}\n\n`);
       res.raw.end();
     });
