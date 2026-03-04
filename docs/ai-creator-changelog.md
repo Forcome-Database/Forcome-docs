@@ -329,3 +329,39 @@ const imageUrls = useMemo(() => {
 
 - `docs/plans/2026-03-03-ai-creator-bugfix-design.md` — 审计结果与修复设计
 - `docs/plans/2026-03-03-ai-creator-bugfix-impl-plan.md` — 分步实施计划
+
+---
+
+## 2026-03-04 — AI Agent 智能体重构（深度模式）
+
+### 概述
+
+将 AI 助手升级为 LangGraph 驱动的自主智能体。新增独立 Python 微服务 `agent-service/`，前端在 AI Creator 面板中增加「深度模式」开关（🧠 按钮）。
+
+### 核心架构
+
+- **Python Agent Service**: FastAPI + LangGraph（Plan → Research → Execute → Review 闭环）
+- **NestJS Gateway**: `AgentGatewayController` 认证 + `http.request` SSE 代理
+- **前端**: `agentModeAtom` 状态 + `useAgent` Hook + `AiCreatorAgentSteps` 组件
+- **9 个工具**: tavily_search, firecrawl_scrape, docling_parser, nanobana_imggen, image_annotate, vlm_understand, docmost_page_read, docmost_rag, docmost_upload
+
+### 关键优化（调试期间）
+
+| # | 问题 | 解决方案 |
+|---|------|----------|
+| 1 | Node.js `fetch` 缓冲 SSE 流 | 改用 `http.request` + `proxyRes.on('data')` 管道 |
+| 2 | `astream` 仅在节点完成时推送 | 引入 `asyncio.Queue` 侧信道实时推送 |
+| 3 | Agent 读不到根目录 `.env` | `env_file: ["../.env", ".env"]` |
+| 4 | hatchling 找不到包目录 | 添加 `[tool.hatch.build.targets.wheel] packages = ["app"]` |
+| 5 | LLM 生成空图片引用 | 三层防护：Docling 提取 → 上传获 URL → 兜底正则过滤 |
+| 6 | `error?.message` TS 报错 | `error instanceof Error ? error.message : fallback` |
+
+### 文件变更
+
+52 个文件，+1876 行代码。详细清单见 `docs/ai-agent-refactor-details.md`。
+
+### 设计文档
+
+- `docs/ai-agent-refactor-details.md` — 完整开发记录与踩坑
+- `docs/plans/2026-03-03-ai-agent-architecture-design.md` — 架构设计
+- `docs/plans/2026-03-03-ai-agent-impl-plan.md` — 实施计划

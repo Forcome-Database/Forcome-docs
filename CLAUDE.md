@@ -8,6 +8,7 @@ Docmost v0.25.3 — 开源协作文档管理系统（类 Notion/Confluence），
 - **前端**：React 18 + TypeScript + Vite + Mantine + TipTap
 - **协作**：Hocuspocus + Yjs
 - **AI**：Vercel AI SDK v6，支持 OpenAI / OpenAI-Compatible / Gemini / Ollama
+- **AI Agent**：Python 3.12 + FastAPI + LangGraph + Docling + Tavily + Firecrawl + Pillow
 
 ## 企业功能开源化
 
@@ -29,6 +30,18 @@ VitePress 知识库（`wiki/`）已深度集成 Docmost，作为公开只读前�
 
 - **[模板管理重构细节](docs/ai-template-management.md)** — 架构设计、权限模型、数据库设计、API 端点、文件清单、踩坑记录
 
+## AI Agent 智能体
+
+独立 Python 微服务（`agent-service/`），通过 LangGraph 编排 Plan-Execute-Review 闭环，支持文档解析、网络搜索、图片生成/标注/理解等 9 个工具。详细文档：
+
+- **[重构细节与踩坑](docs/ai-agent-refactor-details.md)** — 架构、文件清单、6 个踩坑与解决方案
+- **[架构设计](docs/plans/2026-03-03-ai-agent-architecture-design.md)** — 完整设计方案
+
+**关键约束**：
+- NestJS 网关用 `http.request`（非 `fetch`）代理 SSE，否则流被缓冲
+- Agent 节点通过 `asyncio.Queue` 侧信道推送实时事件（非 `astream`）
+- `agent-service/app/config.py` 读取 `../.env`（根目录），本地开发 `AGENT_SERVICE_URL=http://localhost:8100`
+
 ## 开发环境启动
 
 ```bash
@@ -36,10 +49,13 @@ VitePress 知识库（`wiki/`）已深度集成 Docmost，作为公开只读前�
 pnpm install
 
 # 配置 .env（参考 .env.example）
-# 关键项：DATABASE_URL, REDIS_URL, APP_SECRET, AI 配置
+# 关键项：DATABASE_URL, REDIS_URL, APP_SECRET, AI 配置, AGENT_* 配置
 
-# 启动开发服务器
+# 启动 Docmost 主服务（终端 1）
 pnpm dev
+
+# 启动 Agent 服务（终端 2）
+cd agent-service && pip install -e ".[dev]" && uvicorn app.main:app --port 8100 --reload
 ```
 
 **注意**：如果系统环境变量中存在 `OPENAI_API_KEY` 等变量，会覆盖 `.env` 文件中的值。PowerShell 中可用 `$env:OPENAI_API_KEY="sk-xxx"` 临时覆盖。
