@@ -62,6 +62,11 @@ function renderMarkdownToEditorHtml(content: string): string {
   return markdownToHtml(content) as string;
 }
 
+function isContinueIntent(text: string): boolean {
+  const keywords = ['续写', '接着写', '继续写', '追加', '下一章', '下一节', 'continue', 'append'];
+  return keywords.some(k => text.toLowerCase().includes(k));
+}
+
 export function AiCreatorInput() {
   const { t } = useTranslation();
   const { pageSlug } = useParams();
@@ -236,8 +241,14 @@ export function AiCreatorInput() {
 
     try {
       let accumulatedContent = "";
-      // Determine insert mode: append when page has content and no selection
-      const shouldAppend = pageHasContent && !selection;
+      // Determine insert mode: overwrite by default, append only on explicit continue intent
+      const insertMode = selection
+        ? 'replace'
+        : !pageHasContent
+          ? 'create'
+          : isContinueIntent(userPrompt || '')
+            ? 'append'
+            : 'overwrite';
 
       // Build conversation history from existing messages (max 10 recent)
       const pageMessages = allMessages[pageId] || [];
@@ -268,7 +279,7 @@ export function AiCreatorInput() {
             prompt: fullPrompt,
             pageId,
             templateId: template || undefined,
-            insertMode: shouldAppend ? "append" : selection ? "replace" : "create",
+            insertMode,
             pageTitle,
             pageContent: editor.state.doc.textBetween(0, Math.min(5000, editor.state.doc.content.size)),
             selectedText: selection || undefined,
@@ -326,8 +337,8 @@ export function AiCreatorInput() {
           prompt: fullPrompt,
           template: template || undefined,
           pageId,
-          insertMode: shouldAppend ? "append" : undefined,
-          existingContentSummary: shouldAppend
+          insertMode,
+          existingContentSummary: insertMode === 'append'
             ? editor.state.doc.textBetween(0, Math.min(500, editor.state.doc.content.size))
             : undefined,
           pageTitle,
