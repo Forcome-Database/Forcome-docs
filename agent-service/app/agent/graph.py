@@ -1,35 +1,67 @@
+"""LangGraph agent graph with interrupt-based human-in-the-loop.
+
+Topology:
+  Explorer → Clarifier → (interrupt) → Proposer → (interrupt)
+  → Outliner → (interrupt) → Writer → Reviewer → (loop or END)
+"""
 from langgraph.graph import StateGraph, END
 
 from app.agent.state import AgentState
-from app.agent.nodes.planner import planner_node
-from app.agent.nodes.researcher import researcher_node
-from app.agent.nodes.executor import executor_node
+from app.agent.nodes.explorer import explorer_node
+from app.agent.nodes.clarifier import clarifier_node
+from app.agent.nodes.proposer import proposer_node
+from app.agent.nodes.outliner import outliner_node
+from app.agent.nodes.writer import writer_node
 from app.agent.nodes.reviewer import reviewer_node
 
+
 def should_continue(state: AgentState) -> str:
-    """决定 Reviewer 之后是结束还是回到 Planner 修正"""
+    """After Reviewer: revise (back to Writer) or end."""
     if state.get("needs_revision") and state.get("iteration_count", 0) < state.get("max_iterations", 3):
         return "revise"
     return "end"
 
+
+def should_regenerate_outline(state: AgentState) -> str:
+    """After Outliner: if user requested regeneration, loop back."""
+    if state.get("phase") == "outliner" and not state.get("confirmed_outline"):
+        return "regenerate"
+    return "continue"
+
+
 def build_agent_graph():
-    """构建并编译 LangGraph 图"""
+    """Build and return the uncompiled graph builder.
+
+    Compilation with checkpointer happens in main.py where DB pool is available.
+    """
     graph = StateGraph(AgentState)
 
-    graph.add_node("planner", planner_node)
-    graph.add_node("researcher", researcher_node)
-    graph.add_node("executor", executor_node)
+    graph.add_node("explorer", explorer_node)
+    graph.add_node("clarifier", clarifier_node)
+    graph.add_node("proposer", proposer_node)
+    graph.add_node("outliner", outliner_node)
+    graph.add_node("writer", writer_node)
     graph.add_node("reviewer", reviewer_node)
 
-    graph.set_entry_point("planner")
-    graph.add_edge("planner", "researcher")
-    graph.add_edge("researcher", "executor")
-    graph.add_edge("executor", "reviewer")
+    graph.set_entry_point("explorer")
+
+    graph.add_edge("explorer", "clarifier")
+    graph.add_edge("clarifier", "proposer")
+    graph.add_edge("proposer", "outliner")
+
+    graph.add_conditional_edges("outliner", should_regenerate_outline, {
+        "regenerate": "outliner",
+        "continue": "writer",
+    })
+
+    graph.add_edge("writer", "reviewer")
+
     graph.add_conditional_edges("reviewer", should_continue, {
-        "revise": "planner",
+        "revise": "writer",
         "end": END,
     })
 
-    return graph.compile()
+    return graph
 
-agent_graph = build_agent_graph()
+
+agent_graph_builder = build_agent_graph()

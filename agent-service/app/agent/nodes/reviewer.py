@@ -17,6 +17,8 @@ REVIEWER_SYSTEM_PROMPT = """你是一个文档质量审查专家。审查生成�
 2. 内容是否完整（不是占位符或空洞内容）
 3. Markdown 格式是否正确
 4. 如果用户要求修改选中文本，是否只修改了选中部分
+5. 是否严格遵循了大纲结构（如有大纲），包括章节顺序、层级和要点覆盖
+6. 图片引用是否正确（![alt](url) 格式完整、URL 非空、无残留占位符）
 
 仅输出 JSON，不要输出其他内容。"""
 
@@ -37,12 +39,17 @@ async def reviewer_node(state: AgentState) -> dict:
             "needs_revision": False,
         }
 
+    confirmed_outline = state.get('confirmed_outline', '(无大纲)')
+
     user_prompt = f"""用户原始请求: {state['user_message']}
+
+确认的大纲:
+{confirmed_outline}
 
 生成的文档:
 {draft[:5000]}
 
-请审查此文档。"""
+请审查此文档，特别注意内容是否严格遵循了上述大纲结构，以及图片引用是否正确。"""
 
     messages = [
         SystemMessage(content=REVIEWER_SYSTEM_PROMPT),
@@ -66,4 +73,5 @@ async def reviewer_node(state: AgentState) -> dict:
         return {
             "needs_revision": True,
             "revision_feedback": review.get("feedback", "请改进内容质量"),
+            "iteration_count": state.get("iteration_count", 0) + 1,
         }
