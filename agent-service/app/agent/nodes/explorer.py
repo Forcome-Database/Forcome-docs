@@ -1,10 +1,33 @@
 import json
 import httpx
 import base64
+from langchain_core.messages import SystemMessage, HumanMessage
+from app.agent.llm import get_chat_model
 from app.agent.state import AgentState
 from app.agent.events import emit
 from app.config import settings
-from app.tools.registry import get_tool
+from app.tools.registry import get_tool_names, get_tool
+
+EXPLORER_SYSTEM_PROMPT = """你是一个智能文档助手的调研规划器。你的任务是分析用户的请求，并制定调研步骤计划。
+
+可用工具: {tools}
+
+根据用户的请求和上下文，输出一个 JSON 数组格式的调研计划。每个步骤包含:
+- step_id: 步骤编号（从 1 开始）
+- action: 动作类型（search/parse/crawl）
+- description: 步骤描述（中文）
+- tool: 要使用的工具名（从可用工具中选择，或 null）
+- args: 工具参数提示（dict 或 null）
+
+规则:
+1. 如果用户上传了文件，必须包含 parse 步骤
+2. 如果需要外部知识，包含 search 步骤
+3. 如果用户提供了 URL，包含 crawl 步骤
+4. 只生成调研步骤（search/parse/crawl），不包含 generate 步骤
+5. 计划应精简，不超过 6 个步骤
+6. 如果不需要任何调研，返回空数组 []
+
+仅输出 JSON 数组，不要输出其他内容。"""
 
 RESEARCH_ACTIONS = {"search", "parse", "crawl"}
 
@@ -34,10 +57,53 @@ async def _upload_image_to_docmost(b64_data: str, filename: str, page_id: str) -
         return ""
 
 
-async def researcher_node(state: AgentState) -> dict:
-    """执行计划中的调研步骤：文件解析、网络搜索、网页爬取、图片上传"""
+async def explorer_node(state: AgentState) -> dict:
+    """Phase 1: 使用 LLM 制定调研计划；Phase 2: 遍历计划执行 search/parse/crawl 步骤"""
     tid = state.get("_task_id", "")
-    plan = state.get("plan", [])
+
+    # ── Phase 1: 制定调研计划 ──────────────────────────────────
+    llm = get_chat_model()
+    tools = get_tool_names()
+
+    await emit(tid, {"type": "step_start", "step": "plan", "description": "正在分析需求并制定调研计划..."})
+
+    context_parts = []
+    if state.get("page_title"):
+        context_parts.append(f"当前页面标题: {state['page_title']}")
+    if state.get("selected_text"):
+        context_parts.append(f"用户选中的文本: {state['selected_text'][:500]}")
+    if state.get("uploaded_files"):
+        file_names = [f["filename"] for f in state["uploaded_files"]]
+        context_parts.append(f"上传的文件: {', '.join(file_names)}")
+    if state.get("revision_feedback"):
+        context_parts.append(f"上次修订反馈: {state['revision_feedback']}")
+
+    context = "\n".join(context_parts) if context_parts else "无额外上下文"
+
+    user_prompt = f"""用户请求: {state['user_message']}
+
+上下文信息:
+{context}
+
+请制定调研计划。"""
+
+    messages = [
+        SystemMessage(content=EXPLORER_SYSTEM_PROMPT.format(tools=", ".join(tools))),
+        HumanMessage(content=user_prompt),
+    ]
+
+    response = await llm.ainvoke(messages)
+    try:
+        plan = json.loads(response.content)
+    except json.JSONDecodeError:
+        plan = []
+
+    for step in plan:
+        step["status"] = "pending"
+
+    await emit(tid, {"type": "step_done", "step": "plan", "result_summary": f"制定了 {len(plan)} 步调研计划"})
+
+    # ── Phase 2: 遍历计划执行调研步骤 ──────────────────────────
     research_results = list(state.get("research_results", []))
     parsed_files = list(state.get("parsed_files", []))
     generated_images = list(state.get("generated_images", []))
@@ -83,7 +149,14 @@ async def researcher_node(state: AgentState) -> dict:
                             img_filename = f"doc-img-{img['index']}.png"
                             url = await _upload_image_to_docmost(img["b64"], img_filename, page_id)
                             if url:
-                                image_urls.append({"index": img["index"], "url": url, "desc": img.get("desc", "")})
+                                image_urls.append({
+                                    "index": img["index"],
+                                    "url": url,
+                                    "desc": img.get("desc", ""),
+                                    "context": img.get("context", ""),
+                                    "page_ref": img.get("page_ref", ""),
+                                    "surrounding_text": img.get("surrounding_text", ""),
+                                })
                                 await emit(tid, {"type": "image", "url": url, "alt": img.get("desc", "")})
 
                         await emit(tid, {"type": "step_done", "step": "upload_images",
@@ -125,7 +198,10 @@ async def researcher_node(state: AgentState) -> dict:
 
     return {
         "plan": plan,
+        "current_step": 0,
+        "iteration_count": state.get("iteration_count", 0) + 1,
         "research_results": research_results,
         "parsed_files": parsed_files,
         "generated_images": generated_images,
+        "phase": "clarifier",
     }
