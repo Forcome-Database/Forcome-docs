@@ -39,7 +39,7 @@ import {
 import { AiCreatorFileList } from "./ai-creator-file-list";
 import { AI_TEMPLATE_OPTIONS } from "./ai-creator.types";
 import type { SelectionSnapshot } from "./ai-creator.types";
-import { extractTitle, isSelectionStillValid } from './ai-creator-utils';
+import { extractTitle, isSelectionStillValid, preprocessImagesForEditor } from './ai-creator-utils';
 import {
   useAiTemplatesQuery,
   useResetAiTemplateMutation,
@@ -67,7 +67,34 @@ function isContinueIntent(text: string): boolean {
   return keywords.some(k => text.toLowerCase().includes(k));
 }
 
-export function AiCreatorInput() {
+/** Insert complete paragraphs from buffer into editor, return remaining incomplete text */
+function flushParagraphsToEditor(
+  buffer: string,
+  editor: any,
+  flush: boolean = false,
+): string {
+  const paragraphs = buffer.split('\n\n');
+  if (!flush && paragraphs.length <= 1) return buffer;
+
+  const toInsert = flush ? buffer : paragraphs.slice(0, -1).join('\n\n');
+  const remaining = flush ? '' : paragraphs[paragraphs.length - 1];
+
+  if (toInsert.trim()) {
+    const html = renderMarkdownToEditorHtml(preprocessImagesForEditor(toInsert));
+    if (html) {
+      editor.chain().focus('end').insertContent(html).run();
+    }
+  }
+  return remaining;
+}
+
+interface AiCreatorInputProps {
+  lockEditor: () => void;
+  unlockEditor: () => void;
+  rollbackEditor: () => void;
+}
+
+export function AiCreatorInput({ lockEditor, unlockEditor, rollbackEditor }: AiCreatorInputProps) {
   const { t } = useTranslation();
   const { pageSlug } = useParams();
   const pageId = extractPageSlugId(pageSlug);
@@ -86,6 +113,7 @@ export function AiCreatorInput() {
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mdBufferRef = useRef<string>('');
 
   // User template personalization state
   const [userEditorOpened, setUserEditorOpened] = useState(false);
@@ -187,6 +215,8 @@ export function AiCreatorInput() {
     } else {
       abortRef.current?.abort();
     }
+    rollbackEditor();
+    mdBufferRef.current = '';
     removeLastEmptyAssistant();
     setIsStreaming(false);
   };
@@ -198,6 +228,12 @@ export function AiCreatorInput() {
     setPrompt("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setIsStreaming(true);
+
+    // Lock editor and reset buffer when auto-insert is on
+    if (autoInsert) {
+      lockEditor();
+      mdBufferRef.current = '';
+    }
 
     // Build prompt with selection context if available
     let fullPrompt = userPrompt;
@@ -290,37 +326,64 @@ export function AiCreatorInput() {
             onContent: (chunk) => {
               accumulatedContent += chunk;
               updateLastMessage(() => accumulatedContent);
+              // Stream paragraphs into editor
+              if (autoInsert && editor && !selectionSnapshot) {
+                mdBufferRef.current += chunk;
+                mdBufferRef.current = flushParagraphsToEditor(mdBufferRef.current, editor);
+              }
             },
             onDone: (finalContent, insertMode) => {
               // Use finalContent if available (otherwise use accumulated)
               const content = finalContent || accumulatedContent;
               if (autoInsert && content && editor) {
-                let markdown = content;
-                if (titleEditor) {
-                  const currentTitle = titleEditor.state.doc.textContent.trim();
-                  if (!currentTitle) {
-                    const [title, remaining] = extractTitle(markdown);
-                    if (title) {
-                      titleEditor.commands.setContent(title);
-                      markdown = remaining;
+                if (selectionSnapshot) {
+                  // Selection replace: insert full content at selection (not streamed)
+                  let markdown = content;
+                  if (titleEditor) {
+                    const currentTitle = titleEditor.state.doc.textContent.trim();
+                    if (!currentTitle) {
+                      const [title, remaining] = extractTitle(markdown);
+                      if (title) {
+                        titleEditor.commands.setContent(title);
+                        markdown = remaining;
+                      }
+                    }
+                  }
+                  const html = renderMarkdownToEditorHtml(markdown);
+                  if (html) {
+                    if (insertMode === "replace" && isSelectionStillValid(editor, selectionSnapshot)) {
+                      editor.chain().focus().setTextSelection(selectionSnapshot).insertContent(html).run();
+                    } else {
+                      editor.chain().focus("end").insertContent(html).run();
+                    }
+                  }
+                } else {
+                  // Flush remaining buffer (paragraphs were already streamed in)
+                  if (mdBufferRef.current.trim()) {
+                    flushParagraphsToEditor(mdBufferRef.current, editor, true);
+                    mdBufferRef.current = '';
+                  }
+                  // Extract title if page has none
+                  if (titleEditor) {
+                    const currentTitle = titleEditor.state.doc.textContent.trim();
+                    if (!currentTitle) {
+                      const [title] = extractTitle(content);
+                      if (title) {
+                        titleEditor.commands.setContent(title);
+                      }
                     }
                   }
                 }
-                const html = renderMarkdownToEditorHtml(markdown);
-                if (html) {
-                  if (insertMode === "replace" && selectionSnapshot && isSelectionStillValid(editor, selectionSnapshot)) {
-                    editor.chain().focus().setTextSelection(selectionSnapshot).insertContent(html).run();
-                  } else {
-                    editor.chain().focus("end").insertContent(html).run();
-                  }
-                }
               }
+              unlockEditor();
               setIsStreaming(false);
               setFiles([]);
               const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
               updateLastMessage((c) => c + `\n\n---\n*${elapsed}s*`);
             },
             onError: (msg) => {
+              rollbackEditor();
+              mdBufferRef.current = '';
               removeLastEmptyAssistant();
               notifications.show({ color: "red", message: msg });
               setIsStreaming(false);
@@ -347,8 +410,15 @@ export function AiCreatorInput() {
         (chunk) => {
           accumulatedContent += chunk.content;
           updateLastMessage(() => accumulatedContent);
+          // Stream paragraphs into editor
+          if (autoInsert && editor && !selectionSnapshot) {
+            mdBufferRef.current += chunk.content;
+            mdBufferRef.current = flushParagraphsToEditor(mdBufferRef.current, editor);
+          }
         },
         (error) => {
+          rollbackEditor();
+          mdBufferRef.current = '';
           removeLastEmptyAssistant();
           notifications.show({ color: "red", message: error.error });
           setIsStreaming(false);
@@ -370,7 +440,7 @@ export function AiCreatorInput() {
             }
 
             if (selectionSnapshot && isSelectionStillValid(editor, selectionSnapshot)) {
-              // Selection still valid — replace it
+              // Selection still valid — replace it (not streamed, full content)
               const $from = editor.state.doc.resolve(selectionSnapshot.from);
               const isInCodeBlock = $from.parent.type.name === "codeBlock";
               const isCodeBlockNodeSelected =
@@ -413,13 +483,14 @@ export function AiCreatorInput() {
                 message: t("Selection changed during generation. Content appended to end."),
               });
             } else {
-              // No selection — append to end
-              const html = renderMarkdownToEditorHtml(markdown);
-              if (html) {
-                editor.chain().focus("end").insertContent(html).run();
+              // No selection — flush remaining buffer (paragraphs already streamed in)
+              if (mdBufferRef.current.trim()) {
+                flushParagraphsToEditor(mdBufferRef.current, editor, true);
+                mdBufferRef.current = '';
               }
             }
           }
+          unlockEditor();
           setIsStreaming(false);
           setFiles([]);
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -427,6 +498,8 @@ export function AiCreatorInput() {
         },
       );
     } catch (error: any) {
+      rollbackEditor();
+      mdBufferRef.current = '';
       removeLastEmptyAssistant();
       notifications.show({ color: "red", message: error.message });
       setIsStreaming(false);

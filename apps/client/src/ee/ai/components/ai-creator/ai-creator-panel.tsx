@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   ActionIcon,
   Group,
@@ -37,6 +37,30 @@ export default function AiCreatorPanel() {
   const pageId = extractPageSlugId(pageSlug);
 
   const hasSelection = useAtomValue(aiCreatorSelectionAtom).length > 0;
+
+  // Editor lock/snapshot state for streaming writes
+  const [editorSnapshot, setEditorSnapshot] = useState<any>(null);
+
+  const lockEditor = useCallback(() => {
+    if (!editor) return;
+    setEditorSnapshot(editor.getJSON());
+    editor.setEditable(false);
+    editor.view.dom.classList.add('ai-generating');
+  }, [editor]);
+
+  const unlockEditor = useCallback(() => {
+    if (!editor) return;
+    editor.setEditable(true);
+    editor.view.dom.classList.remove('ai-generating');
+  }, [editor]);
+
+  const rollbackEditor = useCallback(() => {
+    if (!editor || !editorSnapshot) return;
+    editor.commands.setContent(editorSnapshot);
+    editor.setEditable(true);
+    editor.view.dom.classList.remove('ai-generating');
+    setEditorSnapshot(null);
+  }, [editor, editorSnapshot]);
 
   // Clear messages when panel mounts (each open starts fresh)
   useEffect(() => {
@@ -112,7 +136,11 @@ export default function AiCreatorPanel() {
       {hasSelection && <AiCreatorSelection />}
 
       {/* Input area */}
-      <AiCreatorInput />
+      <AiCreatorInput
+        lockEditor={lockEditor}
+        unlockEditor={unlockEditor}
+        rollbackEditor={rollbackEditor}
+      />
     </div>
   );
 }
