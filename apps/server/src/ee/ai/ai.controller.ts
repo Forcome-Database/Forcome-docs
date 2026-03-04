@@ -162,6 +162,7 @@ export class AiController {
 
     const { prompt, template, insertMode, existingContentSummary, pageTitle, history: historyRaw } =
       fields;
+    const confirmedOutline = fields.confirmedOutline || '';
 
     if (!prompt) {
       res.status(400).send({ message: 'prompt is required' });
@@ -219,6 +220,15 @@ export class AiController {
       systemPrompt += 'Continue writing from where the existing content left off. Match the style, tone, and structure of the existing content.\n\n';
     }
 
+    // Two-phase SSE: outline first, then content
+    const isOutlinePhase = !confirmedOutline;
+
+    if (isOutlinePhase) {
+      systemPrompt += '\n\n重要：你现在只需要生成文档的结构化大纲，不要写正文内容。使用 ## 和 ### 标题层级，每个章节下简要说明要点（1-2句）。';
+    } else {
+      systemPrompt += `\n\n请严格按照以下大纲结构生成完整正文：\n${confirmedOutline}`;
+    }
+
     // Stream response
     res.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -228,6 +238,7 @@ export class AiController {
 
     try {
       let chunkCount = 0;
+      let accumulatedContent = '';
       for await (const chunk of this.aiService.streamWithContext(
         systemPrompt,
         prompt,
@@ -235,11 +246,25 @@ export class AiController {
         history,
       )) {
         chunkCount++;
+        if (isOutlinePhase) {
+          accumulatedContent += chunk;
+        }
         res.raw.write(`data: ${chunk}\n\n`);
       }
       this.logger.log(
-        `AI creator stream completed: ${chunkCount} chunks sent`,
+        `AI creator stream completed: ${chunkCount} chunks sent (phase=${isOutlinePhase ? 'outline' : 'content'})`,
       );
+
+      if (isOutlinePhase) {
+        // Send await_input event so the frontend can display outline interaction UI
+        const outlineEvent = JSON.stringify({
+          type: 'await_input',
+          phase: 'outline',
+          data: { outline: accumulatedContent },
+        });
+        res.raw.write(`data: ${outlineEvent}\n\n`);
+      }
+
       res.raw.write('data: [DONE]\n\n');
     } catch (error: any) {
       this.logger.error(`AI creator stream error: ${error?.message}`);
