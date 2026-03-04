@@ -86,3 +86,66 @@ export function agentGenerate(
 
   return controller;
 }
+
+export function resumeAgent(
+  threadId: string,
+  resumeValue: Record<string, any>,
+  onEvent: (event: AgentSSEEvent) => void,
+  onError: (error: string) => void,
+  onComplete: () => void,
+): AbortController {
+  const controller = new AbortController();
+
+  fetch('/api/agent/resume', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ threadId, resumeValue }),
+    signal: controller.signal,
+  })
+    .then(async (resp) => {
+      if (!resp.ok) {
+        onError(`Agent resume failed: ${resp.status}`);
+        return;
+      }
+
+      const reader = resp.body?.getReader();
+      if (!reader) {
+        onError('无法读取响应流');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') continue;
+            try {
+              const event: AgentSSEEvent = JSON.parse(data);
+              onEvent(event);
+            } catch {
+              // ignore parse errors
+            }
+          }
+        }
+      }
+
+      onComplete();
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        onError(err.message);
+      }
+    });
+
+  return controller;
+}
