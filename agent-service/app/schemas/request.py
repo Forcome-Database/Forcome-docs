@@ -20,6 +20,11 @@ class AgentRunRequest(BaseModel):
     conversation_history: list[dict] = []
     workspace_id: str = ""
     config: dict = {}
+    thread_id: str | None = None
+
+class AgentResumeRequest(BaseModel):
+    thread_id: str
+    resume_value: dict
 
 class AgentStopRequest(BaseModel):
     task_id: str

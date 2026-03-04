@@ -34,4 +34,13 @@ class DoneEvent(BaseModel):
     final_content: str
     insert_mode: str = "create"
 
-SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ImageEvent | ToolCallEvent | ErrorEvent | DoneEvent
+class AwaitInputEvent(BaseModel):
+    type: Literal["await_input"] = "await_input"
+    phase: str  # "clarify" | "propose" | "outline"
+    data: dict
+
+class SessionEvent(BaseModel):
+    type: Literal["session"] = "session"
+    thread_id: str
+
+SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ImageEvent | ToolCallEvent | ErrorEvent | DoneEvent | AwaitInputEvent | SessionEvent

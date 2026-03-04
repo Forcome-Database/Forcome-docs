@@ -21,7 +21,7 @@ class AgentState(TypedDict):
     page_content: str | None
     selected_text: str | None
     selection_range: dict | None
-    insert_mode: str  # "create" | "append" | "replace"
+    insert_mode: str  # "create" | "overwrite" | "replace" | "append"
 
     # Agent working state
     plan: list[PlanStep]
@@ -35,7 +35,16 @@ class AgentState(TypedDict):
     final_content: str
     step_events: list[dict]
 
+    # Phase artifacts
+    clarify_questions: list[str]
+    user_answers: str
+    proposals: list[dict]          # [{title, description}]
+    selected_proposal: dict
+    outline: str
+    confirmed_outline: str
+
     # Control
+    phase: str                     # "explorer" | "clarifier" | "proposer" | "outliner" | "writer" | "reviewer"
     needs_revision: bool
     revision_feedback: str
     iteration_count: int
@@ -43,3 +52,4 @@ class AgentState(TypedDict):
 
     # Internal (event routing)
     _task_id: str
+    _thread_id: str
