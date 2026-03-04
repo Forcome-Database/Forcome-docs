@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # Runtime config
     agent_max_iterations: int = 3
 
+    # PostgreSQL connection string for LangGraph checkpointer
+    database_url: str = ""
+
     @property
     def llm_provider(self) -> str:
         return self.agent_llm_provider or self.ai_driver
