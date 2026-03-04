@@ -88,7 +88,7 @@ interface Props {
   onResume?: (value: Record<string, any>) => void;
 }
 
-import { extractTitle, stripTimestamp } from './ai-creator-utils';
+import { extractTitle, stripTimestamp, preprocessImagesForEditor } from './ai-creator-utils';
 
 export function AiCreatorMessageItem({ message, isLast, onResume }: Props) {
   const { t } = useTranslation();
@@ -136,7 +136,7 @@ export function AiCreatorMessageItem({ message, isLast, onResume }: Props) {
       }
     }
 
-    const html = renderEditorHtml(markdown);
+    const html = renderEditorHtml(preprocessImagesForEditor(markdown));
     if (html) {
       editor.chain().focus("end").insertContent(html).run();
     }
@@ -177,7 +177,7 @@ export function AiCreatorMessageItem({ message, isLast, onResume }: Props) {
         editor.view.dispatch(tr);
       }
     } else {
-      const html = renderEditorHtml(markdown);
+      const html = renderEditorHtml(preprocessImagesForEditor(markdown));
       editor.chain().focus().setTextSelection(selectionRange).insertContent(html).run();
     }
 
