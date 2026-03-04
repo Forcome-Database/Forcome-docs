@@ -20,6 +20,9 @@ import { useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { extractPageSlugId } from "@/lib";
 import { AiCreatorAgentSteps } from "./ai-creator-agent-steps";
+import { AiCreatorClarifyBubble } from './ai-creator-clarify-bubble';
+import { AiCreatorProposeBubble } from './ai-creator-propose-bubble';
+import { AiCreatorOutlineBubble } from './ai-creator-outline-bubble';
 import classes from "./ai-creator.module.css";
 
 // Create an ISOLATED marked instance for bubble rendering (with hljs highlight)
@@ -82,11 +85,12 @@ function renderEditorHtml(content: string): string {
 interface Props {
   message: AiCreatorMessage;
   isLast?: boolean;
+  onResume?: (value: Record<string, any>) => void;
 }
 
 import { extractTitle, stripTimestamp } from './ai-creator-utils';
 
-export function AiCreatorMessageItem({ message, isLast }: Props) {
+export function AiCreatorMessageItem({ message, isLast, onResume }: Props) {
   const { t } = useTranslation();
   const { pageSlug } = useParams();
   const pageId = extractPageSlugId(pageSlug);
@@ -98,6 +102,17 @@ export function AiCreatorMessageItem({ message, isLast }: Props) {
   const allSteps = useAtomValue(agentStepsAtom);
   const agentSteps = allSteps[pageId] || [];
   const isUser = message.role === "user";
+
+  // Handle interactive message types
+  if (message.role === 'clarify' && onResume) {
+    return <AiCreatorClarifyBubble message={message} onResume={onResume} />;
+  }
+  if (message.role === 'propose' && onResume) {
+    return <AiCreatorProposeBubble message={message} onResume={onResume} />;
+  }
+  if (message.role === 'outline' && onResume) {
+    return <AiCreatorOutlineBubble message={message} onResume={onResume} />;
+  }
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.content);
