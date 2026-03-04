@@ -6,6 +6,6 @@ export interface AgentStepInfo {
 }
 
 export interface AgentSSEEvent {
-  type: 'step_start' | 'step_done' | 'content' | 'image' | 'tool_call' | 'error' | 'done';
+  type: 'step_start' | 'step_done' | 'content' | 'image' | 'tool_call' | 'error' | 'done' | 'await_input' | 'session';
   [key: string]: any;
 }

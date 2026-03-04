@@ -1,10 +1,14 @@
 export interface AiCreatorMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'clarify' | 'propose' | 'outline';
   content: string;
   timestamp: number;
   selectionContext?: string;
   selectionRange?: { from: number; to: number };
+  questions?: string[];                                    // for clarify role
+  proposals?: { title: string; description: string }[];    // for propose role
+  outline?: string;                                        // for outline role
+  threadId?: string;                                       // session tracking
 }
 
 export interface SelectionSnapshot {

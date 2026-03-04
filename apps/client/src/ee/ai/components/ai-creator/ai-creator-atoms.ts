@@ -37,3 +37,6 @@ import { AgentStepInfo } from '../../types/agent.types';
 
 export const agentModeAtom = atomWithWebStorage<boolean>('aiAgentMode', false);
 export const agentStepsAtom = atom<Record<string, AgentStepInfo[]>>({});
+
+// Thread ID for agent session (per page)
+export const agentThreadIdAtom = atom<Record<string, string>>({});
