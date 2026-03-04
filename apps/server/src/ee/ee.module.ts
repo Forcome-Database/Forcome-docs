@@ -15,6 +15,13 @@ const eeImports = [
       return null;
     }
   })(),
+  (() => {
+    try {
+      return require('./dingtalk/dingtalk.module').DingTalkModule;
+    } catch {
+      return null;
+    }
+  })(),
 ].filter(Boolean);
 
 @Module({

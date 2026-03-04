@@ -42,3 +42,5 @@ lerna-debug.log*
 .nx/installation
 .nx/cache
 .claude/settings.local.json
+__pycache__/
+*.py[cod]

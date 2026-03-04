@@ -50,6 +50,8 @@ async def list_tools():
 @app.post("/agent/run", dependencies=[Depends(verify_internal_secret)])
 async def run_agent(request: AgentRunRequest):
     """运行 Agent，返回 SSE 事件流"""
+    import logging
+    logging.info(f"[agent/run] user_message={request.user_message[:80]}, files={len(request.files)}, task starting...")
     global _task_counter
     _task_counter += 1
     task_id = f"task-{_task_counter}"
