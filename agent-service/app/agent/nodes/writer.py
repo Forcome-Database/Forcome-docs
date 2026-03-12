@@ -5,6 +5,7 @@ Streams content via SSE. Uses image context mapping for accurate placement.
 import re
 from langchain_core.messages import SystemMessage, HumanMessage
 
+from app.agent.cancellation import raise_if_cancelled
 from app.agent.llm import get_chat_model
 from app.agent.state import AgentState
 from app.agent.events import emit
@@ -56,8 +57,9 @@ def _strip_empty_images(md: str) -> str:
 
 
 async def writer_node(state: AgentState) -> dict:
-    tid = state.get("_task_id", "")
+    tid = state.get("_thread_id", "")
     llm = get_chat_model()
+    await raise_if_cancelled(state)
 
     await emit(tid, {"type": "step_start", "step": "generate", "description": "正在生成文档内容..."})
 
@@ -86,10 +88,6 @@ async def writer_node(state: AgentState) -> dict:
     if research_parts:
         user_parts.append(f"\n调研资料:\n{'---'.join(research_parts)}")
 
-    if state.get("revision_feedback"):
-        user_parts.append(f"\n修订反馈:\n{state['revision_feedback']}")
-        user_parts.append(f"\n上次草稿:\n{state.get('draft_content', '')[:5000]}")
-
     messages = [SystemMessage(content=system_prompt)]
     for msg in state.get("conversation_history", [])[-6:]:
         if msg["role"] == "user":
@@ -98,6 +96,7 @@ async def writer_node(state: AgentState) -> dict:
 
     content_chunks = []
     async for chunk in llm.astream(messages):
+        await raise_if_cancelled(state)
         text = chunk.content
         if text:
             content_chunks.append(text)

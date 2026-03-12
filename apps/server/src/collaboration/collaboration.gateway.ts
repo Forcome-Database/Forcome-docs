@@ -23,13 +23,17 @@ import * as os from 'node:os';
 import { CollabWsAdapter } from './adapter/collab-ws.adapter';
 import {
   CollaborationHandler,
+  CollabEventName,
   CollabEventHandlers,
+  CollabEventPayload,
+  CollabEventResult,
 } from './collaboration.handler';
 
 @Injectable()
 export class CollaborationGateway {
   private readonly hocuspocus: Hocuspocus;
   private redisConfig: RedisConfig;
+  private readonly collabHandlers: CollabEventHandlers;
   // @ts-ignore
   private readonly redisSync: RedisSyncExtension<CollabEventHandlers> | null =
     null;
@@ -55,6 +59,7 @@ export class CollaborationGateway {
         this.loggerExtension,
       ],
     });
+    this.collabHandlers = this.collabEventsService.getHandlers(this.hocuspocus);
 
     if (this.withRedis) {
       // @ts-ignore
@@ -72,7 +77,7 @@ export class CollaborationGateway {
         pack,
         unpack,
         // @ts-ignore
-        customEvents: this.collabEventsService.getHandlers(this.hocuspocus),
+        customEvents: this.collabHandlers,
       });
       this.hocuspocus.configuration.extensions.push(this.redisSync);
       // @ts-ignore
@@ -139,12 +144,24 @@ export class CollaborationGateway {
     return this.hocuspocus.getDocumentsCount();
   }
 
-  handleYjsEvent<TName extends keyof CollabEventHandlers>(
+  handleYjsEvent<TName extends CollabEventName>(
     eventName: TName,
     documentName: string,
-    payload: Parameters<CollabEventHandlers[TName]>[1],
-  ) {
-    return this.redisSync?.handleEvent(eventName, documentName, payload);
+    payload: CollabEventPayload<TName>,
+  ): Promise<CollabEventResult<TName>> {
+    if (this.redisSync) {
+      return this.redisSync.handleEvent(
+        eventName,
+        documentName,
+        payload,
+      ) as Promise<CollabEventResult<TName>>;
+    }
+
+    const handler = this.collabHandlers[eventName] as (
+      documentName: string,
+      payload: CollabEventPayload<TName>,
+    ) => Promise<CollabEventResult<TName>>;
+    return handler(documentName, payload);
   }
 
   openDirectConnection(documentName: string, context?: any) {
@@ -155,6 +172,10 @@ export class CollaborationGateway {
    *Can be used before calling openDirectConnection directly
    */
   async lockDocument(documentName: string) {
+    if (!this.redisSync) {
+      return async () => {};
+    }
+
     return this.redisSync.lockDocument(documentName);
   }
 
@@ -162,7 +183,7 @@ export class CollaborationGateway {
    *Releases a document lock and stops the interval that maintains it.
    */
   async releaseLock(documentName: string) {
-    return this.redisSync.releaseLock(documentName);
+    return this.redisSync?.releaseLock(documentName);
   }
 
   async destroy(collabWsAdapter: CollabWsAdapter): Promise<void> {

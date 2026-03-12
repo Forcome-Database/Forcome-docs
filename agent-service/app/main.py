@@ -1,54 +1,65 @@
 import asyncio
-import sys
 import json
-from uuid import uuid4
+import sys
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
-# Windows: psycopg async requires SelectorEventLoop, not ProactorEventLoop
+import psycopg
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.types import Command
+from psycopg_pool import AsyncConnectionPool
+from sse_starlette.sse import EventSourceResponse
+
+from app.agent.cancellation import (
+    AgentCancelledError,
+    cancel_task,
+    register_task,
+    unregister_task,
+)
+from app.agent.events import create_queue, emit, emit_done, remove_queue
+from app.agent.graph import agent_graph_builder
+from app.agent.state import AgentState
+from app.config import settings
+from app.middleware.auth import verify_internal_secret
+from app.schemas.request import AgentResumeRequest, AgentRunRequest, AgentStopRequest
+
+# Import all tools to trigger registration.
+import app.tools.docling_parser  # noqa: F401
+import app.tools.docmost_api  # noqa: F401
+import app.tools.firecrawl_scrape  # noqa: F401
+import app.tools.image_annotate  # noqa: F401
+import app.tools.nanobana_imggen  # noqa: F401
+import app.tools.tavily_search  # noqa: F401
+import app.tools.vlm_understand  # noqa: F401
+from app.tools.registry import get_tool_names
+
+# Windows psycopg async requires SelectorEventLoop.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from fastapi import FastAPI, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from sse_starlette.sse import EventSourceResponse
-from langgraph.types import Command
-from langgraph.errors import GraphInterrupt
-
-from psycopg_pool import AsyncConnectionPool
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-from app.config import settings
-from app.middleware.auth import verify_internal_secret
-from app.schemas.request import AgentRunRequest, AgentResumeRequest, AgentStopRequest
-from app.agent.graph import agent_graph_builder
-from app.agent.state import AgentState
-from app.agent.events import create_queue, remove_queue, emit, emit_done
-
-# Import all tools to trigger registration
-import app.tools.tavily_search      # noqa: F401
-import app.tools.firecrawl_scrape   # noqa: F401
-import app.tools.docling_parser     # noqa: F401
-import app.tools.nanobana_imggen    # noqa: F401
-import app.tools.image_annotate     # noqa: F401
-import app.tools.vlm_understand     # noqa: F401
-import app.tools.docmost_api        # noqa: F401
-
-from app.tools.registry import get_tool_names
-
-# Global references — initialized in lifespan
 _compiled_graph = None
 _checkpointer = None
 _pool = None
+_task_counter = 0
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan: set up PostgreSQL pool + LangGraph checkpointer."""
+    """Set up PostgreSQL pool and LangGraph checkpointer."""
     global _compiled_graph, _checkpointer, _pool
 
     if settings.database_url:
-        # Strip query params like ?schema=public that psycopg doesn't support
         db_url = settings.database_url.split("?")[0]
+
+        async with await psycopg.AsyncConnection.connect(
+            db_url,
+            autocommit=True,
+        ) as setup_conn:
+            setup_saver = AsyncPostgresSaver(setup_conn)
+            await setup_saver.setup()
+
         _pool = AsyncConnectionPool(
             conninfo=db_url,
             open=False,
@@ -56,16 +67,12 @@ async def lifespan(app: FastAPI):
         await _pool.open()
 
         _checkpointer = AsyncPostgresSaver(_pool)
-        await _checkpointer.setup()
-
         _compiled_graph = agent_graph_builder.compile(checkpointer=_checkpointer)
     else:
-        # Fallback: compile without checkpointer (no resume support)
         _compiled_graph = agent_graph_builder.compile()
 
     yield
 
-    # Cleanup
     if _pool:
         await _pool.close()
 
@@ -79,10 +86,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Active task tracking (for cancellation)
-_active_tasks: dict[str, asyncio.Event] = {}
-_task_counter = 0
-
 
 @app.get("/health")
 async def health():
@@ -94,28 +97,81 @@ async def list_tools():
     return {"tools": get_tool_names()}
 
 
+async def _run_graph_with_stream(
+    *,
+    task_id: str,
+    thread_id: str,
+    graph_input,
+    config: dict,
+    insert_mode: str,
+):
+    try:
+        result = await _compiled_graph.ainvoke(graph_input, config=config)
+
+        state_snapshot = await _compiled_graph.aget_state(config)
+        if state_snapshot.next:
+            for interrupt_state in state_snapshot.interrupts:
+                data = interrupt_state.value
+                phase = data.get("type", "unknown") if isinstance(data, dict) else "unknown"
+                await emit(
+                    thread_id,
+                    {
+                        "type": "await_input",
+                        "phase": phase,
+                        "data": data if isinstance(data, dict) else {},
+                    },
+                )
+                break
+        else:
+            final_content = result.get("final_content", result.get("draft_content", ""))
+            await emit(
+                thread_id,
+                {
+                    "type": "done",
+                    "final_content": final_content,
+                    "insert_mode": result.get("insert_mode", insert_mode),
+                },
+            )
+    except AgentCancelledError:
+        await emit(thread_id, {"type": "cancelled"})
+    except Exception as exc:  # pragma: no cover - surfaced as stream error
+        await emit(thread_id, {"type": "error", "message": str(exc)[:500]})
+    finally:
+        await emit_done(thread_id)
+        unregister_task(task_id, thread_id)
+
+
+async def _event_generator(thread_id: str, queue: asyncio.Queue):
+    yield {"data": json.dumps({"type": "session", "thread_id": thread_id}, ensure_ascii=False)}
+    try:
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+
+            if event is None:
+                break
+
+            yield {"data": json.dumps(event, ensure_ascii=False)}
+    finally:
+        remove_queue(thread_id)
+
+
 @app.post("/agent/run", dependencies=[Depends(verify_internal_secret)])
 async def run_agent(request: AgentRunRequest):
-    """Run Agent, return SSE event stream."""
-    import logging
-    logging.info(f"[agent/run] user_message={request.user_message[:80]}, files={len(request.files)}, task starting...")
     global _task_counter
     _task_counter += 1
     task_id = f"task-{_task_counter}"
 
-    # Use provided thread_id or generate a new one
     thread_id = request.thread_id or str(uuid4())
-
-    cancel_event = asyncio.Event()
-    _active_tasks[task_id] = cancel_event
-
-    # Create real-time event queue for this task
-    queue = create_queue(task_id)
+    register_task(task_id, thread_id)
+    queue = create_queue(thread_id)
 
     initial_state: AgentState = {
         "user_message": request.user_message,
         "conversation_history": request.conversation_history,
-        "uploaded_files": [f.model_dump() for f in request.files],
+        "uploaded_files": [file.model_dump() for file in request.files],
         "template_id": request.template_id,
         "page_id": request.page_context.page_id,
         "page_title": request.page_context.page_title,
@@ -134,8 +190,10 @@ async def run_agent(request: AgentRunRequest):
         "needs_revision": False,
         "revision_feedback": "",
         "iteration_count": 0,
-        "max_iterations": request.config.get("max_iterations", settings.agent_max_iterations),
-        # Phase artifact fields
+        "max_iterations": request.config.get(
+            "max_iterations",
+            settings.agent_max_iterations,
+        ),
         "clarify_questions": [],
         "user_answers": "",
         "proposals": [],
@@ -149,123 +207,52 @@ async def run_agent(request: AgentRunRequest):
 
     config = {"configurable": {"thread_id": thread_id}}
 
-    async def run_graph():
-        """Run the LangGraph in background; nodes push events to queue in real-time."""
-        try:
-            result = await _compiled_graph.ainvoke(initial_state, config=config)
-            final_content = result.get("final_content", result.get("draft_content", ""))
-            await emit(task_id, {
-                "type": "done",
-                "final_content": final_content,
-                "insert_mode": request.config.get("insert_mode", "create"),
-            })
-        except GraphInterrupt:
-            # Graph was interrupted (human-in-the-loop pause) — not an error.
-            # The await_input event has already been sent by the node.
-            pass
-        except Exception as e:
-            await emit(task_id, {"type": "error", "message": str(e)[:500]})
-        finally:
-            await emit_done(task_id)
-            _active_tasks.pop(task_id, None)
+    asyncio.create_task(
+        _run_graph_with_stream(
+            task_id=task_id,
+            thread_id=thread_id,
+            graph_input=initial_state,
+            config=config,
+            insert_mode=request.config.get("insert_mode", "create"),
+        )
+    )
 
-    # Start graph execution in background
-    asyncio.create_task(run_graph())
-
-    async def event_generator():
-        """Read events from queue and yield as SSE."""
-        # First event: session info with thread_id
-        yield {"data": json.dumps({"type": "session", "thread_id": thread_id}, ensure_ascii=False)}
-        try:
-            while True:
-                if cancel_event.is_set():
-                    yield {"data": json.dumps({"type": "error", "message": "任务已取消"}, ensure_ascii=False)}
-                    break
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
-                except asyncio.TimeoutError:
-                    continue
-                if event is None:  # sentinel — graph finished
-                    break
-                yield {"data": json.dumps(event, ensure_ascii=False)}
-        finally:
-            remove_queue(task_id)
-
-    return EventSourceResponse(event_generator(), headers={"X-Task-Id": task_id})
+    return EventSourceResponse(
+        _event_generator(thread_id, queue),
+        headers={"X-Task-Id": task_id},
+    )
 
 
 @app.post("/agent/resume", dependencies=[Depends(verify_internal_secret)])
 async def resume_agent(request: AgentResumeRequest):
-    """Resume a paused Agent graph after human input, return SSE event stream."""
-    import logging
-    logging.info(f"[agent/resume] thread_id={request.thread_id}, resuming...")
-
     global _task_counter
     _task_counter += 1
     task_id = f"task-{_task_counter}"
 
     thread_id = request.thread_id
-
-    cancel_event = asyncio.Event()
-    _active_tasks[task_id] = cancel_event
-
-    # Create real-time event queue for this task
-    queue = create_queue(task_id)
+    register_task(task_id, thread_id)
+    queue = create_queue(thread_id)
 
     config = {"configurable": {"thread_id": thread_id}}
 
-    async def run_graph():
-        """Resume the LangGraph with Command(resume=...)."""
-        try:
-            result = await _compiled_graph.ainvoke(
-                Command(resume=request.resume_value),
-                config=config,
-            )
-            final_content = result.get("final_content", result.get("draft_content", ""))
-            await emit(task_id, {
-                "type": "done",
-                "final_content": final_content,
-                "insert_mode": result.get("insert_mode", "create"),
-            })
-        except GraphInterrupt:
-            # Graph was interrupted again (next phase pause) — not an error.
-            pass
-        except Exception as e:
-            await emit(task_id, {"type": "error", "message": str(e)[:500]})
-        finally:
-            await emit_done(task_id)
-            _active_tasks.pop(task_id, None)
+    asyncio.create_task(
+        _run_graph_with_stream(
+            task_id=task_id,
+            thread_id=thread_id,
+            graph_input=Command(resume=request.resume_value),
+            config=config,
+            insert_mode="create",
+        )
+    )
 
-    # Start graph execution in background
-    asyncio.create_task(run_graph())
-
-    async def event_generator():
-        """Read events from queue and yield as SSE."""
-        # First event: session info with thread_id
-        yield {"data": json.dumps({"type": "session", "thread_id": thread_id}, ensure_ascii=False)}
-        try:
-            while True:
-                if cancel_event.is_set():
-                    yield {"data": json.dumps({"type": "error", "message": "任务已取消"}, ensure_ascii=False)}
-                    break
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
-                except asyncio.TimeoutError:
-                    continue
-                if event is None:  # sentinel — graph finished
-                    break
-                yield {"data": json.dumps(event, ensure_ascii=False)}
-        finally:
-            remove_queue(task_id)
-
-    return EventSourceResponse(event_generator(), headers={"X-Task-Id": task_id})
+    return EventSourceResponse(
+        _event_generator(thread_id, queue),
+        headers={"X-Task-Id": task_id},
+    )
 
 
 @app.post("/agent/stop", dependencies=[Depends(verify_internal_secret)])
 async def stop_agent(request: AgentStopRequest):
-    """Stop a running Agent task."""
-    cancel = _active_tasks.get(request.task_id)
-    if cancel:
-        cancel.set()
+    if cancel_task(request.task_id):
         return {"status": "stopping"}
     return {"status": "not_found"}

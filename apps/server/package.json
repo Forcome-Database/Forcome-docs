@@ -153,6 +153,12 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "moduleNameMapper": {
+      "^@docmost/db/(.*)$": "<rootDir>/database/$1",
+      "^@docmost/transactional/(.*)$": "<rootDir>/integrations/transactional/$1",
+      "^@docmost/ee/(.*)$": "<rootDir>/ee/$1",
+      "^src/(.*)$": "<rootDir>/$1"
+    },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],

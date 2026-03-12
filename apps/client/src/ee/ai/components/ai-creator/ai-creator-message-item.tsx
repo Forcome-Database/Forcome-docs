@@ -8,17 +8,16 @@ import {
 import { useAtomValue } from "jotai";
 import { NodeSelection } from "@tiptap/pm/state";
 import { pageEditorAtom, titleEditorAtom } from "@/features/editor/atoms/editor-atoms";
-import { aiCreatorSelectionAtom, aiCreatorSelectionRangeAtom, agentModeAtom, agentStepsAtom } from "./ai-creator-atoms";
+import { aiCreatorSelectionRangeAtom } from "./ai-creator-atoms";
 import { notifications } from "@mantine/notifications";
 import { AiCreatorMessage } from "./ai-creator.types";
+import type { AgentStepInfo } from "@/ee/ai/types/agent.types";
 import { Marked } from "marked";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
 import { markdownToHtml } from "@docmost/editor-ext";
 import { useTranslation } from "react-i18next";
 import { useCallback } from "react";
-import { useParams } from "react-router-dom";
-import { extractPageSlugId } from "@/lib";
 import { AiCreatorAgentSteps } from "./ai-creator-agent-steps";
 import { AiCreatorClarifyBubble } from './ai-creator-clarify-bubble';
 import { AiCreatorProposeBubble } from './ai-creator-propose-bubble';
@@ -86,33 +85,24 @@ interface Props {
   message: AiCreatorMessage;
   isLast?: boolean;
   onResume?: (value: Record<string, any>) => void;
+  showAgentSteps?: boolean;
+  agentSteps?: AgentStepInfo[];
 }
 
 import { extractTitle, stripTimestamp, preprocessImagesForEditor } from './ai-creator-utils';
 
-export function AiCreatorMessageItem({ message, isLast, onResume }: Props) {
+export function AiCreatorMessageItem({
+  message,
+  isLast,
+  onResume,
+  showAgentSteps = false,
+  agentSteps = [],
+}: Props) {
   const { t } = useTranslation();
-  const { pageSlug } = useParams();
-  const pageId = extractPageSlugId(pageSlug);
   const editor = useAtomValue(pageEditorAtom);
   const titleEditor = useAtomValue(titleEditorAtom);
-  const selection = useAtomValue(aiCreatorSelectionAtom);
   const selectionRange = useAtomValue(aiCreatorSelectionRangeAtom);
-  const agentMode = useAtomValue(agentModeAtom);
-  const allSteps = useAtomValue(agentStepsAtom);
-  const agentSteps = allSteps[pageId] || [];
   const isUser = message.role === "user";
-
-  // Handle interactive message types
-  if (message.role === 'clarify' && onResume) {
-    return <AiCreatorClarifyBubble message={message} onResume={onResume} />;
-  }
-  if (message.role === 'propose' && onResume) {
-    return <AiCreatorProposeBubble message={message} onResume={onResume} />;
-  }
-  if (message.role === 'outline' && onResume) {
-    return <AiCreatorOutlineBubble message={message} onResume={onResume} />;
-  }
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.content);
@@ -196,6 +186,16 @@ export function AiCreatorMessageItem({ message, isLast, onResume }: Props) {
     }
   }, [t]);
 
+  if (message.role === 'clarify' && onResume) {
+    return <AiCreatorClarifyBubble message={message} onResume={onResume} />;
+  }
+  if (message.role === 'propose' && onResume) {
+    return <AiCreatorProposeBubble message={message} onResume={onResume} />;
+  }
+  if (message.role === 'outline' && onResume) {
+    return <AiCreatorOutlineBubble message={message} onResume={onResume} />;
+  }
+
   if (isUser) {
     return (
       <div className={classes.messageUser}>
@@ -233,7 +233,7 @@ export function AiCreatorMessageItem({ message, isLast, onResume }: Props) {
             className={classes.messageAiBubble}
             onClick={handleCodeBlockCopy}
           >
-            {isLast && agentMode && agentSteps.length > 0 && (
+            {isLast && showAgentSteps && agentSteps.length > 0 && (
               <AiCreatorAgentSteps steps={agentSteps} />
             )}
             <div

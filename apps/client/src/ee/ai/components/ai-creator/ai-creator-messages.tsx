@@ -1,24 +1,20 @@
-import { Box, Text, Group, SimpleGrid, Paper, ThemeIcon } from "@mantine/core";
+import { Box, Group, Paper, SimpleGrid, Text, ThemeIcon } from "@mantine/core";
 import {
-  IconFileCode,
   IconBook,
-  IconClipboardList,
   IconChartBar,
-  IconNotes,
   IconChecklist,
+  IconClipboardList,
+  IconFileCode,
+  IconNotes,
 } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
-import { useParams } from "react-router-dom";
-import { extractPageSlugId } from "@/lib";
-import {
-  aiCreatorMessagesAtom,
-  aiCreatorStreamingAtom,
-  aiCreatorTemplateAtom,
-} from "./ai-creator-atoms";
-import { AiCreatorMessageItem } from "./ai-creator-message-item";
-import { AI_TEMPLATE_OPTIONS } from "./ai-creator.types";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import type { AgentStepInfo } from "@/ee/ai/types/agent.types";
+import { agentModeAtom, aiCreatorTemplateAtom } from "./ai-creator-atoms";
+import { AiCreatorMessageItem } from "./ai-creator-message-item";
+import type { AiCreatorMessage } from "./ai-creator.types";
+import { AI_TEMPLATE_OPTIONS } from "./ai-creator.types";
 import classes from "./ai-creator.module.css";
 
 const ICON_MAP: Record<string, React.ComponentType<any>> = {
@@ -37,9 +33,8 @@ function WelcomePage() {
 
   const handleTemplateClick = (key: string) => {
     setTemplate(key);
-    // Focus the input textarea
     setTimeout(() => {
-      const textarea = document.querySelector('[data-ai-input]') as HTMLTextAreaElement;
+      const textarea = document.querySelector("[data-ai-input]") as HTMLTextAreaElement;
       textarea?.focus();
     }, 50);
   };
@@ -69,13 +64,7 @@ function WelcomePage() {
               radius="md"
               onClick={() => handleTemplateClick(tmpl.key)}
             >
-              <ThemeIcon
-                variant="light"
-                color="indigo"
-                size="md"
-                radius="md"
-                mb={6}
-              >
+              <ThemeIcon variant="light" color="indigo" size="md" radius="md" mb={6}>
                 <Icon size={16} />
               </ThemeIcon>
               <Text size="sm" fw={500} lh={1.3}>
@@ -92,13 +81,21 @@ function WelcomePage() {
   );
 }
 
-export function AiCreatorMessages() {
+interface AiCreatorMessagesProps {
+  messages: AiCreatorMessage[];
+  isStreaming: boolean;
+  agentSteps: AgentStepInfo[];
+  onResume: (value: Record<string, any>) => void;
+}
+
+export function AiCreatorMessages({
+  messages,
+  isStreaming,
+  agentSteps,
+  onResume,
+}: AiCreatorMessagesProps) {
   const { t } = useTranslation();
-  const { pageSlug } = useParams();
-  const pageId = extractPageSlugId(pageSlug);
-  const [allMessages] = useAtom(aiCreatorMessagesAtom);
-  const isStreaming = useAtomValue(aiCreatorStreamingAtom);
-  const messages = allMessages[pageId] || [];
+  const agentMode = useAtomValue(agentModeAtom);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -112,7 +109,14 @@ export function AiCreatorMessages() {
   return (
     <Box px="sm" py="xs">
       {messages.map((msg, idx) => (
-        <AiCreatorMessageItem key={msg.id} message={msg} isLast={idx === messages.length - 1} />
+        <AiCreatorMessageItem
+          key={msg.id}
+          message={msg}
+          isLast={idx === messages.length - 1}
+          onResume={onResume}
+          showAgentSteps={agentMode}
+          agentSteps={agentSteps}
+        />
       ))}
       {isStreaming && (
         <Group gap={8} p="xs">

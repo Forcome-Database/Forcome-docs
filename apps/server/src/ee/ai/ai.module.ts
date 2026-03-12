@@ -6,8 +6,10 @@ import { AiSearchService } from './services/ai-search.service';
 import { AiTemplateService } from './services/ai-template.service';
 import { AiQueueProcessor } from './ai-queue.processor';
 import { AiFileService } from './services/ai-file.service';
+import { PageModule } from '../../core/page/page.module';
 
 @Module({
+  imports: [PageModule],
   controllers: [AiController, AiTemplateController],
   providers: [
     AiService,

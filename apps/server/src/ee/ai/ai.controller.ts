@@ -2,9 +2,11 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   HttpCode,
   HttpStatus,
   Logger,
+  NotFoundException,
   PayloadTooLargeException,
   Post,
   Req,
@@ -21,6 +23,25 @@ import { AuthUser } from '../../common/decorators/auth-user.decorator';
 import { Workspace, User } from '@docmost/db/types/entity.types';
 import { AiGenerateDto, AiAnswerDto } from './dto/ai.dto';
 import { FastifyReply, FastifyRequest } from 'fastify';
+import {
+  parseCreatorHistory,
+  shouldEnterOutlinePhase,
+} from './creator-generate.utils';
+import {
+  createCreatorAwaitInputEvent,
+  createCreatorContentDeltaEvent,
+  createCreatorDoneEvent,
+  createCreatorErrorEvent,
+  serializeCreatorStreamEvent,
+} from './creator-stream.events';
+import { AiCreatorCommitDto } from './dto/ai-creator-commit.dto';
+import { PageService } from '../../core/page/services/page.service';
+import { PageRepo } from '@docmost/db/repos/page/page.repo';
+import SpaceAbilityFactory from '../../core/casl/abilities/space-ability.factory';
+import {
+  SpaceCaslAction,
+  SpaceCaslSubject,
+} from '../../core/casl/interfaces/space-ability.type';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 const ALLOWED_MIMETYPES = new Set([
@@ -42,6 +63,9 @@ export class AiController {
     private readonly aiSearchService: AiSearchService,
     private readonly aiFileService: AiFileService,
     private readonly aiTemplateService: AiTemplateService,
+    private readonly pageService: PageService,
+    private readonly pageRepo: PageRepo,
+    private readonly spaceAbility: SpaceAbilityFactory,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -160,8 +184,15 @@ export class AiController {
       }
     }
 
-    const { prompt, template, insertMode, existingContentSummary, pageTitle, history: historyRaw } =
-      fields;
+    const {
+      prompt,
+      template,
+      insertMode,
+      existingContentSummary,
+      pageTitle,
+      history: historyRaw,
+      planningEnabled: planningEnabledRaw,
+    } = fields;
     const confirmedOutline = fields.confirmedOutline || '';
 
     if (!prompt) {
@@ -169,24 +200,7 @@ export class AiController {
       return;
     }
 
-    // Parse conversation history (max 10 recent messages)
-    let history: { role: 'user' | 'assistant'; content: string }[] = [];
-    if (historyRaw) {
-      try {
-        const parsed = JSON.parse(historyRaw);
-        if (Array.isArray(parsed)) {
-          history = parsed
-            .filter((m: any) => m.role && m.content && typeof m.content === 'string')
-            .map((m: any) => ({
-              role: m.role as 'user' | 'assistant',
-              content: m.content.slice(0, 10000),
-            }))
-            .slice(-10);
-        }
-      } catch {
-        // Ignore invalid history JSON
-      }
-    }
+    const history = parseCreatorHistory(historyRaw);
 
     // Process uploaded files (already buffered)
     const contentParts = await this.aiFileService.processBufferedFiles(bufferedFiles);
@@ -220,8 +234,11 @@ export class AiController {
       systemPrompt += 'Continue writing from where the existing content left off. Match the style, tone, and structure of the existing content.\n\n';
     }
 
-    // Two-phase SSE: outline first, then content
-    const isOutlinePhase = !confirmedOutline;
+    // Keep the default creator flow single-phase unless planning is explicit.
+    const isOutlinePhase = shouldEnterOutlinePhase(
+      planningEnabledRaw,
+      confirmedOutline,
+    );
 
     if (isOutlinePhase) {
       systemPrompt += '\n\n重要：你现在只需要生成文档的结构化大纲，不要写正文内容。使用 ## 和 ### 标题层级，每个章节下简要说明要点（1-2句）。';
@@ -249,31 +266,65 @@ export class AiController {
         if (isOutlinePhase) {
           accumulatedContent += chunk;
         }
-        res.raw.write(`data: ${chunk}\n\n`);
+        res.raw.write(
+          `data: ${serializeCreatorStreamEvent(createCreatorContentDeltaEvent(chunk))}\n\n`,
+        );
       }
       this.logger.log(
         `AI creator stream completed: ${chunkCount} chunks sent (phase=${isOutlinePhase ? 'outline' : 'content'})`,
       );
 
       if (isOutlinePhase) {
-        // Send await_input event so the frontend can display outline interaction UI
-        const outlineEvent = JSON.stringify({
-          type: 'await_input',
-          phase: 'outline',
-          data: { outline: accumulatedContent },
-        });
-        res.raw.write(`data: ${outlineEvent}\n\n`);
+        res.raw.write(
+          `data: ${serializeCreatorStreamEvent(createCreatorAwaitInputEvent(accumulatedContent))}\n\n`,
+        );
+      } else {
+        res.raw.write(
+          `data: ${serializeCreatorStreamEvent(createCreatorDoneEvent())}\n\n`,
+        );
       }
 
       res.raw.write('data: [DONE]\n\n');
     } catch (error: any) {
       this.logger.error(`AI creator stream error: ${error?.message}`);
       res.raw.write(
-        `data: ${JSON.stringify({ error: error?.message || 'Unknown error' })}\n\n`,
+        `data: ${serializeCreatorStreamEvent(createCreatorErrorEvent(error?.message || 'Unknown error'))}\n\n`,
       );
     } finally {
       res.raw.end();
     }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Post('creator/commit')
+  async creatorCommit(
+    @Body() dto: AiCreatorCommitDto,
+    @AuthWorkspace() workspace: Workspace,
+    @AuthUser() user: User,
+  ) {
+    this.checkAiGenerativeEnabled(workspace);
+
+    const page = await this.pageRepo.findById(dto.pageId);
+    if (!page) {
+      throw new NotFoundException('Page not found');
+    }
+
+    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    if (ability.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
+      throw new ForbiddenException();
+    }
+
+    return this.pageService.commitAiContent(
+      page,
+      {
+        content: dto.content,
+        insertMode: dto.insertMode,
+        expectedUpdatedAt: dto.expectedUpdatedAt,
+        selectionSnapshot: dto.selectionSnapshot,
+      },
+      user,
+    );
   }
 
   private checkAiGenerativeEnabled(workspace: Workspace) {

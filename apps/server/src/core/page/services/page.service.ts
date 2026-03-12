@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -48,6 +49,10 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CollaborationGateway } from '../../../collaboration/collaboration.gateway';
 import { markdownToHtml } from '@docmost/editor-ext';
 import { WatcherService } from '../../watcher/watcher.service';
+import {
+  AiCommitInsertMode,
+  AiCommitSelectionSnapshot,
+} from '../../../ee/ai/creator-commit.utils';
 
 @Injectable()
 export class PageService {
@@ -258,6 +263,91 @@ export class PageService {
       documentName,
       { operation, prosemirrorJson, user },
     );
+  }
+
+  async commitAiContent(
+    page: Page,
+    params: {
+      content: string;
+      insertMode: AiCommitInsertMode;
+      expectedUpdatedAt: string;
+      selectionSnapshot?: AiCommitSelectionSnapshot | null;
+    },
+    user: User,
+  ): Promise<{
+    appliedMode: 'append' | 'overwrite' | 'replace';
+    fallbackReason: 'stale_selection' | null;
+    committedAt: string;
+  }> {
+    const expectedUpdatedAt = new Date(params.expectedUpdatedAt);
+    if (Number.isNaN(expectedUpdatedAt.getTime())) {
+      throw new BadRequestException('Invalid expectedUpdatedAt');
+    }
+
+    const documentName = `page.${page.id}`;
+    const releaseLock = await this.collaborationGateway.lockDocument(
+      documentName,
+    );
+
+    try {
+      const currentPage = await this.pageRepo.findById(page.id);
+      if (!currentPage) {
+        throw new NotFoundException('Page not found');
+      }
+
+      if (
+        currentPage.updatedAt &&
+        currentPage.updatedAt.getTime() !== expectedUpdatedAt.getTime()
+      ) {
+        throw new ConflictException(
+          'Page changed during generation. Review the draft and retry.',
+        );
+      }
+
+      if (params.insertMode === 'replace' && !params.selectionSnapshot) {
+        throw new BadRequestException(
+          'selectionSnapshot is required for replace commits',
+        );
+      }
+
+      const prosemirrorJson = await this.parseProsemirrorContent(
+        params.content,
+        'markdown',
+      );
+
+      const result = await this.collaborationGateway.handleYjsEvent(
+        'applyAiCommit',
+        documentName,
+        {
+          prosemirrorJson,
+          insertMode: params.insertMode,
+          selectionSnapshot: params.selectionSnapshot,
+          user,
+        },
+      );
+
+      const contributorIds = Array.from(
+        new Set([...(currentPage.contributorIds || []), user.id]),
+      );
+      const committedAt = new Date().toISOString();
+
+      await this.pageRepo.updatePage(
+        {
+          lastUpdatedById: user.id,
+          contributorIds,
+          workspaceId: currentPage.workspaceId,
+        },
+        currentPage.id,
+      );
+
+      return {
+        appliedMode: result.appliedMode,
+        fallbackReason: result.fallbackReason,
+        committedAt,
+      };
+    } finally {
+      await releaseLock();
+    }
   }
 
   async getSidebarPages(

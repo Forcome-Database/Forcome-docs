@@ -15,7 +15,7 @@ export class AiCreatorGenerateDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['append', 'overwrite'])
+  @IsIn(['create', 'append', 'overwrite', 'replace'])
   insertMode?: string;
 
   @IsOptional()
@@ -25,4 +25,16 @@ export class AiCreatorGenerateDto {
   @IsOptional()
   @IsString()
   pageTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  history?: string;
+
+  @IsOptional()
+  @IsString()
+  confirmedOutline?: string;
+
+  @IsOptional()
+  @IsString()
+  planningEnabled?: string;
 }

@@ -7,9 +7,21 @@ import {
 } from './collaboration.util';
 import * as Y from 'yjs';
 import { User } from '@docmost/db/types/entity.types';
+import {
+  AiCommitInsertMode,
+  AiCommitSelectionSnapshot,
+  applyAiCommitToDocument,
+} from '../ee/ai/creator-commit.utils';
 
 export type CollabEventHandlers = ReturnType<
   CollaborationHandler['getHandlers']
+>;
+export type CollabEventName = keyof CollabEventHandlers;
+export type CollabEventPayload<TName extends CollabEventName> = Parameters<
+  CollabEventHandlers[TName]
+>[1];
+export type CollabEventResult<TName extends CollabEventName> = Awaited<
+  ReturnType<CollabEventHandlers[TName]>
 >;
 
 @Injectable()
@@ -65,21 +77,66 @@ export class CollaborationHandler {
           },
         );
       },
+      applyAiCommit: async (
+        documentName: string,
+        payload: {
+          prosemirrorJson: any;
+          insertMode: AiCommitInsertMode;
+          selectionSnapshot?: AiCommitSelectionSnapshot | null;
+          user: User;
+        },
+      ) => {
+        const { prosemirrorJson, insertMode, selectionSnapshot, user } =
+          payload;
+
+        return this.withYdocConnection(
+          hocuspocus,
+          documentName,
+          { user },
+          (doc) => {
+            const fragment = doc.getXmlFragment('default');
+            const currentDocument = TiptapTransformer.fromYdoc(doc, 'default');
+            const result = applyAiCommitToDocument({
+              currentDocument,
+              incomingDocument: prosemirrorJson,
+              insertMode,
+              selectionSnapshot,
+            });
+
+            if (fragment.length > 0) {
+              fragment.delete(0, fragment.length);
+            }
+
+            const nextDoc = TiptapTransformer.toYdoc(
+              result.prosemirrorJson,
+              'default',
+              tiptapExtensions,
+            );
+            Y.applyUpdate(doc, Y.encodeStateAsUpdate(nextDoc));
+
+            return result;
+          },
+        );
+      },
     };
   }
 
-  async withYdocConnection(
+  async withYdocConnection<TResult>(
     hocuspocus: Hocuspocus,
     documentName: string,
     context: any = {},
-    fn: (doc: Document) => void,
-  ): Promise<void> {
+    fn: (doc: Document) => TResult | Promise<TResult>,
+  ): Promise<TResult> {
     const connection = await hocuspocus.openDirectConnection(
       documentName,
       context,
     );
+    let result: TResult | undefined;
     try {
-      await connection.transact(fn);
+      await connection.transact(async (doc) => {
+        result = await fn(doc);
+      });
+      return result as TResult;
     } finally {
       await connection.disconnect();
     }

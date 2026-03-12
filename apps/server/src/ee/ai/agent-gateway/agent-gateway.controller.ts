@@ -21,6 +21,19 @@ import { EnvironmentService } from '../../../integrations/environment/environmen
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const MAX_FILES = 5;
 
+function writeSseHeaders(res: FastifyReply, taskId?: string) {
+  if (res.raw.headersSent) {
+    return;
+  }
+
+  res.raw.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    ...(taskId ? { 'X-Task-Id': taskId } : {}),
+  });
+}
+
 @Controller('agent')
 @UseGuards(JwtAuthGuard)
 export class AgentGatewayController {
@@ -47,7 +60,7 @@ export class AgentGatewayController {
         if (bufferedFiles.length >= MAX_FILES) continue;
         const buffer = await part.toBuffer();
         if (buffer.length > MAX_FILE_SIZE) {
-          throw new PayloadTooLargeException(`文件 ${part.filename} 超过 20MB 限制`);
+          throw new PayloadTooLargeException(`File ${part.filename} exceeds 20MB`);
         }
         bufferedFiles.push({ buffer, mimetype: part.mimetype, filename: part.filename });
       } else {
@@ -55,10 +68,10 @@ export class AgentGatewayController {
       }
     }
 
-    const files = bufferedFiles.map((f) => ({
-      filename: f.filename,
-      mimetype: f.mimetype,
-      content_b64: f.buffer.toString('base64'),
+    const files = bufferedFiles.map((file) => ({
+      filename: file.filename,
+      mimetype: file.mimetype,
+      content_b64: file.buffer.toString('base64'),
     }));
 
     const history = fields.history ? JSON.parse(fields.history) : [];
@@ -82,14 +95,6 @@ export class AgentGatewayController {
       },
     };
 
-    // Set SSE headers immediately
-    res.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-
-    // Use Node.js http.request for true chunked streaming (fetch buffers SSE)
     const agentUrl = new URL('/agent/run', this.environmentService.getAgentServiceUrl());
     const postData = JSON.stringify(agentBody);
 
@@ -107,11 +112,17 @@ export class AgentGatewayController {
       },
       (proxyRes) => {
         if (proxyRes.statusCode !== 200) {
-          res.raw.write(`data: ${JSON.stringify({ type: 'error', message: `Agent 返回 ${proxyRes.statusCode}` })}\n\n`);
+          writeSseHeaders(res);
+          res.raw.write(`data: ${JSON.stringify({ type: 'error', message: `Agent returned ${proxyRes.statusCode}` })}\n\n`);
           res.raw.end();
           return;
         }
-        // Pipe SSE chunks directly to client in real-time
+
+        const taskIdHeader = Array.isArray(proxyRes.headers['x-task-id'])
+          ? proxyRes.headers['x-task-id'][0]
+          : proxyRes.headers['x-task-id'];
+        writeSseHeaders(res, taskIdHeader);
+
         proxyRes.on('data', (chunk: Buffer) => {
           res.raw.write(chunk);
         });
@@ -127,7 +138,8 @@ export class AgentGatewayController {
 
     proxyReq.on('error', (err) => {
       this.logger.error('Agent connection error', err);
-      res.raw.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Agent 服务不可用' })}\n\n`);
+      writeSseHeaders(res);
+      res.raw.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Agent service unavailable' })}\n\n`);
       res.raw.end();
     });
 
@@ -140,20 +152,11 @@ export class AgentGatewayController {
     @Body() dto: AgentResumeDto,
     @Res() res: FastifyReply,
   ): Promise<void> {
-    // Set SSE headers immediately
-    res.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-
-    // Build POST data
     const postData = JSON.stringify({
       thread_id: dto.threadId,
       resume_value: dto.resumeValue,
     });
 
-    // Use Node.js http.request for true chunked streaming (fetch buffers SSE)
     const agentUrl = new URL('/agent/resume', this.environmentService.getAgentServiceUrl());
 
     const proxyReq = http.request(
@@ -170,11 +173,17 @@ export class AgentGatewayController {
       },
       (proxyRes) => {
         if (proxyRes.statusCode !== 200) {
+          writeSseHeaders(res);
           res.raw.write(`data: ${JSON.stringify({ type: 'error', message: `Agent resume failed: ${proxyRes.statusCode}` })}\n\n`);
           res.raw.end();
           return;
         }
-        // Pipe SSE chunks directly to client in real-time
+
+        const taskIdHeader = Array.isArray(proxyRes.headers['x-task-id'])
+          ? proxyRes.headers['x-task-id'][0]
+          : proxyRes.headers['x-task-id'];
+        writeSseHeaders(res, taskIdHeader);
+
         proxyRes.on('data', (chunk: Buffer) => {
           res.raw.write(chunk);
         });
@@ -190,7 +199,8 @@ export class AgentGatewayController {
 
     proxyReq.on('error', (err) => {
       this.logger.error('Agent resume connection error', err);
-      res.raw.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Agent 服务不可用' })}\n\n`);
+      writeSseHeaders(res);
+      res.raw.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Agent service unavailable' })}\n\n`);
       res.raw.end();
     });
 

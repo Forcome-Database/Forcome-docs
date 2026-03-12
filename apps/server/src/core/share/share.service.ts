@@ -176,11 +176,11 @@ export class ShareService {
       .executeTakeFirst();
 
     if (!share || share.workspaceId !== workspaceId) {
-      return undefined;
+      return null;
     }
 
     if ((share.level as number) > 0 && !share.includeSubPages) {
-      return undefined;
+      return null;
     }
 
     return {

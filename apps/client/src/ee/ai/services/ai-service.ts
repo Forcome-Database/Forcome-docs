@@ -20,6 +20,28 @@ export interface CreatorGenerateParams {
   existingContentSummary?: string;
   pageTitle?: string;
   history?: CreatorHistoryMessage[];
+  planningEnabled?: boolean;
+  confirmedOutline?: string;
+}
+
+export interface CreatorCommitSelectionSnapshot {
+  text: string;
+  from: number;
+  to: number;
+}
+
+export interface CreatorCommitParams {
+  pageId: string;
+  content: string;
+  insertMode: "create" | "append" | "overwrite" | "replace";
+  expectedUpdatedAt: string;
+  selectionSnapshot?: CreatorCommitSelectionSnapshot | null;
+}
+
+export interface CreatorCommitResponse {
+  appliedMode: "append" | "overwrite" | "replace";
+  fallbackReason: "stale_selection" | null;
+  committedAt: string;
 }
 
 export async function generateAiContent(
@@ -111,6 +133,7 @@ export async function creatorGenerate(
   onChunk: (chunk: AiStreamChunk) => void,
   onError?: (error: AiStreamError) => void,
   onComplete?: () => void,
+  onAwaitInput?: (phase: string, data: any) => void,
 ): Promise<AbortController> {
   const abortController = new AbortController();
 
@@ -127,6 +150,10 @@ export async function creatorGenerate(
         formData.append("existingContentSummary", data.existingContentSummary);
       if (data.pageTitle) formData.append("pageTitle", data.pageTitle);
       if (data.history) formData.append("history", JSON.stringify(data.history));
+      if (data.planningEnabled) formData.append("planningEnabled", "true");
+      if (data.confirmedOutline) {
+        formData.append("confirmedOutline", data.confirmedOutline);
+      }
 
       const response = await fetch("/api/ai/creator/generate", {
         method: "POST",
@@ -165,10 +192,21 @@ export async function creatorGenerate(
               }
               try {
                 const parsed = JSON.parse(sseData);
-                if (parsed.error) {
-                  onError?.(parsed);
-                } else {
+                if (parsed.error || parsed.type === "error") {
+                  const message = parsed.error || parsed.message || "Unknown error";
+                  onError?.({ error: message });
+                } else if (parsed.type === "await_input") {
+                  onAwaitInput?.(parsed.phase, parsed.data);
+                } else if (parsed.type === "done") {
+                  if (!completed) { completed = true; onComplete?.(); }
+                  return;
+                } else if (parsed.type === "content_delta" && typeof parsed.chunk === "string") {
+                  onChunk({ content: parsed.chunk });
+                } else if (typeof parsed.content === "string") {
+                  // Backward-compatibility for older creator stream payloads.
                   onChunk(parsed);
+                } else {
+                  // Ignore unknown event types in the standard creator flow.
                 }
               } catch (e) {
                 // Skip invalid JSON
@@ -188,4 +226,11 @@ export async function creatorGenerate(
   })();
 
   return abortController;
+}
+
+export async function creatorCommit(
+  data: CreatorCommitParams,
+): Promise<CreatorCommitResponse> {
+  const req = await api.post<CreatorCommitResponse>("/ai/creator/commit", data);
+  return req.data;
 }

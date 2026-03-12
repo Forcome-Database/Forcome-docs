@@ -84,7 +84,7 @@ export class AiService {
     let chunks = 0;
     for await (const chunk of result.textStream) {
       chunks++;
-      yield JSON.stringify({ content: chunk });
+      yield chunk;
     }
     this.logger.debug(`Stream finished, total chunks: ${chunks}`);
   }

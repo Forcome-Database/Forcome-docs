@@ -2,6 +2,7 @@ import json
 import httpx
 import base64
 from langchain_core.messages import SystemMessage, HumanMessage
+from app.agent.cancellation import raise_if_cancelled
 from app.agent.llm import get_chat_model
 from app.agent.state import AgentState
 from app.agent.events import emit
@@ -59,7 +60,8 @@ async def _upload_image_to_docmost(b64_data: str, filename: str, page_id: str) -
 
 async def explorer_node(state: AgentState) -> dict:
     """Phase 1: 使用 LLM 制定调研计划；Phase 2: 遍历计划执行 search/parse/crawl 步骤"""
-    tid = state.get("_task_id", "")
+    tid = state.get("_thread_id", "")
+    await raise_if_cancelled(state)
 
     # ── Phase 1: 制定调研计划 ──────────────────────────────────
     llm = get_chat_model()
@@ -110,6 +112,7 @@ async def explorer_node(state: AgentState) -> dict:
     page_id = state.get("page_id", "")
 
     for step in plan:
+        await raise_if_cancelled(state)
         if step["action"] not in RESEARCH_ACTIONS:
             continue
         if step["status"] == "done":
@@ -118,13 +121,26 @@ async def explorer_node(state: AgentState) -> dict:
         step["status"] = "running"
         await emit(tid, {"type": "step_start", "step": step["action"], "description": step["description"]})
 
-        tool_name = step.get("tool")
+        # Force correct tool per action type (LLM sometimes assigns wrong tool)
+        SEARCH_TOOLS = {"tavily_search"}
+        action = step["action"]
+        if action == "parse":
+            tool_name = "docling_parser"
+        elif action == "crawl":
+            tool_name = "firecrawl_scrape"
+        elif action == "search":
+            tool_name = step.get("tool")
+            if tool_name not in SEARCH_TOOLS:
+                tool_name = "tavily_search"  # fallback to web search
+        else:
+            tool_name = step.get("tool")
         tool_fn = get_tool(tool_name) if tool_name else None
         result_summary = "跳过（无匹配工具）"
 
         try:
             if step["action"] == "parse" and tool_fn:
                 for f in state.get("uploaded_files", []):
+                    await raise_if_cancelled(state)
                     raw_result = await tool_fn.ainvoke({
                         "file_content_b64": f["content_b64"],
                         "filename": f["filename"],
@@ -146,6 +162,7 @@ async def explorer_node(state: AgentState) -> dict:
                         await emit(tid, {"type": "step_start", "step": "upload_images",
                                          "description": f"正在上传 {len(images)} 张提取的图片..."})
                         for img in images:
+                            await raise_if_cancelled(state)
                             img_filename = f"doc-img-{img['index']}.png"
                             url = await _upload_image_to_docmost(img["b64"], img_filename, page_id)
                             if url:
@@ -183,10 +200,13 @@ async def explorer_node(state: AgentState) -> dict:
             elif step["action"] == "crawl" and tool_fn:
                 args = step.get("args", {}) or {}
                 url = args.get("url", "")
-                if url:
+                # Validate URL: must start with http(s) and have a dot in domain
+                if url and url.startswith(("http://", "https://")) and "." in url.split("/")[2]:
                     result = await tool_fn.ainvoke({"url": url})
                     research_results.append({"source": "crawl", "url": url, "content": result})
                     result_summary = f"爬取了 {url}"
+                else:
+                    result_summary = f"跳过无效 URL: {url[:80]}"
 
             step["status"] = "done"
         except Exception as e:

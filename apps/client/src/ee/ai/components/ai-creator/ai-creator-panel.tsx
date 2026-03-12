@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import {
   ActionIcon,
   Group,
@@ -14,15 +14,16 @@ import { asideStateAtom } from "@/components/layouts/global/hooks/atoms/sidebar-
 import {
   aiCreatorSelectionAtom,
   aiCreatorSelectionRangeAtom,
-  aiCreatorMessagesAtom,
   SelectionRange,
 } from "./ai-creator-atoms";
 import { AiCreatorSelection } from "./ai-creator-selection";
 import { AiCreatorMessages } from "./ai-creator-messages";
 import { AiCreatorInput } from "./ai-creator-input";
+import { useAiCreateSession } from "@/ee/ai/hooks/use-ai-create-session";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { extractPageSlugId } from "@/lib";
+import { usePageQuery } from "@/features/page/queries/page-query";
 import classes from "./ai-creator.module.css";
 
 export default function AiCreatorPanel() {
@@ -32,18 +33,14 @@ export default function AiCreatorPanel() {
   const [, _setSelectionRange] = useAtom(aiCreatorSelectionRangeAtom);
   const setSelectionRange = _setSelectionRange as (v: SelectionRange | null) => void;
   const [, setAsideState] = useAtom(asideStateAtom);
-  const [, setAllMessages] = useAtom(aiCreatorMessagesAtom);
   const { pageSlug } = useParams();
   const pageId = extractPageSlugId(pageSlug);
+  const { data: page } = usePageQuery({ pageId });
 
   const hasSelection = useAtomValue(aiCreatorSelectionAtom).length > 0;
 
-  // Editor lock/snapshot state for streaming writes
-  const [editorSnapshot, setEditorSnapshot] = useState<any>(null);
-
   const lockEditor = useCallback(() => {
     if (!editor) return;
-    setEditorSnapshot(editor.getJSON());
     editor.setEditable(false);
     editor.view.dom.classList.add('ai-generating');
   }, [editor]);
@@ -54,18 +51,17 @@ export default function AiCreatorPanel() {
     editor.view.dom.classList.remove('ai-generating');
   }, [editor]);
 
-  const rollbackEditor = useCallback(() => {
-    if (!editor || !editorSnapshot) return;
-    editor.commands.setContent(editorSnapshot);
-    editor.setEditable(true);
-    editor.view.dom.classList.remove('ai-generating');
-    setEditorSnapshot(null);
-  }, [editor, editorSnapshot]);
+  const session = useAiCreateSession({
+    pageId,
+    pageUpdatedAt: page?.updatedAt ?? null,
+    editor,
+    lockEditor,
+    unlockEditor,
+  });
 
-  // Clear messages when panel mounts (each open starts fresh)
   useEffect(() => {
-    setAllMessages((prev) => ({ ...prev, [pageId]: [] }));
-  }, []);
+    session.resetConversation();
+  }, [pageId, session.resetConversation]);
 
   // Listen to editor selection updates (as context only, no mode switching)
   useEffect(() => {
@@ -102,7 +98,7 @@ export default function AiCreatorPanel() {
   };
 
   const handleNewChat = () => {
-    setAllMessages((prev) => ({ ...prev, [pageId]: [] }));
+    session.resetConversation();
   };
 
   return (
@@ -129,7 +125,12 @@ export default function AiCreatorPanel() {
 
       {/* Messages area */}
       <ScrollArea className={classes.scrollArea} scrollbarSize={5} type="scroll">
-        <AiCreatorMessages />
+        <AiCreatorMessages
+          messages={session.messages}
+          isStreaming={session.isStreaming}
+          agentSteps={session.steps}
+          onResume={session.resume}
+        />
       </ScrollArea>
 
       {/* Selection context (shown above input when there's a selection) */}
@@ -137,9 +138,10 @@ export default function AiCreatorPanel() {
 
       {/* Input area */}
       <AiCreatorInput
-        lockEditor={lockEditor}
-        unlockEditor={unlockEditor}
-        rollbackEditor={rollbackEditor}
+        isStreaming={session.isStreaming}
+        status={session.status}
+        onSubmit={session.submit}
+        onStop={session.cancel}
       />
     </div>
   );

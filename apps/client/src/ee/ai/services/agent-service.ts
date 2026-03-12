@@ -1,6 +1,6 @@
 import { AgentSSEEvent } from '../types/agent.types';
 
-interface AgentGenerateParams {
+export interface AgentGenerateParams {
   files: File[];
   prompt: string;
   pageId: string;
@@ -13,11 +13,16 @@ interface AgentGenerateParams {
   history?: { role: string; content: string }[];
 }
 
+function createReaderErrorMessage(): string {
+  return 'Unable to read agent response stream';
+}
+
 export function agentGenerate(
   params: AgentGenerateParams,
   onEvent: (event: AgentSSEEvent) => void,
   onError: (error: string) => void,
   onComplete: () => void,
+  onTaskId?: (taskId: string) => void,
 ): AbortController {
   const controller = new AbortController();
 
@@ -29,7 +34,9 @@ export function agentGenerate(
   if (params.pageTitle) formData.append('pageTitle', params.pageTitle);
   if (params.pageContent) formData.append('pageContent', params.pageContent);
   if (params.selectedText) formData.append('selectedText', params.selectedText);
-  if (params.selectionRange) formData.append('selectionRange', JSON.stringify(params.selectionRange));
+  if (params.selectionRange) {
+    formData.append('selectionRange', JSON.stringify(params.selectionRange));
+  }
   if (params.history) formData.append('history', JSON.stringify(params.history));
   for (const file of params.files) {
     formData.append('files', file);
@@ -42,12 +49,18 @@ export function agentGenerate(
   })
     .then(async (resp) => {
       if (!resp.ok) {
-        onError(`Agent 请求失败: ${resp.status}`);
+        onError(`Agent request failed: ${resp.status}`);
         return;
       }
+
+      const taskId = resp.headers.get('X-Task-Id');
+      if (taskId) {
+        onTaskId?.(taskId);
+      }
+
       const reader = resp.body?.getReader();
       if (!reader) {
-        onError('无法读取响应流');
+        onError(createReaderErrorMessage());
         return;
       }
 
@@ -63,15 +76,20 @@ export function agentGenerate(
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-            if (data === '[DONE]') continue;
-            try {
-              const event: AgentSSEEvent = JSON.parse(data);
-              onEvent(event);
-            } catch {
-              // ignore parse errors
-            }
+          if (!line.startsWith('data: ')) {
+            continue;
+          }
+
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') {
+            continue;
+          }
+
+          try {
+            const event: AgentSSEEvent = JSON.parse(data);
+            onEvent(event);
+          } catch {
+            // Ignore parse errors from malformed stream chunks.
           }
         }
       }
@@ -80,7 +98,7 @@ export function agentGenerate(
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {
-        onError(err.message || 'Agent 请求失败');
+        onError(err.message || 'Agent request failed');
       }
     });
 
@@ -93,6 +111,7 @@ export function resumeAgent(
   onEvent: (event: AgentSSEEvent) => void,
   onError: (error: string) => void,
   onComplete: () => void,
+  onTaskId?: (taskId: string) => void,
 ): AbortController {
   const controller = new AbortController();
 
@@ -108,9 +127,14 @@ export function resumeAgent(
         return;
       }
 
+      const taskId = resp.headers.get('X-Task-Id');
+      if (taskId) {
+        onTaskId?.(taskId);
+      }
+
       const reader = resp.body?.getReader();
       if (!reader) {
-        onError('无法读取响应流');
+        onError(createReaderErrorMessage());
         return;
       }
 
@@ -126,15 +150,20 @@ export function resumeAgent(
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-            if (data === '[DONE]') continue;
-            try {
-              const event: AgentSSEEvent = JSON.parse(data);
-              onEvent(event);
-            } catch {
-              // ignore parse errors
-            }
+          if (!line.startsWith('data: ')) {
+            continue;
+          }
+
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') {
+            continue;
+          }
+
+          try {
+            const event: AgentSSEEvent = JSON.parse(data);
+            onEvent(event);
+          } catch {
+            // Ignore parse errors from malformed stream chunks.
           }
         }
       }
@@ -143,9 +172,23 @@ export function resumeAgent(
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {
-        onError(err.message);
+        onError(err.message || 'Agent resume failed');
       }
     });
 
   return controller;
+}
+
+export async function stopAgentTask(taskId: string): Promise<void> {
+  const response = await fetch('/api/agent/stop', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ taskId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to stop agent task: ${response.status}`);
+  }
 }

@@ -2,7 +2,7 @@
 
 Topology:
   Explorer → Clarifier → (interrupt) → Proposer → (interrupt)
-  → Outliner → (interrupt) → Writer → Reviewer → (loop or END)
+  → Outliner → (interrupt) → Writer → Reviewer → END
 """
 from langgraph.graph import StateGraph, END
 
@@ -13,13 +13,7 @@ from app.agent.nodes.proposer import proposer_node
 from app.agent.nodes.outliner import outliner_node
 from app.agent.nodes.writer import writer_node
 from app.agent.nodes.reviewer import reviewer_node
-
-
-def should_continue(state: AgentState) -> str:
-    """After Reviewer: revise (back to Writer) or end."""
-    if state.get("needs_revision") and state.get("iteration_count", 0) < state.get("max_iterations", 3):
-        return "revise"
-    return "end"
+from app.agent.cancellation import cancellable
 
 
 def should_regenerate_outline(state: AgentState) -> str:
@@ -36,12 +30,12 @@ def build_agent_graph():
     """
     graph = StateGraph(AgentState)
 
-    graph.add_node("explorer", explorer_node)
-    graph.add_node("clarifier", clarifier_node)
-    graph.add_node("proposer", proposer_node)
-    graph.add_node("outliner", outliner_node)
-    graph.add_node("writer", writer_node)
-    graph.add_node("reviewer", reviewer_node)
+    graph.add_node("explorer", cancellable(explorer_node))
+    graph.add_node("clarifier", cancellable(clarifier_node))
+    graph.add_node("proposer", cancellable(proposer_node))
+    graph.add_node("outliner", cancellable(outliner_node))
+    graph.add_node("writer", cancellable(writer_node))
+    graph.add_node("reviewer", cancellable(reviewer_node))
 
     graph.set_entry_point("explorer")
 
@@ -55,11 +49,7 @@ def build_agent_graph():
     })
 
     graph.add_edge("writer", "reviewer")
-
-    graph.add_conditional_edges("reviewer", should_continue, {
-        "revise": "writer",
-        "end": END,
-    })
+    graph.add_edge("reviewer", END)
 
     return graph
 
