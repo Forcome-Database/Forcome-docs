@@ -246,3 +246,67 @@
   - `E:\test\Docmost\task_plan.md` (updated)
   - `E:\test\Docmost\findings.md` (updated)
   - `E:\test\Docmost\progress.md` (updated)
+
+### 2026-03-13: AI Documentation Assistant Redesign Analysis
+- **Status:** in_progress
+- **Started:** 2026-03-13 00:20 Asia/Shanghai
+- Actions taken:
+  - Reframed the planning artifacts around a new analysis task focused on AI document quality rather than the earlier transport/writeback refactor.
+  - Verified that standard mode concatenates global system prompt + template prompt into one free-form system string, with no structured output schema or quality rubric.
+  - Verified that agent mode forwards only `template_id` as a label and does not resolve either the template body or workspace global system prompt into agent node prompts.
+  - Traced the agent planner and confirmed it only schedules `search`, `parse`, and `crawl`, even though additional tools for internal retrieval, image generation, and visual understanding are registered.
+  - Verified that the current reviewer is a formatting fixer, not a substantive document-quality reviewer.
+  - Confirmed that `editor-ext` already supports richer structures like tables, callouts, details blocks, code blocks, and markdown transforms that the current writer is not intentionally targeting.
+  - Started collecting official external guidance on structured outputs, tool use, multimodal retrieval, and evals from OpenAI, Anthropic, LangGraph, and adjacent tool docs.
+- Files created/modified:
+  - `E:\test\Docmost\task_plan.md` (rewritten)
+  - `E:\test\Docmost\findings.md` (updated)
+  - `E:\test\Docmost\progress.md` (updated)
+
+### 2026-03-13: AI Documentation Assistant Implementation & Delivery
+- **Status:** complete
+- **Started:** 2026-03-13 01:10 Asia/Shanghai
+- Actions taken:
+  - Added a server-side document strategy layer and injected it into both standard creator mode and agent mode.
+  - Added a new planner node that generates a normalized `document_plan` before outline generation.
+  - Upgraded the explorer so it can plan and execute page reads, internal knowledge search, visual understanding, and image generation alongside parsing and web retrieval.
+  - Reworked the writer and reviewer prompts so they operate against strategy + plan instead of free-form prose generation alone.
+  - Added internal Nest endpoints for page-read, knowledge-search, and page-image upload so agent-side Docmost tools can actually execute through a secret-protected bridge.
+  - Updated the agent-side Docmost tools and state model to use the new internal bridge and to pass `workspace_id` where internal RAG requires it.
+  - Added focused unit tests for server-side document strategy and internal controller behavior.
+  - Re-ran Python compile checks, Python pytest, server jest, server eslint, and a server TypeScript build check.
+- Files created/modified:
+  - `E:\test\Docmost\apps\server\src\ee\ai\document-strategy.ts` (created)
+  - `E:\test\Docmost\apps\server\src\ee\ai\document-strategy.spec.ts` (created)
+  - `E:\test\Docmost\apps\server\src\ee\ai\ai-internal.controller.ts` (created)
+  - `E:\test\Docmost\apps\server\src\ee\ai\ai-internal.controller.spec.ts` (created)
+  - `E:\test\Docmost\apps\server\src\ee\ai\ai.controller.ts` (updated)
+  - `E:\test\Docmost\apps\server\src\ee\ai\agent-gateway\agent-gateway.controller.ts` (updated)
+  - `E:\test\Docmost\apps\server\src\ee\ai\agent-gateway\agent-gateway.module.ts` (updated)
+  - `E:\test\Docmost\apps\server\src\ee\ai\ai.module.ts` (updated)
+  - `E:\test\Docmost\apps\server\src\core\attachment\attachment.module.ts` (updated)
+  - `E:\test\Docmost\apps\server\src\core\attachment\services\attachment.service.ts` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\document_strategy.py` (created)
+  - `E:\test\Docmost\agent-service\app\agent\nodes\planner.py` (created)
+  - `E:\test\Docmost\agent-service\app\agent\nodes\explorer.py` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\nodes\outliner.py` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\nodes\writer.py` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\nodes\reviewer.py` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\graph.py` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\state.py` (updated)
+  - `E:\test\Docmost\agent-service\app\main.py` (updated)
+  - `E:\test\Docmost\agent-service\app\schemas\request.py` (updated)
+  - `E:\test\Docmost\agent-service\app\tools\docmost_api.py` (updated)
+  - `E:\test\Docmost\agent-service\tests\test_document_strategy.py` (created)
+  - `E:\test\Docmost\task_plan.md` (updated)
+  - `E:\test\Docmost\findings.md` (updated)
+  - `E:\test\Docmost\progress.md` (updated)
+
+## Additional Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Agent-service compile | `python -m compileall agent-service/app` | Updated Python modules compile | Compile succeeded | Pass |
+| Agent strategy tests | `python -m pytest agent-service/tests/test_document_strategy.py` | Planner/reviewer helpers pass | 4 tests passed | Pass |
+| Server document-strategy/internal tests | `pnpm --filter ./apps/server exec jest --runInBand src/ee/ai/document-strategy.spec.ts src/ee/ai/ai-internal.controller.spec.ts` | New strategy and internal bridge specs pass | 9 tests passed | Pass |
+| Server targeted lint | `pnpm --filter ./apps/server exec eslint ...` | Touched server files lint cleanly | Lint passed | Pass |
+| Server TS build check | `pnpm --filter ./apps/server exec tsc -p tsconfig.build.json --noEmit` | Updated server files typecheck cleanly | Typecheck passed | Pass |

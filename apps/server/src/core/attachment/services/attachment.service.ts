@@ -27,6 +27,9 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { QueueJob, QueueName } from '../../../integrations/queue/constants';
 import { Queue } from 'bullmq';
 import { createByteCountingStream } from '../../../common/helpers/utils';
+import * as path from 'path';
+import { sanitizeFileName } from '../../../common/helpers';
+import { getMimeType } from '../../../common/helpers';
 
 @Injectable()
 export class AttachmentService {
@@ -229,6 +232,46 @@ export class AttachmentService {
     }
 
     return attachment;
+  }
+
+  async uploadPageImageBuffer(opts: {
+    buffer: Buffer;
+    filename: string;
+    userId: string;
+    pageId: string;
+    spaceId: string;
+    workspaceId: string;
+    mimeType?: string;
+  }) {
+    const fileName = sanitizeFileName(opts.filename || 'image.png').slice(
+      0,
+      255,
+    );
+    const fileExtension = path.extname(fileName).toLowerCase();
+
+    validateFileType(fileExtension, validImageExtensions);
+
+    const attachmentId = uuid7();
+    const filePath = `${getAttachmentFolderPath(AttachmentType.File, opts.workspaceId)}/${attachmentId}/${fileName}`;
+
+    await this.uploadToDrive(filePath, opts.buffer);
+
+    return this.saveAttachment({
+      attachmentId,
+      preparedFile: {
+        buffer: opts.buffer,
+        fileName,
+        fileSize: opts.buffer.length,
+        fileExtension,
+        mimeType: opts.mimeType || getMimeType(fileName),
+      },
+      filePath,
+      type: AttachmentType.File,
+      userId: opts.userId,
+      pageId: opts.pageId,
+      spaceId: opts.spaceId,
+      workspaceId: opts.workspaceId,
+    });
   }
 
   async deleteRedundantFile(filePath: string) {

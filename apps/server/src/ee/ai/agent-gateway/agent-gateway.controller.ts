@@ -17,6 +17,10 @@ import { AgentGatewayService } from './agent-gateway.service';
 import { AgentStopDto } from './dto/agent-stop.dto';
 import { AgentResumeDto } from './dto/agent-resume.dto';
 import { EnvironmentService } from '../../../integrations/environment/environment.service';
+import { AiTemplateService } from '../services/ai-template.service';
+import {
+  resolveAiDocumentStrategy,
+} from '../document-strategy';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const MAX_FILES = 5;
@@ -42,6 +46,7 @@ export class AgentGatewayController {
   constructor(
     private agentGatewayService: AgentGatewayService,
     private environmentService: EnvironmentService,
+    private aiTemplateService: AiTemplateService,
   ) {}
 
   @Post('run')
@@ -76,6 +81,18 @@ export class AgentGatewayController {
 
     const history = fields.history ? JSON.parse(fields.history) : [];
 
+    const globalSystemPrompt = await this.aiTemplateService.getSystemPrompt(
+      workspace.id,
+    );
+    const templatePrompt = fields.templateId
+      ? await this.aiTemplateService.getTemplatePrompt(
+          fields.templateId,
+          workspace.id,
+          user.id,
+        )
+      : null;
+    const documentStrategy = resolveAiDocumentStrategy(fields.templateId);
+
     const agentBody = {
       user_message: fields.prompt || '',
       files,
@@ -87,6 +104,9 @@ export class AgentGatewayController {
         selection_range: fields.selectionRange ? JSON.parse(fields.selectionRange) : null,
       },
       template_id: fields.templateId || null,
+      system_prompt: globalSystemPrompt || null,
+      template_prompt: templatePrompt,
+      document_strategy: documentStrategy,
       conversation_history: history,
       workspace_id: workspace.id,
       config: {

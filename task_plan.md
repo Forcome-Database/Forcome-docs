@@ -1,102 +1,67 @@
-# Task Plan: Analyze Docmost aicreate implementation and optimization opportunities
+# Task Plan: Redesign Docmost AI Create into a high-quality AI documentation assistant
 
 ## Goal
-Deeply analyze the `aicreate` implementation in this Docmost project, understand its architecture and execution flow, compare it with current best practices from authoritative internet sources, and deliver a professional diagnosis plus prioritized optimization recommendations with rationale.
+Diagnose why the current AI Create flow produces low-value document drafts, verify how system prompts/templates/tools actually behave in code, compare the design with current official best practices, implement the first practical quality upgrade, and deliver a tested blueprint for a production-grade AI documentation assistant.
 
 ## Current Phase
-Phase 9
+Phase 5
 
 ## Phases
 
-### Phase 1: Requirements & Discovery
-- [x] Understand user intent
-- [x] Identify constraints and requirements
-- [x] Document findings in findings.md
+### Phase 1: Local Diagnosis
+- [x] Verify how global system prompt and template prompts are applied in standard mode
+- [x] Verify how global system prompt and template prompts are applied in agent mode
+- [x] Trace current file parsing, search, image, and document writeback capabilities
+- [x] Identify why the model underuses editor-native structure and tools
 - **Status:** complete
 
-### Phase 2: Local Codebase Analysis
-- [x] Locate all `aicreate`-related entry points and dependencies
-- [x] Trace request flow across client, server, and any background/agent services
-- [x] Document implementation patterns, assumptions, and risks
+### Phase 2: External Best-Practice Research
+- [x] Collect official guidance for prompt design, tool use, structured outputs, and evals
+- [x] Collect official guidance for agent orchestration and human-in-the-loop document workflows
+- [x] Collect official guidance for multimodal document parsing / search / extraction tools already adjacent to this stack
 - **Status:** complete
 
-### Phase 3: Best-Practice Research
-- [x] Identify relevant best practices for AI content generation product flows
-- [x] Prefer primary or authoritative sources
-- [x] Record findings and compare against local implementation
+### Phase 3: Target Architecture
+- [x] Define the target pipeline for planning, evidence gathering, writing, reviewing, and applying docs
+- [x] Separate prompt concerns from tool policy, output schema, and quality policy
+- [x] Define how editor-native structures (table, callout, mermaid, code block, details, image) become first-class output targets
 - **Status:** complete
 
-### Phase 4: Diagnosis & Recommendation Synthesis
-- [x] Summarize strengths and weaknesses
-- [x] Produce concrete optimization recommendations
-- [x] Prioritize recommendations by impact and implementation cost
-- [x] Convert the implemented roadmap into a final refactor checklist and handoff summary
+### Phase 4: Implementation Roadmap
+- [x] Propose phased changes with impact, complexity, and migration order
+- [x] Recommend concrete libraries / APIs / components to reuse versus replace
+- [x] Define evaluation gates for "high-quality document assistant" behavior
 - **Status:** complete
 
-#### Phase 4 Handoff Checklist
-- [x] Summarize the final unified event contract for standard and agent mode
-- [x] Summarize the server-authoritative commit contract (`creator/commit`, conflict behavior, stale-selection fallback)
-- [x] Document remaining technical debt (`updatedAt` concurrency token, lack of browser E2E coverage, manual-insert/retry UX limits)
-- [x] Produce a concise next-phase backlog ordered by impact
-
-### Phase 5: Phase 1 Implementation & Validation
-- [x] Implement standard-mode protocol compatibility guard
-- [x] Fix history construction drift in AI Creator input
-- [x] Wire agent task IDs through gateway, client, and stop flow
-- [x] Add node-boundary cancellation support in agent-service
-- [x] Add focused validation tests for phase 1 helpers and cancellation
-- **Status:** complete
-
-### Phase 6: Phase 2 Orchestration Upgrade Plan
-- [x] Define the new client-side session/orchestration module boundary
-- [x] Separate UI rendering concerns from run/resume/cancel state transitions
-- [x] Specify migration order from `ai-creator-input.tsx` and `ai-creator-messages.tsx`
-- [x] Define validation gates for phase 2 before implementation starts
-- [x] Implement the unified client-side session hook and reducer
-- [x] Migrate `submit` / `resume` / `cancel` ownership out of `ai-creator-input.tsx` and `ai-creator-messages.tsx`
-- [x] Remove obsolete session atoms and the legacy `use-agent` orchestration hook
-- **Status:** complete
-
-### Phase 7: Unified Protocol & Server-Owned Commit Design
-- [x] Define a single normalized event contract shared by standard and agent mode
-- [x] Introduce a client-side runner boundary that hides standard vs agent transport differences
-- [x] Upgrade the standard creator SSE payloads to typed events (`content_delta` / `await_input` / `done` / `error`)
-- [x] Design server-authoritative commit semantics for append/replace/overwrite
-- [x] Identify migration guards and validation gates for protocol unification
-- **Status:** complete
-
-### Phase 8: Server-Authoritative Commit
-- [x] Add a range-aware page mutation API that can replace a validated selection snapshot
-- [x] Add optimistic concurrency / revision checks to AI commits
-- [x] Move final append/overwrite/replace writes out of the browser into the server
-- [x] Add end-to-end validation for commit conflict and stale-selection fallback
-- [x] Add focused service/controller tests for commit success, conflict, and permission paths
-- **Status:** complete
-
-### Phase 9: Delivery
-- [x] Review analysis for completeness and accuracy
-- [x] Ensure citations support web-derived claims
-- [x] Deliver final diagnosis and recommendations to user
+### Phase 5: Delivery
+- [x] Deliver diagnosis tied to current code facts
+- [x] Deliver a practical best-practice blueprint and prioritized next steps
+- [x] Include source links for web-derived guidance
 - **Status:** complete
 
 ## Key Questions
-1. What exactly is the `aicreate` feature boundary in this repository, and which modules own its behavior?
-2. How does the current implementation handle prompt construction, generation orchestration, persistence, streaming, validation, and failure states?
-3. Where does the current design diverge from modern best practices for AI generation UX, service design, and reliability?
-4. Which optimizations provide the highest leverage with acceptable implementation complexity?
+1. Why do system prompt and template prompt feel ineffective in the current product?
+2. Why does the current writer mostly emit long markdown prose instead of richer document structures?
+3. Which useful tools already exist in the codebase but are not actually orchestrated into the writing flow?
+4. What is the best-practice architecture for an AI documentation assistant that can analyze source material, decide when to use images/tables/diagrams/code, and self-check quality?
+5. Which improvements should be implemented first for the highest quality gain?
 
 ## Decisions Made
 | Decision | Rationale |
 |----------|-----------|
-| Use file-based planning artifacts for this task | The request requires deep multi-step analysis across code and web research |
-| Start with local code reading before web comparison | Recommendations must be grounded in the actual implementation, not generic advice |
+| Reuse planning files for this redesign task | The work spans code analysis, official guidance, implementation, and testing |
+| Start with code facts before recommendations | The redesign must explain the observed failures concretely |
+| Implement the first quality upgrade instead of stopping at analysis | The user asked for a complete plan and actual delivery |
+| Add a server-side internal bridge for page read / knowledge search / image upload | Agent tools must be executable at runtime, not only described in prompts |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |-------|---------|------------|
-|       | 1       |            |
+| PowerShell rendering showed mojibake in several Chinese comments/strings | 1 | Interpreted behavior from code structure and cross-file consistency, then rewrote planning artifacts cleanly |
+| New Jest spec pulled in an ESM-only dependency chain through `collaboration.util` | 1 | Mocked `jsonToMarkdown` in the controller spec to keep the test focused on controller behavior |
+| PowerShell rejected `&&` in a combined validation command | 1 | Re-ran the compile and pytest commands separately |
 
 ## Notes
-- Re-read this plan before synthesis to keep the diagnostic scope tight.
-- Prefer authoritative sources for web research and cite every web-derived claim in the final answer.
-- Planning artifacts are complete; remaining work is downstream implementation follow-up from the backlog, not this analysis/delivery task.
+- Focus stayed on the AI Creator / agent-service path, not the smaller slash-menu AI actions.
+- Recommendations were grounded in the existing stack where possible: Docling, Firecrawl, Tavily, LangGraph, TipTap/Docmost editor-ext.
+- This delivery includes code changes, focused tests, and updated planning artifacts, not only a proposal.

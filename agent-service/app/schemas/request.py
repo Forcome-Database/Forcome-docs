@@ -17,6 +17,9 @@ class AgentRunRequest(BaseModel):
     files: list[FileInfo] = []
     page_context: PageContext = PageContext()
     template_id: str | None = None
+    system_prompt: str | None = None
+    template_prompt: str | None = None
+    document_strategy: dict = {}
     conversation_history: list[dict] = []
     workspace_id: str = ""
     config: dict = {}

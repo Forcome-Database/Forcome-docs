@@ -42,6 +42,10 @@ import {
   SpaceCaslAction,
   SpaceCaslSubject,
 } from '../../core/casl/interfaces/space-ability.type';
+import {
+  formatDocumentStrategyForPrompt,
+  resolveAiDocumentStrategy,
+} from './document-strategy';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 const ALLOWED_MIMETYPES = new Set([
@@ -227,6 +231,9 @@ export class AiController {
         systemPrompt += templatePrompt + '\n\n';
       }
     }
+
+    const documentStrategy = resolveAiDocumentStrategy(template);
+    systemPrompt += formatDocumentStrategyForPrompt(documentStrategy) + '\n\n';
 
     if (insertMode === 'append' && existingContentSummary) {
       systemPrompt += `Page title: ${pageTitle || '(Untitled)'}\n`;

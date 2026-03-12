@@ -10,6 +10,7 @@ from app.agent.state import AgentState
 from app.agent.nodes.explorer import explorer_node
 from app.agent.nodes.clarifier import clarifier_node
 from app.agent.nodes.proposer import proposer_node
+from app.agent.nodes.planner import planner_node
 from app.agent.nodes.outliner import outliner_node
 from app.agent.nodes.writer import writer_node
 from app.agent.nodes.reviewer import reviewer_node
@@ -33,6 +34,7 @@ def build_agent_graph():
     graph.add_node("explorer", cancellable(explorer_node))
     graph.add_node("clarifier", cancellable(clarifier_node))
     graph.add_node("proposer", cancellable(proposer_node))
+    graph.add_node("planner", cancellable(planner_node))
     graph.add_node("outliner", cancellable(outliner_node))
     graph.add_node("writer", cancellable(writer_node))
     graph.add_node("reviewer", cancellable(reviewer_node))
@@ -41,7 +43,8 @@ def build_agent_graph():
 
     graph.add_edge("explorer", "clarifier")
     graph.add_edge("clarifier", "proposer")
-    graph.add_edge("proposer", "outliner")
+    graph.add_edge("proposer", "planner")
+    graph.add_edge("planner", "outliner")
 
     graph.add_conditional_edges("outliner", should_regenerate_outline, {
         "regenerate": "outliner",

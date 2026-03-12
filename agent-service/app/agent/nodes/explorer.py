@@ -1,97 +1,109 @@
 import json
 import httpx
-import base64
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from app.agent.cancellation import raise_if_cancelled
+from app.agent.document_strategy import derive_visual_requirements, format_document_strategy
 from app.agent.llm import get_chat_model
 from app.agent.state import AgentState
 from app.agent.events import emit
 from app.config import settings
 from app.tools.registry import get_tool_names, get_tool
 
-EXPLORER_SYSTEM_PROMPT = """你是一个智能文档助手的调研规划器。你的任务是分析用户的请求，并制定调研步骤计划。
-
+EXPLORER_SYSTEM_PROMPT = """你是智能文档助手的研究规划器。你的任务是分析用户请求，并制定调研计划。
 可用工具: {tools}
 
-根据用户的请求和上下文，输出一个 JSON 数组格式的调研计划。每个步骤包含:
-- step_id: 步骤编号（从 1 开始）
-- action: 动作类型（search/parse/crawl）
-- description: 步骤描述（中文）
-- tool: 要使用的工具名（从可用工具中选择，或 null）
-- args: 工具参数提示（dict 或 null）
+输出 JSON 数组。每个元素格式：
+{{
+  "step_id": 1,
+  "action": "page_read|knowledge_search|search|parse|crawl|vision|image",
+  "description": "中文描述",
+  "tool": "工具名或 null",
+  "args": {{}}
+}}
 
-规则:
-1. 如果用户上传了文件，必须包含 parse 步骤
-2. 如果需要外部知识，包含 search 步骤
-3. 如果用户提供了 URL，包含 crawl 步骤
-4. 只生成调研步骤（search/parse/crawl），不包含 generate 步骤
-5. 计划应精简，不超过 6 个步骤
-6. 如果不需要任何调研，返回空数组 []
+规则：
+1. 用户上传文件时，必须包含 parse。
+2. 如果当前页内容或选区对任务很重要，应包含 page_read。
+3. 如果需要站内知识，应包含 knowledge_search。
+4. 如果需要外部事实，应包含 search；提供 URL 时可包含 crawl。
+5. 如果资料包含图片、截图或界面，需要 vision。
+6. 只有当图片对完成高质量文档是必要且现有资料不足时，才规划 image。
+7. 如果文档策略要求特定 artifact，而现有资料不足以支撑，应优先补调研，不要直接写作。
+8. 计划应精简，不超过 7 步；如无需调研，返回 []。
+9. 只输出 JSON，不输出其他内容。
+"""
 
-仅输出 JSON 数组，不要输出其他内容。"""
-
-RESEARCH_ACTIONS = {"search", "parse", "crawl"}
+RESEARCH_ACTIONS = {
+    "page_read",
+    "knowledge_search",
+    "search",
+    "parse",
+    "crawl",
+    "vision",
+    "image",
+}
 
 
 async def _upload_image_to_docmost(b64_data: str, filename: str, page_id: str) -> str:
-    """Upload a base64 image to Docmost storage, return the file URL."""
     try:
-        img_bytes = base64.b64decode(b64_data)
-        url = f"{settings.docmost_internal_url}/api/files/upload"
-        files = {"file": (filename, img_bytes, "image/png")}
-        data = {"pageId": page_id}
-        headers = {"X-Internal-Secret": settings.agent_internal_secret}
-
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, files=files, data=data, headers=headers)
+            resp = await client.post(
+                f"{settings.docmost_internal_url}/api/ai/internal/upload-page-image",
+                json={
+                    "pageId": page_id,
+                    "filename": filename,
+                    "fileContentB64": b64_data,
+                    "mimeType": "image/png",
+                },
+                headers={"X-Internal-Secret": settings.agent_internal_secret},
+            )
 
         if resp.status_code == 200:
             result = resp.json()
-            # Response may be wrapped: {data: {filePath: "...", fileName: "..."}}
             file_data = result.get("data", result)
-            file_path = file_data.get("filePath", "")
-            file_name = file_data.get("fileName", filename)
-            if file_path:
-                return f"/api/files/{file_path}/{file_name}"
+            file_url = file_data.get("url", "")
+            if file_url:
+                return file_url
         return ""
     except Exception:
         return ""
 
 
 async def explorer_node(state: AgentState) -> dict:
-    """Phase 1: 使用 LLM 制定调研计划；Phase 2: 遍历计划执行 search/parse/crawl 步骤"""
     tid = state.get("_thread_id", "")
     await raise_if_cancelled(state)
 
-    # ── Phase 1: 制定调研计划 ──────────────────────────────────
     llm = get_chat_model()
     tools = get_tool_names()
 
     await emit(tid, {"type": "step_start", "step": "plan", "description": "正在分析需求并制定调研计划..."})
 
-    context_parts = []
+    strategy = state.get("document_strategy") or {}
+    context_parts = [
+        f"用户请求: {state['user_message']}",
+        f"文档策略:\n{format_document_strategy(strategy)}",
+    ]
+
     if state.get("page_title"):
         context_parts.append(f"当前页面标题: {state['page_title']}")
     if state.get("selected_text"):
-        context_parts.append(f"用户选中的文本: {state['selected_text'][:500]}")
+        context_parts.append(f"用户选中文本: {state['selected_text'][:500]}")
+    if state.get("page_content"):
+        context_parts.append(f"当前页面已有内容摘要: {state['page_content'][:800]}")
     if state.get("uploaded_files"):
         file_names = [f["filename"] for f in state["uploaded_files"]]
         context_parts.append(f"上传的文件: {', '.join(file_names)}")
     if state.get("revision_feedback"):
         context_parts.append(f"上次修订反馈: {state['revision_feedback']}")
 
-    context = "\n".join(context_parts) if context_parts else "无额外上下文"
-
-    user_prompt = f"""用户请求: {state['user_message']}
-
-上下文信息:
-{context}
-
-请制定调研计划。"""
+    visual_requirements = derive_visual_requirements(state)
+    if visual_requirements:
+        context_parts.append(f"从任务中推断的优先 artifact: {', '.join(visual_requirements)}")
 
     messages = [
         SystemMessage(content=EXPLORER_SYSTEM_PROMPT.format(tools=", ".join(tools))),
-        HumanMessage(content=user_prompt),
+        HumanMessage(content="\n\n".join(context_parts)),
     ]
 
     response = await llm.ainvoke(messages)
@@ -100,12 +112,15 @@ async def explorer_node(state: AgentState) -> dict:
     except json.JSONDecodeError:
         plan = []
 
+    if not isinstance(plan, list):
+        plan = []
+
     for step in plan:
-        step["status"] = "pending"
+        if isinstance(step, dict):
+            step["status"] = "pending"
 
     await emit(tid, {"type": "step_done", "step": "plan", "result_summary": f"制定了 {len(plan)} 步调研计划"})
 
-    # ── Phase 2: 遍历计划执行调研步骤 ──────────────────────────
     research_results = list(state.get("research_results", []))
     parsed_files = list(state.get("parsed_files", []))
     generated_images = list(state.get("generated_images", []))
@@ -113,41 +128,49 @@ async def explorer_node(state: AgentState) -> dict:
 
     for step in plan:
         await raise_if_cancelled(state)
-        if step["action"] not in RESEARCH_ACTIONS:
+        if not isinstance(step, dict):
             continue
-        if step["status"] == "done":
+        if step.get("action") not in RESEARCH_ACTIONS:
+            continue
+        if step.get("status") == "done":
             continue
 
         step["status"] = "running"
-        await emit(tid, {"type": "step_start", "step": step["action"], "description": step["description"]})
-
-        # Force correct tool per action type (LLM sometimes assigns wrong tool)
-        SEARCH_TOOLS = {"tavily_search"}
         action = step["action"]
+        await emit(tid, {"type": "step_start", "step": action, "description": step.get("description", action)})
+
         if action == "parse":
             tool_name = "docling_parser"
         elif action == "crawl":
             tool_name = "firecrawl_scrape"
         elif action == "search":
-            tool_name = step.get("tool")
-            if tool_name not in SEARCH_TOOLS:
-                tool_name = "tavily_search"  # fallback to web search
+            tool_name = "tavily_search"
+        elif action == "page_read":
+            tool_name = "docmost_page_read"
+        elif action == "knowledge_search":
+            tool_name = "docmost_rag"
+        elif action == "vision":
+            tool_name = "vlm_understand"
+        elif action == "image":
+            tool_name = "nanobana_imggen"
         else:
             tool_name = step.get("tool")
+
         tool_fn = get_tool(tool_name) if tool_name else None
         result_summary = "跳过（无匹配工具）"
 
         try:
-            if step["action"] == "parse" and tool_fn:
-                for f in state.get("uploaded_files", []):
+            if action == "parse" and tool_fn:
+                for file_info in state.get("uploaded_files", []):
                     await raise_if_cancelled(state)
-                    raw_result = await tool_fn.ainvoke({
-                        "file_content_b64": f["content_b64"],
-                        "filename": f["filename"],
-                        "mimetype": f["mimetype"],
-                    })
+                    raw_result = await tool_fn.ainvoke(
+                        {
+                            "file_content_b64": file_info["content_b64"],
+                            "filename": file_info["filename"],
+                            "mimetype": file_info["mimetype"],
+                        }
+                    )
 
-                    # docling_parser now returns JSON with text + images
                     try:
                         parsed = json.loads(raw_result)
                         text_content = parsed.get("text", raw_result)
@@ -156,65 +179,154 @@ async def explorer_node(state: AgentState) -> dict:
                         text_content = raw_result
                         images = []
 
-                    # Upload extracted images to Docmost
                     image_urls = []
                     if images and page_id:
-                        await emit(tid, {"type": "step_start", "step": "upload_images",
-                                         "description": f"正在上传 {len(images)} 张提取的图片..."})
+                        await emit(
+                            tid,
+                            {
+                                "type": "step_start",
+                                "step": "upload_images",
+                                "description": f"正在上传 {len(images)} 张提取的图片...",
+                            },
+                        )
                         for img in images:
                             await raise_if_cancelled(state)
                             img_filename = f"doc-img-{img['index']}.png"
                             url = await _upload_image_to_docmost(img["b64"], img_filename, page_id)
                             if url:
-                                image_urls.append({
-                                    "index": img["index"],
-                                    "url": url,
-                                    "desc": img.get("desc", ""),
-                                    "context": img.get("context", ""),
-                                    "page_ref": img.get("page_ref", ""),
-                                    "surrounding_text": img.get("surrounding_text", ""),
-                                })
+                                image_urls.append(
+                                    {
+                                        "index": img["index"],
+                                        "url": url,
+                                        "desc": img.get("desc", ""),
+                                        "context": img.get("context", ""),
+                                        "page_ref": img.get("page_ref", ""),
+                                        "surrounding_text": img.get("surrounding_text", ""),
+                                        "origin": "uploaded_document",
+                                    }
+                                )
                                 await emit(tid, {"type": "image", "url": url, "alt": img.get("desc", "")})
 
-                        await emit(tid, {"type": "step_done", "step": "upload_images",
-                                         "result_summary": f"上传了 {len(image_urls)} 张图片"})
+                        await emit(
+                            tid,
+                            {
+                                "type": "step_done",
+                                "step": "upload_images",
+                                "result_summary": f"上传了 {len(image_urls)} 张图片",
+                            },
+                        )
 
-                    parsed_files.append({
-                        "filename": f["filename"],
-                        "content": text_content,
-                        "image_urls": image_urls,
-                    })
+                    parsed_files.append(
+                        {
+                            "filename": file_info["filename"],
+                            "content": text_content,
+                            "image_urls": image_urls,
+                        }
+                    )
                     generated_images.extend(image_urls)
 
-                file_count = len(state.get("uploaded_files", []))
-                img_count = len(generated_images)
-                result_summary = f"解析了 {file_count} 个文件" + (f"，提取了 {img_count} 张图片" if img_count else "")
+                result_summary = f"解析了 {len(state.get('uploaded_files', []))} 个文件"
 
-            elif step["action"] == "search" and tool_fn:
+            elif action == "page_read" and tool_fn and state.get("page_id"):
+                content = await tool_fn.ainvoke({"page_id": state["page_id"]})
+                research_results.append({"source": "page_read", "content": content})
+                result_summary = "读取了当前页面内容"
+
+            elif action == "knowledge_search" and tool_fn:
+                args = step.get("args", {}) or {}
+                query = args.get("query", state["user_message"])
+                result = await tool_fn.ainvoke(
+                    {
+                        "query": query,
+                        "workspace_id": state.get("workspace_id", ""),
+                    }
+                )
+                research_results.append({"source": "knowledge_search", "query": query, "content": result})
+                result_summary = "站内知识检索完成"
+
+            elif action == "search" and tool_fn:
                 args = step.get("args", {}) or {}
                 query = args.get("query", state["user_message"])
                 result = await tool_fn.ainvoke({"query": query, "max_results": 5})
                 research_results.append({"source": "search", "query": query, "content": result})
-                result_summary = "搜索完成"
+                result_summary = "外部搜索完成"
 
-            elif step["action"] == "crawl" and tool_fn:
+            elif action == "crawl" and tool_fn:
                 args = step.get("args", {}) or {}
                 url = args.get("url", "")
-                # Validate URL: must start with http(s) and have a dot in domain
                 if url and url.startswith(("http://", "https://")) and "." in url.split("/")[2]:
                     result = await tool_fn.ainvoke({"url": url})
                     research_results.append({"source": "crawl", "url": url, "content": result})
-                    result_summary = f"爬取了 {url}"
+                    result_summary = f"抓取了 {url}"
                 else:
                     result_summary = f"跳过无效 URL: {url[:80]}"
 
-            step["status"] = "done"
-        except Exception as e:
-            step["status"] = "skipped"
-            result_summary = f"失败: {str(e)[:100]}"
-            await emit(tid, {"type": "error", "message": f"工具 {tool_name} 调用失败: {str(e)[:200]}"})
+            elif action == "vision" and tool_fn:
+                analyzed = 0
+                question = (step.get("args", {}) or {}).get(
+                    "question",
+                    "请描述这张图片与文档写作最相关的信息，包括界面元素、文字、流程、风险点。",
+                )
+                for file_info in state.get("uploaded_files", []):
+                    await raise_if_cancelled(state)
+                    if not str(file_info.get("mimetype", "")).startswith("image/"):
+                        continue
+                    result = await tool_fn.ainvoke(
+                        {
+                            "image_b64": file_info["content_b64"],
+                            "question": question,
+                        }
+                    )
+                    research_results.append(
+                        {
+                            "source": "vision",
+                            "filename": file_info["filename"],
+                            "content": result,
+                        }
+                    )
+                    analyzed += 1
+                result_summary = f"分析了 {analyzed} 张图片"
 
-        await emit(tid, {"type": "step_done", "step": step["action"], "result_summary": result_summary})
+            elif action == "image" and tool_fn and page_id:
+                args = step.get("args", {}) or {}
+                prompt = args.get("prompt") or state["user_message"]
+                generated = await tool_fn.ainvoke({"prompt": prompt})
+                image_b64 = generated.split(",", 1)[-1] if isinstance(generated, str) else ""
+                if image_b64:
+                    filename = f"generated-{len(generated_images) + 1}.png"
+                    url = await _upload_image_to_docmost(image_b64, filename, page_id)
+                    if url:
+                        image_info = {
+                            "index": len(generated_images),
+                            "url": url,
+                            "desc": args.get("alt") or prompt[:80],
+                            "context": args.get("context", ""),
+                            "page_ref": "generated",
+                            "surrounding_text": "",
+                            "origin": "generated",
+                        }
+                        generated_images.append(image_info)
+                        research_results.append(
+                            {
+                                "source": "image_generation",
+                                "prompt": prompt,
+                                "content": f"Generated image available at {url}",
+                            }
+                        )
+                        await emit(tid, {"type": "image", "url": url, "alt": image_info["desc"]})
+                        result_summary = "生成并上传了辅助图片"
+                    else:
+                        result_summary = "生图完成但上传失败"
+                else:
+                    result_summary = "未生成可用图片"
+
+            step["status"] = "done"
+        except Exception as exc:
+            step["status"] = "skipped"
+            result_summary = f"失败: {str(exc)[:100]}"
+            await emit(tid, {"type": "error", "message": f"工具 {tool_name} 调用失败: {str(exc)[:200]}"})
+
+        await emit(tid, {"type": "step_done", "step": action, "result_summary": result_summary})
 
     return {
         "plan": plan,

@@ -1,81 +1,67 @@
-"""Outliner node: generate structured outline for user approval.
-
-Always interrupts — outline confirmation is mandatory.
-User can: confirm, edit the outline, or request regeneration via chat.
-"""
+"""Outliner node: generate structured outline for user approval."""
 import json
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import interrupt
 
+from app.agent.document_strategy import format_document_strategy
+from app.agent.events import emit
 from app.agent.llm import get_chat_model
 from app.agent.state import AgentState
-from app.agent.events import emit
 
 
-OUTLINER_SYSTEM_PROMPT = """你是一个文档大纲设计师。基于用户需求、调研结果和选定的方案，生成结构化的 Markdown 大纲。
+OUTLINER_SYSTEM_PROMPT = """你是文档大纲设计师。基于文档策略、document plan、研究结果和用户上下文，生成结构化 Markdown 大纲。
 
-输出格式:
-## 1. 第一章标题
-  要点概述（1-2句）
-
-## 2. 第二章标题
-  ### 2.1 子节标题
-    要点概述
-  ### 2.2 子节标题
-    要点概述
-
-## 3. 第三章标题
-  要点概述
-
-规则:
-- 使用 ## 和 ### 标题层级
-- 每个章节下简要说明要点（不要写正文）
-- 如果有图片素材，在相关章节标注"（含图片）"
-- 大纲 3-8 个主要章节
-- 如果用户选中了文本要修改，大纲仅覆盖修改部分
+规则：
+1. 只输出 Markdown 大纲，不写正文段落。
+2. 使用 ## 和 ### 标题层级。
+3. 每个章节下用 1-2 句说明该节的目标和要点。
+4. 如果某节计划使用 artifact，请显式标注，例如 [Artifact: table]。
+5. 大纲应与给定 document plan 一致，不要引入无关章节。
+6. 如果用户只要求修改选中文本，大纲只覆盖修改范围。
 """
 
 
 async def outliner_node(state: AgentState) -> dict:
-    """Generate outline and always interrupt for user confirmation."""
     tid = state.get("_thread_id", "")
     llm = get_chat_model()
 
     await emit(tid, {"type": "step_start", "step": "outline", "description": "正在生成文档大纲..."})
 
-    context_parts = [f"用户请求: {state['user_message']}"]
+    strategy = state.get("document_strategy") or {}
+    document_plan = state.get("document_plan") or {}
+
+    context_parts = [
+        f"用户请求: {state['user_message']}",
+        f"文档策略:\n{format_document_strategy(strategy)}",
+        f"Document plan:\n{json.dumps(document_plan, ensure_ascii=False, indent=2)}",
+    ]
+
     if state.get("user_answers"):
         context_parts.append(f"用户补充: {state['user_answers']}")
     if state.get("selected_proposal"):
-        prop = state["selected_proposal"]
-        context_parts.append(f"选定方案: {prop.get('title', '')} — {prop.get('description', '')}")
-        if prop.get("user_feedback"):
-            context_parts.append(f"用户对方案的补充: {prop['user_feedback']}")
+        context_parts.append(
+            f"选定方案: {json.dumps(state['selected_proposal'], ensure_ascii=False)}"
+        )
     if state.get("selected_text"):
-        context_parts.append(f"用户选中的文本（仅修改此部分）:\n{state['selected_text'][:1000]}")
+        context_parts.append(f"用户选中文本:\n{state['selected_text'][:1200]}")
     if state.get("parsed_files"):
-        for f in state["parsed_files"]:
-            context_parts.append(f"文件 [{f['filename']}]: {f['content'][:500]}")
-            if f.get("image_urls"):
-                img_notes = [f"  图片: {img['desc']} (位置: {img.get('context', '未知')})" for img in f["image_urls"]]
-                context_parts.append("\n".join(img_notes))
+        for file_info in state["parsed_files"]:
+            context_parts.append(f"文件 [{file_info['filename']}]: {file_info['content'][:400]}")
     if state.get("research_results"):
-        for r in state["research_results"][:3]:
-            context_parts.append(f"调研[{r.get('source', '')}]: {r.get('content', '')[:300]}")
+        for result in state["research_results"][:4]:
+            context_parts.append(f"调研[{result.get('source', '')}]: {result.get('content', '')[:300]}")
     if state.get("revision_feedback"):
-        context_parts.append(f"用户反馈（请据此调整大纲）: {state['revision_feedback']}")
+        context_parts.append(f"修订反馈: {state['revision_feedback']}")
 
     messages = [
         SystemMessage(content=OUTLINER_SYSTEM_PROMPT),
-        HumanMessage(content="\n".join(context_parts)),
+        HumanMessage(content="\n\n".join(context_parts)),
     ]
     response = await llm.ainvoke(messages)
     outline = response.content
 
     await emit(tid, {"type": "step_done", "step": "outline", "result_summary": "大纲已生成，等待确认"})
 
-    # await_input emitted from main.py's GraphInterrupt handler
-    # Always interrupt: outline confirmation is mandatory
     user_decision = interrupt({
         "type": "outline",
         "outline": outline,

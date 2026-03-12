@@ -165,3 +165,94 @@
   - stale selection returns `appliedMode: append` with `fallbackReason: stale_selection`,
   - persisted page markdown includes the appended fallback content after the fix.
 - A first Playwright check appeared to miss the live update in the open editor, but a follow-up validation after letting the page settle and establish collaboration state showed the committed content arriving in the active editor view as expected. The earlier miss was likely a timing/connection-readiness issue during page navigation rather than a persistence bug.
+
+## 2026-03-13: AI documentation assistant redesign findings
+
+- Standard creator mode does load the workspace global system prompt plus the selected template prompt, but it concatenates them into a single free-form `systemPrompt` string and sends only plain text/messages into `streamWithContext()`. There is no structured output schema, no explicit tool policy, and no quality rubric attached to that prompt contract.
+- Agent mode is materially weaker on prompt fidelity:
+  - `templateId` is forwarded to `agent-service`, but nodes only mention the template key as context text such as “selected template: technical-doc”.
+  - The actual template prompt body is never resolved or injected into the agent nodes’ system prompts.
+  - The workspace global `systemPrompt` is not forwarded into agent mode at all.
+  - This means the user-observed “system prompt / template prompt seems ineffective” is correct for agent mode and only partially false for standard mode.
+- Agent orchestration currently restricts research planning to `search | parse | crawl` actions in `explorer.py`.
+  - Available tools include `docling_parser`, `tavily_search`, `firecrawl_scrape`, `docmost_page_read`, `docmost_rag`, `nanobana_imggen`, `vlm_understand`, and image upload helpers.
+  - But the explorer plan never emits image generation, visual understanding, internal RAG, page-read, or evidence-verification steps.
+  - Even for `search`, the code force-falls back to `tavily_search`; internal knowledge retrieval is not part of the normal plan loop.
+- The writer is essentially a single-pass markdown writer:
+  - it receives `confirmed_outline`, clipped page text, selected text, parsed file text, and top-N research snippets;
+  - it streams markdown prose;
+  - it has optional image placement instructions if images were extracted from uploaded files;
+  - it does not produce a typed document plan or node-level structure plan before writing.
+- The reviewer is not a substantive reviewer. It only auto-fixes formatting issues around empty image syntax and whitespace. There is no factual review, coverage review, citation check, structure check, or “did we use the right artifact type?” check.
+- Current editor capability is richer than current prompting/orchestration:
+  - `editor-ext` supports tables, callouts, details blocks, code blocks, math, images, and markdown transforms.
+  - Markdown conversion explicitly supports tables via GFM and callouts via `:::info|success|warning|danger`.
+  - Details blocks can be inserted with `:::details`.
+  - Drawio / Excalidraw exist as editor nodes, but they are not naturally reachable from current markdown generation.
+- The AI create pipeline currently gives the model mostly plain text context, not the document’s structured ProseMirror shape or a target block schema. This makes it much more likely to overproduce prose and underproduce the editor’s richer structural affordances.
+- File handling is asymmetric:
+  - Standard mode uses lightweight extraction (`pdf-parse`, `mammoth`, raw image pass-through).
+  - Agent mode has a better parser (`docling_parser`) that can extract text plus embedded images from documents and upload those images back into Docmost.
+  - This capability exists, but only uploaded-file images are considered. The plan does not proactively search for missing illustrative images, nor does it decide when a diagram/table/image is required.
+- The current system has tools, but not a “tooling policy”.
+  - There is no rule like “if the user asks for a tutorial/manual and source material includes screenshots, preserve them”.
+  - There is no rule like “if comparing options, prefer a table”.
+  - There is no rule like “if architecture/process is discussed, emit mermaid”.
+  - There is no rule like “if evidence is weak, search or ask a clarifying question before drafting”.
+- Current official guidance aligns with a different shape:
+  - OpenAI recommends structured outputs over plain JSON mode for reliable schema matching, recommends Responses API for agentic multi-tool loops, and recommends evals tied to document tasks.
+  - Anthropic recommends using the simplest workflow that works and writing detailed tool descriptions/instructions so the model knows when to use tools.
+  - LangGraph guidance emphasizes interrupt checkpoints, persistence, and careful side-effect boundaries, which matches Docmost’s outline confirmation flow but not its current weak quality gate.
+- Inference from local code + official guidance:
+  - The main gap is not “prompt wording is bad”.
+  - The main gap is that prompts are carrying responsibilities that should be split into: document brief, evidence plan, artifact plan, structure schema, tool policy, and quality gate.
+
+## 2026-03-13: Implemented quality-upgrade delivery
+
+- Added a template-aware document strategy layer on the server:
+  - `apps/server/src/ee/ai/document-strategy.ts`
+  - standard creator mode now appends an explicit document strategy section to its prompt
+  - agent mode now resolves and forwards `system_prompt`, `template_prompt`, and `document_strategy`
+- Added a hidden structured planning step before outline generation:
+  - `agent-service/app/agent/nodes/planner.py`
+  - `agent-service/app/agent/document_strategy.py`
+  - planner produces a normalized `document_plan` with sections, required artifacts, and evidence targets
+- Upgraded the explorer from a shallow `search|parse|crawl` planner to a richer evidence planner:
+  - now supports `page_read`, `knowledge_search`, `vision`, and `image`
+  - now consumes document strategy signals to decide when diagrams, tables, screenshots, or extra evidence are required
+- Closed the runtime tool bridge gap with new internal server endpoints:
+  - `POST /api/ai/internal/page-read`
+  - `POST /api/ai/internal/knowledge-search`
+  - `POST /api/ai/internal/upload-page-image`
+  - this removes the prior mismatch where agent-side Docmost tools were calling auth-protected user endpoints or an SSE endpoint as if they were JSON APIs
+- Upgraded writing and review stages:
+  - writer now consumes `system_prompt`, `template_prompt`, `document_strategy`, `document_plan`, page context, parsed files, and research results together
+  - reviewer is now an LLM-based quality gate that checks strategy/plan coverage and can return a revised draft instead of only fixing whitespace/image syntax
+- Kept the output format aligned with existing editor capabilities instead of inventing a new renderer:
+  - tables
+  - mermaid
+  - fenced code blocks
+  - Docmost callouts
+  - details blocks
+  - markdown images
+
+## Recommended next backlog after this delivery
+
+1. Add browser E2E coverage for the new agent documentation flow, especially image/tool usage and outline approval.
+2. Add evaluator datasets for artifact usage rate, source grounding rate, user-requirement coverage, and generic-prose regression.
+3. Move from hidden `document_plan` only to an explicit first-class typed contract shared across server and agent-service.
+4. Decide whether image generation should be gated by a stricter approval policy for non-user-provided visuals.
+5. If document quality stabilizes, then consider deeper block-level rendering beyond markdown-compatible structures.
+
+## Updated Source Links
+
+- OpenAI prompt guidance: https://developers.openai.com/api/docs/guides/prompt-guidance/
+- OpenAI reasoning best practices: https://developers.openai.com/api/docs/guides/reasoning-best-practices/
+- OpenAI prompt engineering: https://developers.openai.com/api/docs/guides/prompt-engineering/
+- Anthropic building effective agents: https://www.anthropic.com/engineering/building-effective-agents
+- Anthropic tool use: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/implement-tool-use
+- LangGraph human-in-the-loop: https://langchain-ai.github.io/langgraph/how-tos/human_in_the_loop/add-human-in-the-loop/
+- LangGraph persistence: https://langchain-ai.github.io/langgraph/how-tos/persistence/
+- LangGraph durable execution: https://langchain-ai.github.io/langgraph/concepts/durable_execution/
+- Docling docs: https://docling-project.github.io/docling/
+- Firecrawl scrape docs: https://docs.firecrawl.dev/features/scrape

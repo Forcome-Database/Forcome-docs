@@ -14,6 +14,10 @@ class AgentState(TypedDict):
     conversation_history: list[dict]
     uploaded_files: list[dict]
     template_id: str | None
+    workspace_id: str
+    system_prompt: str | None
+    template_prompt: str | None
+    document_strategy: dict
 
     # Document context
     page_id: str | None
@@ -42,6 +46,7 @@ class AgentState(TypedDict):
     selected_proposal: dict
     outline: str
     confirmed_outline: str
+    document_plan: dict
 
     # Control
     phase: str                     # "explorer" | "clarifier" | "proposer" | "outliner" | "writer" | "reviewer"
