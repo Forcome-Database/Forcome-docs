@@ -30,7 +30,7 @@ CLARIFIER_SYSTEM_PROMPT = """你是一个需求分析助手。基于用户请求
 
 async def clarifier_node(state: AgentState) -> dict:
     """Analyze if clarification is needed; interrupt if so."""
-    tid = state.get("_task_id", "")
+    tid = state.get("_thread_id", "")
     llm = get_chat_model()
 
     await emit(tid, {"type": "step_start", "step": "clarify", "description": "正在分析是否需要进一步了解需求..."})
@@ -62,13 +62,12 @@ async def clarifier_node(state: AgentState) -> dict:
 
     questions = result.get("questions", [])
 
-    await emit(tid, {
-        "type": "await_input",
-        "phase": "clarify",
-        "data": {"questions": questions},
-    })
     await emit(tid, {"type": "step_done", "step": "clarify", "result_summary": f"提出了 {len(questions)} 个澄清问题"})
 
+    # interrupt() pauses graph on first call; on resume, the node re-executes
+    # from the start and interrupt() returns the resume value immediately.
+    # await_input is emitted from main.py's GraphInterrupt handler (not here)
+    # to avoid duplicate events on resume.
     user_response = interrupt({
         "type": "clarify",
         "questions": questions,

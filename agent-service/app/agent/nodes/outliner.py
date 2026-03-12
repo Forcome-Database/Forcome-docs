@@ -38,7 +38,7 @@ OUTLINER_SYSTEM_PROMPT = """你是一个文档大纲设计师。基于用户需�
 
 async def outliner_node(state: AgentState) -> dict:
     """Generate outline and always interrupt for user confirmation."""
-    tid = state.get("_task_id", "")
+    tid = state.get("_thread_id", "")
     llm = get_chat_model()
 
     await emit(tid, {"type": "step_start", "step": "outline", "description": "正在生成文档大纲..."})
@@ -72,13 +72,9 @@ async def outliner_node(state: AgentState) -> dict:
     response = await llm.ainvoke(messages)
     outline = response.content
 
-    await emit(tid, {
-        "type": "await_input",
-        "phase": "outline",
-        "data": {"outline": outline},
-    })
     await emit(tid, {"type": "step_done", "step": "outline", "result_summary": "大纲已生成，等待确认"})
 
+    # await_input emitted from main.py's GraphInterrupt handler
     # Always interrupt: outline confirmation is mandatory
     user_decision = interrupt({
         "type": "outline",

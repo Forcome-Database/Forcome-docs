@@ -32,7 +32,7 @@ PROPOSER_SYSTEM_PROMPT = """你是一个写作方案规划师。基于用户需�
 
 async def proposer_node(state: AgentState) -> dict:
     """Propose writing approaches; interrupt for user choice."""
-    tid = state.get("_task_id", "")
+    tid = state.get("_thread_id", "")
     llm = get_chat_model()
 
     await emit(tid, {"type": "step_start", "step": "propose", "description": "正在构思写作方案..."})
@@ -63,13 +63,9 @@ async def proposer_node(state: AgentState) -> dict:
 
     proposals = result.get("proposals", [])
 
-    await emit(tid, {
-        "type": "await_input",
-        "phase": "propose",
-        "data": {"proposals": proposals},
-    })
     await emit(tid, {"type": "step_done", "step": "propose", "result_summary": f"提出了 {len(proposals)} 个方案"})
 
+    # await_input emitted from main.py's GraphInterrupt handler
     user_choice = interrupt({
         "type": "propose",
         "proposals": proposals,
