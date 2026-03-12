@@ -25,6 +25,8 @@ import { SpaceTreeNode } from "@/features/page/tree/types.ts";
 import { buildPageUrl } from "@/features/page/page.utils.ts";
 import { getSpaceUrl } from "@/lib/config.ts";
 import { useQueryEmit } from "@/features/websocket/use-query-emit.ts";
+import { updateDirectory } from "@/features/directory/services/directory-service.ts";
+import { updateTopic } from "@/features/topic/services/topic-service.ts";
 
 export function useTreeMutation<T>(spaceId: string) {
   const [data, setData] = useAtom(treeDataAtom);
@@ -116,13 +118,60 @@ export function useTreeMutation<T>(spaceId: string) {
     parentNode: NodeApi<T> | null;
     index: number;
   }) => {
-    const draggedNodeType = (args.dragNodes[0].data as SpaceTreeNode)?.nodeType;
-    // Don't allow moving directory or topic nodes
+    const draggedNodeData = args.dragNodes[0].data as SpaceTreeNode;
+    const draggedNodeType = draggedNodeData?.nodeType;
+    const draggedNodeId = args.dragIds[0];
+
+    // Directory/topic nodes can only be reordered among siblings, not reparented
     if (draggedNodeType === 'directory' || draggedNodeType === 'topic') {
+      const parentNodeData = args.parentNode?.data as SpaceTreeNode | undefined;
+      const parentNodeType = parentNodeData?.nodeType;
+
+      // Directory can only be at root level (parentId = null)
+      if (draggedNodeType === 'directory' && args.parentId !== null) return;
+      // Topic can only be under its own directory
+      if (draggedNodeType === 'topic' && parentNodeType !== 'directory') return;
+      if (draggedNodeType === 'topic' && args.parentId !== draggedNodeData.directoryId) return;
+
+      // Calculate new position
+      tree.move({ id: draggedNodeId, parentId: args.parentId, index: args.index });
+      const newDragIndex = tree.find(draggedNodeId)?.childIndex;
+      const currentTreeData = args.parentId
+        ? tree.find(args.parentId).children
+        : tree.data;
+
+      const afterPosition =
+        // @ts-ignore
+        currentTreeData[newDragIndex - 1]?.position ||
+        // @ts-ignore
+        currentTreeData[args.index - 1]?.data?.position ||
+        null;
+      const beforePosition =
+        // @ts-ignore
+        currentTreeData[newDragIndex + 1]?.position ||
+        // @ts-ignore
+        currentTreeData[args.index + 1]?.data?.position ||
+        null;
+
+      const newPosition = (afterPosition && beforePosition && afterPosition === beforePosition)
+        ? generateJitteredKeyBetween(afterPosition, null)
+        : generateJitteredKeyBetween(afterPosition, beforePosition);
+
+      tree.update({ id: draggedNodeId, changes: { position: newPosition } as any });
+      setData(tree.data);
+
+      // Persist position via API
+      try {
+        if (draggedNodeType === 'directory') {
+          await updateDirectory({ directoryId: draggedNodeId, position: newPosition });
+        } else {
+          await updateTopic({ topicId: draggedNodeId, position: newPosition });
+        }
+      } catch (error) {
+        console.error(`Error reordering ${draggedNodeType}:`, error);
+      }
       return;
     }
-
-    const draggedNodeId = args.dragIds[0];
 
     tree.move({
       id: draggedNodeId,

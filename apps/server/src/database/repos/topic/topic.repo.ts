@@ -26,7 +26,8 @@ export class TopicRepo {
     let query = db
       .selectFrom('topics')
       .selectAll('topics')
-      .where('workspaceId', '=', workspaceId);
+      .where('workspaceId', '=', workspaceId)
+      .where('deletedAt', 'is', null);
 
     if (isValidUUID(topicId)) {
       query = query.where('id', '=', topicId);
@@ -50,7 +51,8 @@ export class TopicRepo {
       .selectFrom('topics')
       .select((eb) => eb.fn.count('id').as('count'))
       .where(sql`LOWER(slug)`, '=', sql`LOWER(${slug})`)
-      .where('directoryId', '=', directoryId);
+      .where('directoryId', '=', directoryId)
+      .where('deletedAt', 'is', null);
 
     if (excludeId) {
       query = query.where('id', '!=', excludeId);
@@ -98,7 +100,8 @@ export class TopicRepo {
       .selectFrom('topics')
       .selectAll('topics')
       .where('directoryId', '=', directoryId)
-      .where('workspaceId', '=', workspaceId);
+      .where('workspaceId', '=', workspaceId)
+      .where('deletedAt', 'is', null);
 
     if (pagination.query) {
       query = query.where((eb) =>
@@ -114,8 +117,14 @@ export class TopicRepo {
       perPage: pagination.limit,
       cursor: pagination.cursor,
       beforeCursor: pagination.beforeCursor,
-      fields: [{ expression: 'id', direction: 'asc' }],
-      parseCursor: (cursor) => ({ id: cursor.id }),
+      fields: [
+        { expression: 'position', direction: 'asc' },
+        { expression: 'id', direction: 'asc' },
+      ],
+      parseCursor: (cursor) => ({
+        position: cursor.position,
+        id: cursor.id,
+      }),
     });
   }
 
@@ -124,9 +133,11 @@ export class TopicRepo {
     workspaceId: string,
   ): Promise<void> {
     await this.db
-      .deleteFrom('topics')
+      .updateTable('topics')
+      .set({ deletedAt: new Date() })
       .where('id', '=', topicId)
       .where('workspaceId', '=', workspaceId)
+      .where('deletedAt', 'is', null)
       .execute();
   }
 }

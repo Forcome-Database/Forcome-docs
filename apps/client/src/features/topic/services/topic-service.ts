@@ -33,6 +33,7 @@ export async function updateTopic(data: {
   name?: string;
   description?: string;
   icon?: string;
+  position?: string;
 }): Promise<ITopic> {
   const req = await api.post<ITopic>("/topics/update", data);
   return req.data;

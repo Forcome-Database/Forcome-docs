@@ -63,4 +63,8 @@ export class UpdateDirectoryDto {
   @IsOptional()
   @IsString()
   icon?: string;
+
+  @IsOptional()
+  @IsString()
+  position?: string;
 }

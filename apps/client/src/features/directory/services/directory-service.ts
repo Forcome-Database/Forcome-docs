@@ -35,6 +35,7 @@ export async function updateDirectory(data: {
   name?: string;
   description?: string;
   icon?: string;
+  position?: string;
 }): Promise<IDirectory> {
   const req = await api.post<IDirectory>("/directories/update", data);
   return req.data;

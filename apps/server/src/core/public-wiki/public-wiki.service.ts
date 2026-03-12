@@ -287,10 +287,13 @@ export class PublicWikiService {
     }));
 
     // Merge and sort all top-level items by position
+    // Use 'a0' as fallback for null position, consistent with frontend sortPositionKeys
     const items = [...topicNodes, ...uncategorizedPageNodes].sort((a, b) => {
-      const posA = a.position || '';
-      const posB = b.position || '';
-      return posA.localeCompare(posB);
+      const posA = a.position || 'a0';
+      const posB = b.position || 'a0';
+      if (posA < posB) return -1;
+      if (posA > posB) return 1;
+      return 0;
     });
 
     return {
@@ -303,6 +306,13 @@ export class PublicWikiService {
   private buildTree(pages: any[], parentId: string | null): any[] {
     return pages
       .filter((p) => p.parentPageId === parentId)
+      .sort((a, b) => {
+        const posA = a.position || 'a0';
+        const posB = b.position || 'a0';
+        if (posA < posB) return -1;
+        if (posA > posB) return 1;
+        return 0;
+      })
       .map((p) => ({
         id: p.id,
         slugId: p.slugId,

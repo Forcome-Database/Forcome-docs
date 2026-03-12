@@ -4,12 +4,20 @@ import { CreateDirectoryDto, UpdateDirectoryDto } from './dto/directory.dto';
 import { generateJitteredKeyBetween } from 'fractional-indexing-jittered';
 import { PaginationOptions } from '@docmost/db/pagination/pagination-options';
 import { User, Workspace } from '@docmost/db/types/entity.types';
-import slugify = require('@sindresorhus/slugify');
-import { nanoIdGen } from '../../common/helpers/nanoid.utils';
+import { generateSlug } from '../../common/helpers/nanoid.utils';
+import { InjectKysely } from 'nestjs-kysely';
+import { KyselyDB } from '@docmost/db/types/kysely.types';
+import { InjectQueue } from '@nestjs/bullmq';
+import { QueueName, QueueJob } from '../../integrations/queue/constants';
+import { Queue } from 'bullmq';
 
 @Injectable()
 export class DirectoryService {
-  constructor(private readonly directoryRepo: DirectoryRepo) {}
+  constructor(
+    private readonly directoryRepo: DirectoryRepo,
+    @InjectKysely() private readonly db: KyselyDB,
+    @InjectQueue(QueueName.AI_QUEUE) private aiQueue: Queue,
+  ) {}
 
   async getDirectoryById(directoryId: string, workspaceId: string) {
     return this.directoryRepo.findById(directoryId, workspaceId);
@@ -32,7 +40,7 @@ export class DirectoryService {
     user: User,
     workspace: Workspace,
   ) {
-    const slug = slugify(dto.name) || nanoIdGen();
+    const slug = generateSlug(dto.name);
 
     const slugExists = await this.directoryRepo.slugExists(slug, dto.spaceId);
     if (slugExists) {
@@ -58,27 +66,30 @@ export class DirectoryService {
   async updateDirectory(dto: UpdateDirectoryDto, workspaceId: string) {
     const updateData: any = {};
     if (dto.name !== undefined) {
-      updateData.name = dto.name;
-      // Regenerate slug when name changes
       const directory = await this.directoryRepo.findById(
         dto.directoryId,
         workspaceId,
       );
-      const newSlug = slugify(dto.name) || nanoIdGen();
-      const slugExists = await this.directoryRepo.slugExists(
-        newSlug,
-        directory.spaceId,
-        dto.directoryId,
-      );
-      if (slugExists) {
-        throw new BadRequestException(
-          'A directory with this slug already exists in this space',
+      updateData.name = dto.name;
+      // Only regenerate slug when name actually changes
+      if (dto.name !== directory.name) {
+        const newSlug = generateSlug(dto.name);
+        const slugExists = await this.directoryRepo.slugExists(
+          newSlug,
+          directory.spaceId,
+          dto.directoryId,
         );
+        if (slugExists) {
+          throw new BadRequestException(
+            'A directory with this slug already exists in this space',
+          );
+        }
+        updateData.slug = newSlug;
       }
-      updateData.slug = newSlug;
     }
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.icon !== undefined) updateData.icon = dto.icon;
+    if (dto.position !== undefined) updateData.position = dto.position;
 
     return this.directoryRepo.updateDirectory(
       updateData,
@@ -88,6 +99,40 @@ export class DirectoryService {
   }
 
   async deleteDirectory(directoryId: string, workspaceId: string) {
+    // 1. Find affected pages before soft-deleting
+    const affectedPages = await this.db
+      .selectFrom('pages')
+      .select('id')
+      .where('directoryId', '=', directoryId)
+      .where('deletedAt', 'is', null)
+      .execute();
+
+    // 2. Soft-delete child topics
+    await this.db
+      .updateTable('topics')
+      .set({ deletedAt: new Date() })
+      .where('directoryId', '=', directoryId)
+      .where('workspaceId', '=', workspaceId)
+      .where('deletedAt', 'is', null)
+      .execute();
+
+    // 3. Clear pages' directory/topic references
+    await this.db
+      .updateTable('pages')
+      .set({ directoryId: null, topicId: null })
+      .where('directoryId', '=', directoryId)
+      .execute();
+
+    // 4. Soft-delete directory
     await this.directoryRepo.deleteDirectory(directoryId, workspaceId);
+
+    // 5. Sync embeddings for affected pages
+    if (affectedPages.length > 0) {
+      const pageIds = affectedPages.map((p) => p.id);
+      await this.aiQueue.add(QueueJob.PAGE_MOVED_TO_SPACE, {
+        pageId: pageIds,
+        workspaceId,
+      });
+    }
   }
 }

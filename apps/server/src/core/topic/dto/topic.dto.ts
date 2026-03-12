@@ -63,4 +63,8 @@ export class UpdateTopicDto {
   @IsOptional()
   @IsString()
   icon?: string;
+
+  @IsOptional()
+  @IsString()
+  position?: string;
 }
