@@ -296,3 +296,30 @@
 - LangGraph durable execution: https://langchain-ai.github.io/langgraph/concepts/durable_execution/
 - Docling docs: https://docling-project.github.io/docling/
 - Firecrawl scrape docs: https://docs.firecrawl.dev/features/scrape
+
+## 2026-03-13: Browser insert E2E hardening and regression fix
+
+- Added a stricter browser regression script:
+  - `agent-service/tests/browser_ai_creator_insert_e2e.py`
+- The stricter scenario now validates a full real-user path:
+  - create a temporary page through the real server API
+  - open the real Vite client with a signed auth cookie
+  - submit a prompt that demands a heading, markdown table, and mermaid flowchart
+  - wait for the assistant draft to finish rendering in the AI panel
+  - click the real "Insert to editor" action in the chat UI
+  - verify both editor-side structure and persisted markdown on the server
+- The first strict run exposed a real standard-mode writeback bug:
+  - persisted page content contained concatenated JSON fragments like `{"content":"##"}` instead of plain markdown
+  - inference from the local code path: `AiService.streamWithContext()` was already yielding `JSON.stringify({ content: chunk })`, and `AiController.creatorGenerate()` wrapped that value again into `content_delta.chunk`
+- Fixed the server-side chunk contract:
+  - `apps/server/src/ee/ai/services/ai.service.ts` now yields raw text chunks from `streamWithContext()`
+  - added `apps/server/src/ee/ai/services/ai.service.spec.ts` to lock the regression
+- Verified locally on Friday, March 13, 2026:
+  - browser result contained the required heading and markdown table
+  - the editor showed the heading, a rendered table, and the mermaid content
+  - persisted markdown on the temporary page contained:
+    - `## Browser E2E Marker ...`
+    - a markdown table with `Approach` and `Note`
+    - a fenced mermaid block with `Client --> Server`
+- This completes the browser-level validation that structured AI output can be inserted into the live page.
+- The remaining unchecked Phase 6 item is only the separate git-history step; no commit was created in this session.

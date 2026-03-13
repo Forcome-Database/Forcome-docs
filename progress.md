@@ -356,3 +356,24 @@
 | Agent quality evals | `python -m pytest agent-service/tests/test_document_strategy.py agent-service/tests/test_quality_evals.py` | Strategy tests + fixture-backed evals pass | 9 tests passed | Pass |
 | Agent compile sweep | `python -m compileall agent-service/app agent-service/tests` | App + tests compile cleanly | Compile succeeded | Pass |
 | Browser smoke | `python agent-service/tests/browser_ai_creator_smoke.py` | Real browser opens AI Creator and reaches live runtime response state | Passed with `AI 正在写作...` marker on a temporary page | Pass |
+
+| Server stream chunk regression | `pnpm --filter ./apps/server exec jest --runInBand src/ee/ai/services/ai.service.spec.ts` | Standard creator context streaming yields raw text chunks | 1 test passed | Pass |
+| Browser insert E2E | `python agent-service/tests/browser_ai_creator_insert_e2e.py` | Structured AI result can be inserted into the live editor and persisted as markdown | Passed with heading + table + mermaid code block persisted on a temporary page | Pass |
+
+### 2026-03-13: Browser Insert E2E Hardening
+- **Status:** complete
+- **Started:** 2026-03-13 10:12 Asia/Shanghai
+- Actions taken:
+  - Recovered the pending Phase 6 plan state and confirmed the stricter browser insert scenario had been started but not yet validated.
+  - Started local `server:dev`, `client:dev`, and `collab:dev` processes so the browser scenario exercised the real end-to-end editing stack.
+  - Hardened `agent-service/tests/browser_ai_creator_insert_e2e.py` to wait for a completed assistant result and then click the real chat-side insert action before checking editor and persisted markdown state.
+  - Reproduced a standard-mode regression where inserted content was persisted as concatenated JSON fragments such as `{"content":"##"}` instead of plain markdown.
+  - Traced that regression to `apps/server/src/ee/ai/services/ai.service.ts`, where `streamWithContext()` JSON-wrapped text chunks before the creator SSE layer wrapped them again as `content_delta`.
+  - Fixed `streamWithContext()` to emit raw text chunks, added `apps/server/src/ee/ai/services/ai.service.spec.ts`, and re-ran the browser insert E2E successfully.
+- Files created/modified:
+  - `E:/test/Docmost/agent-service/tests/browser_ai_creator_insert_e2e.py` (updated)
+  - `E:/test/Docmost/apps/server/src/ee/ai/services/ai.service.ts` (updated)
+  - `E:/test/Docmost/apps/server/src/ee/ai/services/ai.service.spec.ts` (created)
+  - `E:/test/Docmost/task_plan.md` (updated)
+  - `E:/test/Docmost/findings.md` (updated)
+  - `E:/test/Docmost/progress.md` (updated)

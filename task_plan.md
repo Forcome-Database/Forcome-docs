@@ -4,7 +4,7 @@
 Diagnose why the current AI Create flow produces low-value document drafts, verify how system prompts/templates/tools actually behave in code, compare the design with current official best practices, implement the first practical quality upgrade, and deliver a tested blueprint for a production-grade AI documentation assistant.
 
 ## Current Phase
-Phase 5
+Complete
 
 ## Phases
 
@@ -39,6 +39,12 @@ Phase 5
 - [x] Include source links for web-derived guidance
 - **Status:** complete
 
+### Phase 6: Browser E2E Hardening
+- [x] Extend the current browser smoke into a stricter regression scenario
+- [x] Validate that structured AI output can be inserted or committed into the live page
+- [x] Record the browser-level result in planning artifacts and git history
+- **Status:** complete
+
 ## Key Questions
 1. Why do system prompt and template prompt feel ineffective in the current product?
 2. Why does the current writer mostly emit long markdown prose instead of richer document structures?
@@ -60,8 +66,11 @@ Phase 5
 | PowerShell rendering showed mojibake in several Chinese comments/strings | 1 | Interpreted behavior from code structure and cross-file consistency, then rewrote planning artifacts cleanly |
 | New Jest spec pulled in an ESM-only dependency chain through `collaboration.util` | 1 | Mocked `jsonToMarkdown` in the controller spec to keep the test focused on controller behavior |
 | PowerShell rejected `&&` in a combined validation command | 1 | Re-ran the compile and pytest commands separately |
+| Standard creator browser E2E inserted `{\"content\": ...}` JSON fragments into the page instead of plain markdown | 1 | Traced it to `AiService.streamWithContext()` double-wrapping chunks, changed the service to emit raw text chunks, added a regression spec, and re-ran the stricter browser insert E2E successfully |
 
 ## Notes
 - Focus stayed on the AI Creator / agent-service path, not the smaller slash-menu AI actions.
 - Recommendations were grounded in the existing stack where possible: Docling, Firecrawl, Tavily, LangGraph, TipTap/Docmost editor-ext.
 - This delivery includes code changes, focused tests, and updated planning artifacts, not only a proposal.
+- Remaining implementation hardening is now focused on browser-level regression coverage rather than more architecture changes.
+- As of 2026-03-13, the stricter browser insert E2E is passing locally and this phase is ready to be closed in git history.
