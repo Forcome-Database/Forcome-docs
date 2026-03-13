@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.agent.document_strategy import format_document_strategy
 from app.agent.events import emit
 from app.agent.llm import get_chat_model
+from app.agent.quality_checks import evaluate_document_quality
 from app.agent.state import AgentState
 
 
@@ -36,24 +37,6 @@ def _auto_fix(draft: str) -> str:
     draft = re.sub(r'!\[([^\]]*)\](?!\()', r'> *\1*', draft)
     draft = re.sub(r'[ \t]+$', '', draft, flags=re.MULTILINE)
     return draft
-
-
-def _detect_artifacts(content: str) -> list[str]:
-    artifacts = []
-    if "```mermaid" in content:
-        artifacts.append("mermaid")
-    if re.search(r"^\|.+\|$", content, flags=re.MULTILINE):
-        artifacts.append("table")
-    if re.search(r"```[a-zA-Z0-9_-]+\n", content):
-        artifacts.append("code_block")
-    if any(token in content for token in (":::warning", ":::info", ":::danger", ":::success")):
-        artifacts.append("callout")
-    if ":::details" in content:
-        artifacts.append("details")
-    if re.search(r"!\[[^\]]*\]\((https?://|/api/)", content):
-        artifacts.append("image")
-    return artifacts
-
 
 def parse_review_result(raw: str, fallback_content: str) -> dict:
     try:
@@ -88,7 +71,8 @@ async def reviewer_node(state: AgentState) -> dict:
     draft = _auto_fix(state.get("draft_content", ""))
     strategy = state.get("document_strategy") or {}
     document_plan = state.get("document_plan") or {}
-    used_artifacts = _detect_artifacts(draft)
+    deterministic_review = evaluate_document_quality(draft, strategy, document_plan)
+    used_artifacts = deterministic_review["used_artifacts"]
 
     messages = [
         SystemMessage(content=REVIEWER_SYSTEM_PROMPT),
@@ -98,6 +82,12 @@ async def reviewer_node(state: AgentState) -> dict:
                     f"Document strategy:\n{format_document_strategy(strategy)}",
                     f"Document plan:\n{json.dumps(document_plan, ensure_ascii=False, indent=2)}",
                     f"Detected artifacts: {', '.join(used_artifacts) if used_artifacts else 'none'}",
+                    "Deterministic precheck issues: "
+                    + (
+                        "; ".join(deterministic_review["issues"])
+                        if deterministic_review["issues"]
+                        else "none"
+                    ),
                     f"Draft:\n{draft}",
                 ]
             )
@@ -105,13 +95,15 @@ async def reviewer_node(state: AgentState) -> dict:
     ]
     response = await llm.ainvoke(messages)
     result = parse_review_result(response.content, draft)
+    merged_issues = list(dict.fromkeys(deterministic_review["issues"] + result["issues"]))
+    needs_rewrite = bool(deterministic_review["needs_rewrite"] or result["needs_rewrite"])
 
     final_content = _auto_fix(
-        result["revised_content"] if result["needs_rewrite"] else draft
+        result["revised_content"] if needs_rewrite else draft
     )
     summary = result["summary"]
-    if result["issues"]:
-        summary += f"; issues={len(result['issues'])}"
+    if merged_issues:
+        summary += f"; issues={len(merged_issues)}"
 
     await emit(
         tid,
@@ -124,5 +116,5 @@ async def reviewer_node(state: AgentState) -> dict:
 
     return {
         "final_content": final_content,
-        "needs_revision": False,
+        "needs_revision": needs_rewrite,
     }

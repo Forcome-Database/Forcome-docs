@@ -3,6 +3,7 @@ from app.agent.document_strategy import (
     format_document_strategy,
     normalize_document_plan,
 )
+from app.agent.quality_checks import evaluate_document_quality
 from app.agent.nodes.reviewer import parse_review_result
 
 
@@ -45,3 +46,55 @@ def test_format_document_strategy_includes_editor_hints():
 
     assert "Document type: report" in text
     assert "Editor syntax hints:" in text
+
+
+def test_evaluate_document_quality_flags_missing_required_artifacts_and_sections():
+    strategy = {
+        "requiredArtifacts": ["table", "mermaid"],
+        "requiredSections": ["overview", "workflow"],
+    }
+    document_plan = {
+        "required_artifacts": ["table", "mermaid"],
+        "sections": [{"title": "Overview"}, {"title": "Workflow"}],
+    }
+
+    result = evaluate_document_quality(
+        "# Overview\n\nOnly prose here without the required structures.",
+        strategy,
+        document_plan,
+    )
+
+    assert result["needs_rewrite"] is True
+    assert "table" in result["missing_artifacts"]
+    assert "mermaid" in result["missing_artifacts"]
+    assert "Workflow" in result["missing_sections"]
+
+
+def test_evaluate_document_quality_accepts_required_sections_and_artifacts():
+    strategy = {
+        "requiredArtifacts": ["table", "mermaid"],
+        "requiredSections": ["overview", "workflow"],
+    }
+    document_plan = {
+        "required_artifacts": ["table", "mermaid"],
+        "sections": [{"title": "Overview"}, {"title": "Workflow"}],
+    }
+    draft = """# Overview
+
+| Option | Value |
+| --- | --- |
+| A | B |
+
+## Workflow
+
+```mermaid
+flowchart TD
+  A --> B
+```
+"""
+
+    result = evaluate_document_quality(draft, strategy, document_plan)
+
+    assert result["needs_rewrite"] is False
+    assert result["missing_artifacts"] == []
+    assert result["missing_sections"] == []

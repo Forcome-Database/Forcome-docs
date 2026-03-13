@@ -244,6 +244,18 @@
 4. Decide whether image generation should be gated by a stricter approval policy for non-user-provided visuals.
 5. If document quality stabilizes, then consider deeper block-level rendering beyond markdown-compatible structures.
 
+## 2026-03-13: Deterministic review hardening
+
+- Reviewer quality control is no longer purely prompt-dependent.
+- Added `agent-service/app/agent/quality_checks.py` to deterministically inspect:
+  - required artifacts from strategy + document plan
+  - required section headings from strategy + document plan
+  - long-form prose drafts that lack markdown section structure
+- Reviewer now feeds deterministic precheck issues into the LLM review prompt and preserves `needs_revision` when these hard checks fail.
+- Added regression tests covering:
+  - missing required artifacts / sections
+  - acceptable drafts that satisfy required headings and artifact usage
+
 ## Updated Source Links
 
 - OpenAI prompt guidance: https://developers.openai.com/api/docs/guides/prompt-guidance/

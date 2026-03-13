@@ -310,3 +310,15 @@
 | Server document-strategy/internal tests | `pnpm --filter ./apps/server exec jest --runInBand src/ee/ai/document-strategy.spec.ts src/ee/ai/ai-internal.controller.spec.ts` | New strategy and internal bridge specs pass | 9 tests passed | Pass |
 | Server targeted lint | `pnpm --filter ./apps/server exec eslint ...` | Touched server files lint cleanly | Lint passed | Pass |
 | Server TS build check | `pnpm --filter ./apps/server exec tsc -p tsconfig.build.json --noEmit` | Updated server files typecheck cleanly | Typecheck passed | Pass |
+
+### 2026-03-13: Deterministic Reviewer Hardening
+- **Status:** complete
+- **Started:** 2026-03-13 02:05 Asia/Shanghai
+- Actions taken:
+  - Added `agent-service/app/agent/quality_checks.py` for deterministic artifact and heading validation.
+  - Updated the reviewer node to merge deterministic precheck issues into the LLM review pass and preserve `needs_revision` when hard requirements fail.
+  - Extended `agent-service/tests/test_document_strategy.py` with regression cases for missing required artifacts/sections and compliant drafts.
+- Files created/modified:
+  - `E:\test\Docmost\agent-service\app\agent\quality_checks.py` (created)
+  - `E:\test\Docmost\agent-service\app\agent\nodes\reviewer.py` (updated)
+  - `E:\test\Docmost\agent-service\tests\test_document_strategy.py` (updated)
