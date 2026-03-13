@@ -44,6 +44,27 @@ RESEARCH_ACTIONS = {
     "image",
 }
 
+RESEARCH_SKIP_PHRASES = (
+    "no external research",
+    "no research needed",
+    "do not browse",
+    "do not search",
+    "do not call external tools",
+    "无需外部调研",
+    "不需要外部调研",
+    "不要检索",
+    "不要搜索",
+    "不要调用外部工具",
+)
+
+
+def should_skip_research_planning(state: AgentState) -> bool:
+    if state.get("uploaded_files"):
+        return False
+
+    message = str(state.get("user_message", "") or "").lower()
+    return any(phrase in message for phrase in RESEARCH_SKIP_PHRASES)
+
 
 async def _upload_image_to_docmost(b64_data: str, filename: str, page_id: str) -> str:
     try:
@@ -101,16 +122,19 @@ async def explorer_node(state: AgentState) -> dict:
     if visual_requirements:
         context_parts.append(f"从任务中推断的优先 artifact: {', '.join(visual_requirements)}")
 
-    messages = [
-        SystemMessage(content=EXPLORER_SYSTEM_PROMPT.format(tools=", ".join(tools))),
-        HumanMessage(content="\n\n".join(context_parts)),
-    ]
-
-    response = await llm.ainvoke(messages)
-    try:
-        plan = json.loads(response.content)
-    except json.JSONDecodeError:
+    if should_skip_research_planning(state):
         plan = []
+    else:
+        messages = [
+            SystemMessage(content=EXPLORER_SYSTEM_PROMPT.format(tools=", ".join(tools))),
+            HumanMessage(content="\n\n".join(context_parts)),
+        ]
+
+        response = await llm.ainvoke(messages)
+        try:
+            plan = json.loads(response.content)
+        except json.JSONDecodeError:
+            plan = []
 
     if not isinstance(plan, list):
         plan = []

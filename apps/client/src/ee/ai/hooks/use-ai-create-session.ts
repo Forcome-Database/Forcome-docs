@@ -2,7 +2,11 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { notifications } from "@mantine/notifications";
 import { useTranslation } from "react-i18next";
 import { v7 as uuid7 } from "uuid";
-import type { AgentStepInfo } from "../types/agent.types";
+import type {
+  AgentAwaitInputData,
+  AgentResumeValue,
+  AgentStepInfo,
+} from "../types/agent.types";
 import { creatorCommit } from "../services/ai-service";
 import {
   runAgentAiCreate,
@@ -89,16 +93,32 @@ function resolveInsertMode(
 
 function createInteractiveMessage(
   phase: AiCreateAwaitInputPhase,
-  data: any,
+  data: AgentAwaitInputData,
 ): AiCreatorMessage {
-  return {
+  const baseMessage = {
     id: uuid7(),
     role: phase,
     content: "",
     timestamp: Date.now(),
-    questions: phase === "clarify" ? data.questions : undefined,
-    proposals: phase === "propose" ? data.proposals : undefined,
-    outline: phase === "outline" ? data.outline : undefined,
+  } satisfies Pick<AiCreatorMessage, "id" | "role" | "content" | "timestamp">;
+
+  if (phase === "clarify" && data.type === "clarify") {
+    return {
+      ...baseMessage,
+      questions: data.questions,
+    };
+  }
+
+  if (phase === "propose" && data.type === "propose") {
+    return {
+      ...baseMessage,
+      proposals: data.proposals,
+    };
+  }
+
+  return {
+    ...baseMessage,
+    outline: data.type === "outline" ? data.outline : undefined,
   };
 }
 
@@ -218,7 +238,7 @@ export function useAiCreateSession({
   }, [clearController, unlockEditor]);
 
   const addInteractiveMessage = useCallback(
-    (phase: AiCreateAwaitInputPhase, data: any) => {
+    (phase: AiCreateAwaitInputPhase, data: AgentAwaitInputData) => {
       removeLastEmptyAssistant();
       appendMessage(createInteractiveMessage(phase, data));
       clearController();
@@ -564,7 +584,7 @@ export function useAiCreateSession({
   );
 
   const resume = useCallback(
-    (resumeValue: Record<string, any>) => {
+    (resumeValue: AgentResumeValue) => {
       const currentState = stateRef.current;
       if (!threadIdRef.current) {
         return;

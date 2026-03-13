@@ -60,5 +60,44 @@
       "missing_artifacts": [],
       "missing_sections": ["findings", "Findings"]
     }
+  },
+  {
+    "name": "manual_missing_required_coverage_points",
+    "strategy": {
+      "objectives": ["backup the current configuration", "verify rollback steps"],
+      "requiredSections": ["preparation", "verification"]
+    },
+    "document_plan": {
+      "sections": [
+        {
+          "title": "Preparation",
+          "must_cover": ["backup the current configuration"]
+        },
+        {
+          "title": "Verification",
+          "must_cover": ["verify rollback steps"]
+        }
+      ]
+    },
+    "draft": "# Preparation\n\nRecord the current environment values before making the change.\n\n# Verification\n\nConfirm the new value appears in the UI after deployment.",
+    "expected": {
+      "needs_rewrite": true,
+      "missing_coverage": ["backup the current configuration", "verify rollback steps"]
+    }
+  },
+  {
+    "name": "generic_prose_regression_without_required_points",
+    "strategy": {
+      "objectives": ["include rollback steps", "document verification checks"]
+    },
+    "document_plan": {
+      "sections": []
+    },
+    "draft": "This document provides a general overview of the proposed solution and discusses several important considerations for implementation. The approach is flexible and should be adapted as appropriate for the environment. Stakeholders should review the details carefully and align on the next steps before rollout. The system is designed to support a broad range of use cases and can be extended in different ways over time. Teams should think about process, communication, planning, and operational readiness when deciding how to adopt the change. This document also highlights that best practices may evolve, and it is useful to keep the guidance high level until future requirements become clearer. Overall, the recommendation is to proceed thoughtfully, capture lessons learned, and refine execution as the implementation moves forward. Additional context may be included later once downstream teams have gathered more information and aligned on responsibilities.",
+    "expected": {
+      "needs_rewrite": true,
+      "missing_coverage": ["include rollback steps", "document verification checks"],
+      "issue_substrings": ["generic prose"]
+    }
   }
 ]

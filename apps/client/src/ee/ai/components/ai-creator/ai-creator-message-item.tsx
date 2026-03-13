@@ -11,7 +11,10 @@ import { pageEditorAtom, titleEditorAtom } from "@/features/editor/atoms/editor-
 import { aiCreatorSelectionRangeAtom } from "./ai-creator-atoms";
 import { notifications } from "@mantine/notifications";
 import { AiCreatorMessage } from "./ai-creator.types";
-import type { AgentStepInfo } from "@/ee/ai/types/agent.types";
+import type {
+  AgentResumeValue,
+  AgentStepInfo,
+} from "@/ee/ai/types/agent.types";
 import { Marked } from "marked";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
@@ -84,7 +87,7 @@ function renderEditorHtml(content: string): string {
 interface Props {
   message: AiCreatorMessage;
   isLast?: boolean;
-  onResume?: (value: Record<string, any>) => void;
+  onResume?: (value: AgentResumeValue) => void;
   showAgentSteps?: boolean;
   agentSteps?: AgentStepInfo[];
 }

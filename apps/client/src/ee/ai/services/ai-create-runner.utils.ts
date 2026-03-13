@@ -1,4 +1,7 @@
-import type { AgentSSEEvent } from "../types/agent.types";
+import type {
+  AgentAwaitInputData,
+  AgentSSEEvent,
+} from "../types/agent.types";
 import type { AiCreateAwaitInputPhase } from "../components/ai-creator/ai-create-session.types";
 
 export type AiCreateRunEvent =
@@ -8,7 +11,7 @@ export type AiCreateRunEvent =
   | { type: "step_done"; step: string; resultSummary?: string }
   | { type: "content_delta"; chunk: string }
   | { type: "content_cleared" }
-  | { type: "await_input"; phase: AiCreateAwaitInputPhase; data: any }
+  | { type: "await_input"; phase: AiCreateAwaitInputPhase; data: AgentAwaitInputData }
   | { type: "done"; finalContent?: string }
   | { type: "error"; message: string }
   | { type: "cancelled" };
@@ -19,6 +22,34 @@ export function toAwaitInputPhase(phase: string): AiCreateAwaitInputPhase | null
   }
 
   return null;
+}
+
+function isAgentAwaitInputData(
+  phase: AiCreateAwaitInputPhase,
+  data: unknown,
+): data is AgentAwaitInputData {
+  if (!data || typeof data !== "object") {
+    return false;
+  }
+
+  if (phase === "clarify") {
+    return (
+      (data as { type?: unknown }).type === "clarify" &&
+      Array.isArray((data as { questions?: unknown }).questions)
+    );
+  }
+
+  if (phase === "propose") {
+    return (
+      (data as { type?: unknown }).type === "propose" &&
+      Array.isArray((data as { proposals?: unknown }).proposals)
+    );
+  }
+
+  return (
+    (data as { type?: unknown }).type === "outline" &&
+    typeof (data as { outline?: unknown }).outline === "string"
+  );
 }
 
 export function normalizeAgentRunEvent(event: AgentSSEEvent): AiCreateRunEvent | null {
@@ -49,7 +80,7 @@ export function normalizeAgentRunEvent(event: AgentSSEEvent): AiCreateRunEvent |
       };
     case "await_input": {
       const normalizedPhase = toAwaitInputPhase(event.phase);
-      if (!normalizedPhase) {
+      if (!normalizedPhase || !isAgentAwaitInputData(normalizedPhase, event.data)) {
         return null;
       }
       return {

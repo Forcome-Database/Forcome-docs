@@ -6,7 +6,12 @@ The SSE endpoint reads from the queue in real-time.
 """
 import asyncio
 
+from pydantic import TypeAdapter
+
+from app.schemas.response import SSEEvent
+
 _event_queues: dict[str, asyncio.Queue] = {}
+_sse_event_adapter = TypeAdapter(SSEEvent)
 
 
 def create_queue(task_id: str) -> asyncio.Queue:
@@ -23,7 +28,8 @@ async def emit(task_id: str, event: dict):
     """Push an event to the queue for immediate SSE delivery."""
     q = _event_queues.get(task_id)
     if q:
-        await q.put(event)
+        validated = _sse_event_adapter.validate_python(event)
+        await q.put(validated.model_dump())
 
 
 async def emit_done(task_id: str):

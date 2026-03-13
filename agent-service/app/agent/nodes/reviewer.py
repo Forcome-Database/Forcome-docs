@@ -3,7 +3,10 @@ import json
 import re
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.agent.document_strategy import format_document_strategy
+from app.agent.document_strategy import (
+    format_document_strategy,
+    normalize_document_plan,
+)
 from app.agent.events import emit
 from app.agent.llm import get_chat_model
 from app.agent.quality_checks import evaluate_document_quality
@@ -70,7 +73,10 @@ async def reviewer_node(state: AgentState) -> dict:
 
     draft = _auto_fix(state.get("draft_content", ""))
     strategy = state.get("document_strategy") or {}
-    document_plan = state.get("document_plan") or {}
+    document_plan = normalize_document_plan(
+        state.get("document_plan") or {},
+        strategy,
+    )
     deterministic_review = evaluate_document_quality(draft, strategy, document_plan)
     used_artifacts = deterministic_review["used_artifacts"]
 

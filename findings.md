@@ -244,6 +244,100 @@
 4. Decide whether image generation should be gated by a stricter approval policy for non-user-provided visuals.
 5. If document quality stabilizes, then consider deeper block-level rendering beyond markdown-compatible structures.
 
+## 2026-03-13: Typed document-plan contract boundary
+
+- The next implementation boundary is now concrete rather than conceptual.
+- Server side:
+  - `apps/server/src/ee/ai/document-strategy.ts` exposes an explicit `AiDocumentStrategy` interface, but there is no corresponding first-class `document_plan` type.
+  - `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts` forwards `document_strategy` into `agent-service`, but there is still no typed request boundary for a plan shape because planning happens only inside Python.
+- Agent side:
+  - `agent-service/app/agent/nodes/planner.py` already defines the expected `document_plan` JSON shape in prompt text.
+  - `agent-service/app/agent/document_strategy.py` normalizes that output, but returns a loose `dict[str, Any]`.
+  - `agent-service/app/agent/state.py` and `agent-service/app/schemas/request.py` still model `document_plan` and `document_strategy` as plain dictionaries.
+  - `quality_checks.py`, `writer.py`, `outliner.py`, and `reviewer.py` all consume the same loose shape.
+- Practical implication:
+  - the repository already has a de facto contract for `document_plan`, but it is duplicated across prompt prose, normalization logic, and tests rather than represented as a reusable typed model.
+  - the next safe refactor is to extract that contract into shared Python types first, then add a matching server-side type/schema for parity and tests.
+
+## 2026-03-13: Typed document-plan contract implemented
+
+- The `document_plan` shape is now a first-class shared contract instead of a loose convention.
+- Python side:
+  - added `agent-service/app/schemas/document_contracts.py`
+  - explicitly defines:
+    - document artifacts: `table | mermaid | code_block | image | callout | details`
+    - evidence sources: `uploaded_files | page_context | page_read | knowledge_search | web_search | web_crawl | vision | generated_image`
+    - `AiDocumentStrategy`, `AiDocumentPlanSection`, and `AiDocumentPlan`
+  - `agent-service/app/agent/state.py` now types `document_strategy` and `document_plan` against that shared contract.
+  - `agent-service/app/schemas/request.py` now validates incoming `document_strategy` against the typed contract instead of a raw `dict`.
+  - `agent-service/app/agent/document_strategy.py` now returns a typed normalized plan and canonicalizes legacy evidence aliases such as:
+    - `search -> web_search`
+    - `crawl -> web_crawl`
+    - `knowledge_base -> knowledge_search`
+    - `image_generation -> generated_image`
+  - `agent-service/app/main.py` now initializes state with an explicit empty normalized plan rather than `{}`.
+  - `outliner.py`, `writer.py`, `reviewer.py`, and `quality_checks.py` now normalize the plan before consumption, so downstream logic runs against one stable shape.
+- Server side:
+  - added `apps/server/src/ee/ai/document-plan.ts`
+  - the Nest side now has explicit `AiDocumentPlan`, `AiDocumentPlanSection`, artifact, and evidence-source types plus a mirrored normalization helper.
+  - `apps/server/src/ee/ai/document-strategy.ts` now reuses the same artifact type for `requiredArtifacts` and `optionalArtifacts`, which removes another source of string drift.
+- Test impact:
+  - both Python and TypeScript now have regression tests that lock:
+    - strategy-default section expansion
+    - evidence alias normalization into canonical contract values
+- Practical effect:
+  - planner prompt, state, review/eval logic, and future gateway/server integration now have one concrete shape to build on instead of repeating JSON examples in prompt text.
+
+## 2026-03-13: Runtime interrupt and SSE contracts tightened
+
+- The next drift point after `document_plan` was the live agent protocol itself.
+- Before this pass:
+  - client `AgentSSEEvent` was effectively `type + any`
+  - client `resumeValue` was `Record<string, any>`
+  - server DTO `AgentResumeDto` accepted `Record<string, any>`
+  - Python request/response schemas did not explicitly model:
+    - clarify answer payloads
+    - proposal selection payloads
+    - outline confirm/regenerate payloads
+    - `cancelled` as a first-class SSE event
+- Implemented contract tightening:
+  - client `apps/client/src/ee/ai/types/agent.types.ts` now defines:
+    - typed await-input payloads for `clarify`, `propose`, and `outline`
+    - a typed `AgentResumeValue` union
+    - a discriminated `AgentSSEEvent` union instead of `[key: string]: any`
+  - client runtime normalization now validates both:
+    - `phase`
+    - payload shape compatibility with that phase
+  - malformed interrupt payloads are now dropped before reaching session state
+  - `use-ai-create-session` and the interactive bubble components now propagate typed resume values instead of free-form objects
+  - server `AgentResumeDto` now reuses an explicit `AgentResumeValue` type via `agent-gateway.types.ts`
+  - Python `AgentResumeRequest` now validates against explicit resume payload models
+  - Python `response.py` now models:
+    - typed await-input data unions
+    - `phase` as `clarify | propose | outline`
+    - `CancelledEvent`
+- Practical effect:
+  - the agent interrupt loop is no longer “typed inside one file but untyped on the wire”
+  - future changes to clarify/propose/outline bubbles or resume behavior now have a concrete protocol surface to update and test
+  - the client now has a defensive runtime check against mismatched SSE interrupt payloads rather than trusting JSON blindly
+
+## 2026-03-13: Python event queue now validates emitted SSE payloads
+
+- The last weak point in the protocol path was the emitter itself.
+- Before this pass:
+  - `agent-service/app/agent/events.py` accepted any dictionary and pushed it directly into the SSE queue
+  - even after adding typed request/response schemas, producer code could still enqueue undeclared or mismatched payloads
+- Implemented change:
+  - `events.py` now validates every emitted event through the shared `SSEEvent` response schema before queueing it
+  - validated events are normalized via `model_dump()` before they leave the agent runtime
+  - `AwaitInputEvent` now performs cross-field validation so `phase` must match `data.type`
+- Concrete bug caught and fixed during this pass:
+  - `phase="outline"` with `data.type="clarify"` still passed union validation before the new cross-field validator
+  - this is now rejected explicitly
+- Practical effect:
+  - the Python agent is no longer just “typed by convention”; invalid SSE payloads now fail at the producer boundary
+  - the client-side interrupt normalization and the agent-side event emission are now both defensive against protocol drift
+
 ## 2026-03-13: Deterministic review hardening
 
 - Reviewer quality control is no longer purely prompt-dependent.
@@ -323,3 +417,143 @@
     - a fenced mermaid block with `Client --> Server`
 - This completes the browser-level validation that structured AI output can be inserted into the live page.
 - The remaining unchecked Phase 6 item is only the separate git-history step; no commit was created in this session.
+
+## 2026-03-13: Playwright CLI validation of the agent interrupt flow
+
+- Browser validation has now been re-run with the `playwright` CLI skill instead of DrissionPage.
+- Playwright-specific environment finding:
+  - opening `http://localhost:5173` from the CLI session fell into `chrome-error://chromewebdata/` with `ERR_CONNECTION_REFUSED`
+  - inference from the live behavior: the headed Playwright browser session in this environment could not reuse the normal `localhost` path reliably, but the app was reachable through the machine LAN origin exposed by Vite
+  - using `http://192.168.17.26:5173`, then setting `authToken` on that domain, allowed the real app to load and stay authenticated
+- Live Playwright run result:
+  - opened the real page and AI panel
+  - submitted an agent prompt
+  - answered the clarify bubble
+  - selected and confirmed a proposal
+  - confirmed the outline
+  - waited for the final draft
+  - clicked the real chat-side insert action
+  - verified the inserted content in the editor and via `/api/pages/info` markdown fetch
+- Important root-cause finding for the currently failing `browser_ai_creator_agent_outline_e2e.py` script:
+  - the script uses document-wide button text scanning and requires `clarify`, `propose`, and `outline` buttons to disappear before it treats the run as successful
+  - this assumption is false for the real UI, because historical interrupt bubbles remain mounted in chat after resume
+  - as a result, once the flow has shown any interrupt, the script's final success condition is logically unreachable even when the agent run has already completed successfully
+- Additional product-quality finding from the same Playwright run:
+  - the agent flow is now functionally resumable end-to-end, but its final draft still does not obey strict prompt-shape constraints reliably enough for a very brittle golden-output assertion
+  - in the validated run, the final page contained:
+    - the requested marker heading
+    - a rendered markdown table
+    - a mermaid block
+    - successful editor insertion and persisted markdown
+  - but it did not preserve the exact requested `Approach | Note` two-column table nor the exact minimal `Client --> Server` flowchart; it expanded the content into a richer comparison table plus a sequence diagram
+- Practical implication:
+  - the next automated browser regression should separate flow assertions from exact-content assertions
+  - flow assertions can and should cover clarify/propose/outline/resume plus final insert/persist
+  - strict content-shape assertions should only be kept for scenarios where the model is already constrained tightly enough to make them stable
+- Recommended next browser-testing direction:
+  - stop investing further in DrissionPage-based agent coverage
+  - replace the unfinished agent browser regression with a Playwright-owned path, preferably asserting:
+    - interrupt stages are reachable and actionable
+    - outline approval resumes generation
+    - final draft becomes insertable
+    - insert persists to page markdown
+    - at least one required artifact such as a table or mermaid block survives end-to-end
+
+## 2026-03-13: Playwright-owned agent outline regression is now passing
+
+- `agent-service/tests/browser_ai_creator_agent_outline_e2e.py` has now been rewritten to drive the browser through Playwright CLI instead of DrissionPage.
+- The new script keeps the same real-environment assumptions:
+  - create a temporary page through the real server API
+  - sign a real `authToken` from local `.env`
+  - open the live Vite app in a real browser session
+  - submit a deep-mode prompt through the AI Creator panel
+  - walk the clarify -> propose -> outline -> final draft -> insert chain
+- The main design correction in the script:
+  - interrupt handling is now sequential and stateful
+  - the script no longer expects old interrupt controls to disappear from chat history
+  - success is based on `outline handled + final draft rendered + insert actions available`, which matches the actual UI behavior
+- The main browser-automation correction in the script:
+  - clarify answers must be injected with the native textarea `value` setter before dispatching `input/change`
+  - direct `textarea.value = ...` assignment was not enough for the live React-controlled bubble input
+- The new regression intentionally uses broader, product-stable assertions instead of brittle golden-output matching:
+  - persisted markdown must contain the generated marker heading
+  - persisted markdown must contain a markdown table
+  - persisted markdown must contain a mermaid block
+  - the live editor must reflect marker + table + mermaid-bearing content after insert
+- Local validation result on Friday, March 13, 2026:
+  - the Playwright CLI-driven agent outline E2E passed
+  - outline approval resumed generation successfully
+  - the chat-side insert action persisted the final draft to the page
+  - browser-side editor validation reported:
+    - `has_marker: true`
+    - `has_table: true`
+    - `has_mermaid: true`
+- This closes the previously unfinished browser coverage item for the agent outline approval flow.
+
+## 2026-03-13: Browser automation is now fully Playwright CLI-based
+
+- The browser regression path no longer depends on DrissionPage.
+- Added a shared helper:
+  - `agent-service/tests/playwright_ai_creator_utils.py`
+- That helper now owns the common real-browser workflow:
+  - create a temporary page through the real server API
+  - sign a real `authToken`
+  - open the live Vite app in a named Playwright CLI session
+  - inject creator preferences through `localStorage`
+  - wait for the editor to be ready
+  - open the AI Creator panel
+  - inject prompts safely and click the real send action
+  - insert the final draft into the editor
+  - verify persisted markdown and live editor artifacts
+- The remaining Playwright migration work is now complete for the checked-in browser scripts:
+  - `agent-service/tests/browser_ai_creator_smoke.py`
+  - `agent-service/tests/browser_ai_creator_insert_e2e.py`
+  - `agent-service/tests/browser_ai_creator_agent_outline_e2e.py`
+- Important Windows-specific implementation finding:
+  - large markdown prompts cannot be passed directly inside `run-code` arguments when the Playwright CLI is launched through `npx.cmd`
+  - characters such as table pipes and mermaid fences can be misinterpreted by the Windows command path before the browser ever sees them
+  - the stable fix is to base64-encode the prompt in Python and decode it inside the browser before dispatching `input/change`
+- Additional Windows-specific implementation finding:
+  - `json.dumps(..., ensure_ascii=False)` can fail on the local console with `UnicodeEncodeError` under the default `gbk` code page
+  - the browser scripts now print ASCII-safe JSON for CLI stability; this does not affect test logic
+- Updated local validation on Friday, March 13, 2026:
+  - `python agent-service/tests/browser_ai_creator_smoke.py` passed
+  - `python agent-service/tests/browser_ai_creator_insert_e2e.py` passed
+  - `python agent-service/tests/browser_ai_creator_agent_outline_e2e.py` passed
+- The agent outline regression now uses more product-stable assertions than the first DrissionPage draft:
+  - it still requires a successful clarify/propose/outline/insert chain
+  - it still checks persisted markdown and editor artifacts end-to-end
+  - but it no longer assumes the model will always preserve one exact golden-output table shape or one exact minimal mermaid body, which had already proven unstable in live runs
+
+## 2026-03-13: Quality eval coverage now includes user-requirement coverage and generic-prose regressions
+
+- Deterministic review is no longer limited to artifact and heading presence.
+- `agent-service/app/agent/quality_checks.py` now also checks:
+  - missing coverage points derived from strategy `objectives`
+  - missing coverage points derived from document-plan section `must_cover` requirements
+  - long generic-prose drafts that still miss required coverage and provide no meaningful structure or artifact support
+- This makes the repository-level evals better aligned with the actual product goal:
+  - not just “did the draft include a table?”
+  - but also “did the draft actually cover the requested content points?”
+- Expanded fixture-backed eval cases now cover:
+  - missing required coverage points in an operational/manual-style draft
+  - generic-prose regression where the draft is long and plausible-sounding but still misses key required points
+- Updated focused tests now pass locally on Friday, March 13, 2026:
+  - `python -m pytest agent-service/tests/test_document_strategy.py agent-service/tests/test_quality_evals.py`
+  - `python -m py_compile agent-service/app/agent/quality_checks.py agent-service/tests/test_document_strategy.py agent-service/tests/test_quality_evals.py`
+- Practical impact:
+  - the reviewer precheck can now reject drafts that look polished but fail user-intent coverage
+  - eval fixtures can now catch regressions where the model drifts back into generic documentation prose without covering explicit must-have requirements
+
+## 2026-03-13: Delivery readiness
+
+- The original redesign scope is now in deliverable state.
+- Final local delivery gates now cover:
+  - typed document-plan and interrupt/resume contracts across client, server, and agent-service
+  - deterministic quality gates plus reusable eval fixtures
+  - Playwright CLI-based smoke, insert, and agent outline browser regressions
+  - a final re-run of the Playwright agent outline flow after the latest runtime contract hardening changes
+- Remaining work is hardening backlog rather than a blocker for handoff:
+  - CI-hosted browser automation
+  - replacing `updatedAt` with a dedicated revision counter
+  - richer retry/manual-commit UX for conflict recovery

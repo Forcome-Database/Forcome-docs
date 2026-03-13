@@ -35,6 +35,45 @@ test("normalizeAgentRunEvent drops unsupported await_input phases", () => {
   assert.equal(event, null);
 });
 
+test("normalizeAgentRunEvent drops malformed interrupt payloads", () => {
+  const event = normalizeAgentRunEvent({
+    type: "await_input",
+    phase: "propose",
+    data: {
+      type: "clarify",
+      questions: ["wrong payload"],
+    },
+  });
+
+  assert.equal(event, null);
+});
+
+test("normalizeAgentRunEvent preserves typed propose interrupt payloads", () => {
+  const event = normalizeAgentRunEvent({
+    type: "await_input",
+    phase: "propose",
+    data: {
+      type: "propose",
+      proposals: [
+        { title: "Option A", description: "Lean structure" },
+        { title: "Option B", description: "Evidence first" },
+      ],
+    },
+  });
+
+  assert.deepEqual(event, {
+    type: "await_input",
+    phase: "propose",
+    data: {
+      type: "propose",
+      proposals: [
+        { title: "Option A", description: "Lean structure" },
+        { title: "Option B", description: "Evidence first" },
+      ],
+    },
+  });
+});
+
 test("normalizeAgentRunEvent preserves session and completion metadata", () => {
   assert.deepEqual(
     normalizeAgentRunEvent({

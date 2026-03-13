@@ -39,3 +39,15 @@ def test_document_quality_eval_cases(case):
             section.lower() == missing.lower()
             for missing in result["missing_sections"]
         )
+
+    for coverage_item in expected.get("missing_coverage", []):
+        assert any(
+            coverage_item.lower() == missing.lower()
+            for missing in result["missing_coverage"]
+        )
+
+    for issue_substring in expected.get("issue_substrings", []):
+        assert any(
+            issue_substring.lower() in issue.lower()
+            for issue in result["issues"]
+        )

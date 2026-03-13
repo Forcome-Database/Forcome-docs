@@ -1,5 +1,7 @@
 from typing import TypedDict, Literal
 
+from app.schemas.document_contracts import AiDocumentPlan, AiDocumentStrategy
+
 class PlanStep(TypedDict):
     step_id: int
     action: str           # "search" | "parse" | "crawl" | "generate" | "image" | "annotate" | "review"
@@ -17,7 +19,7 @@ class AgentState(TypedDict):
     workspace_id: str
     system_prompt: str | None
     template_prompt: str | None
-    document_strategy: dict
+    document_strategy: AiDocumentStrategy
 
     # Document context
     page_id: str | None
@@ -46,7 +48,7 @@ class AgentState(TypedDict):
     selected_proposal: dict
     outline: str
     confirmed_outline: str
-    document_plan: dict
+    document_plan: AiDocumentPlan
 
     # Control
     phase: str                     # "explorer" | "clarifier" | "proposer" | "outliner" | "writer" | "reviewer"

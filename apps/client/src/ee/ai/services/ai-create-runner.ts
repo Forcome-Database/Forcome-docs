@@ -6,6 +6,7 @@ import {
   resumeAgent,
   stopAgentTask,
 } from "./agent-service";
+import type { AgentResumeValue } from "../types/agent.types";
 import {
   type AiCreateRunEvent,
   normalizeAgentRunEvent,
@@ -67,7 +68,7 @@ export function runAgentAiCreate(
 
 export function resumeAgentAiCreate(
   threadId: string,
-  resumeValue: Record<string, any>,
+  resumeValue: AgentResumeValue,
   onEvent: (event: AiCreateRunEvent) => void,
 ): AbortController {
   return resumeAgent(

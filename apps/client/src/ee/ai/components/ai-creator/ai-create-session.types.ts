@@ -1,4 +1,5 @@
 import type { SelectionSnapshot } from "./ai-creator.types";
+import type { AgentAwaitInputData } from "../../types/agent.types";
 
 export type AiCreateSessionMode = "standard" | "agent";
 export type AiCreateSessionStatus =
@@ -13,7 +14,7 @@ export type AiCreateAwaitInputPhase = "clarify" | "propose" | "outline";
 
 export interface AiCreateAwaitInputState {
   phase: AiCreateAwaitInputPhase;
-  data: unknown;
+  data: AgentAwaitInputData;
 }
 
 export interface AiCreateSessionState {
@@ -45,7 +46,7 @@ export type AiCreateSessionAction =
   | { type: "content_delta"; chunk: string }
   | { type: "content_cleared" }
   | { type: "buffer_updated"; buffer: string }
-  | { type: "await_input"; phase: AiCreateAwaitInputPhase; data: unknown }
+  | { type: "await_input"; phase: AiCreateAwaitInputPhase; data: AgentAwaitInputData }
   | { type: "done" }
   | { type: "error"; message: string }
   | { type: "cancelled" };

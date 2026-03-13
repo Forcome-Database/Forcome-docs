@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button, Group, Textarea } from '@mantine/core';
 import { IconCheck, IconEdit, IconRefresh, IconX } from '@tabler/icons-react';
 import { AiCreatorMessage } from './ai-creator.types';
+import type { AgentResumeValue } from '@/ee/ai/types/agent.types';
 import classes from './ai-creator.module.css';
 
 // Create an ISOLATED marked instance for outline rendering
@@ -18,7 +19,7 @@ function renderOutlineHtml(md: string): string {
 
 interface Props {
   message: AiCreatorMessage;
-  onResume: (value: Record<string, any>) => void;
+  onResume: (value: AgentResumeValue) => void;
 }
 
 export function AiCreatorOutlineBubble({ message, onResume }: Props) {

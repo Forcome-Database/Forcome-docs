@@ -10,7 +10,10 @@ import {
 import { useAtom, useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import type { AgentStepInfo } from "@/ee/ai/types/agent.types";
+import type {
+  AgentResumeValue,
+  AgentStepInfo,
+} from "@/ee/ai/types/agent.types";
 import { agentModeAtom, aiCreatorTemplateAtom } from "./ai-creator-atoms";
 import { AiCreatorMessageItem } from "./ai-creator-message-item";
 import type { AiCreatorMessage } from "./ai-creator.types";
@@ -85,7 +88,7 @@ interface AiCreatorMessagesProps {
   messages: AiCreatorMessage[];
   isStreaming: boolean;
   agentSteps: AgentStepInfo[];
-  onResume: (value: Record<string, any>) => void;
+  onResume: (value: AgentResumeValue) => void;
 }
 
 export function AiCreatorMessages({

@@ -4,7 +4,10 @@ import re
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agent.cancellation import raise_if_cancelled
-from app.agent.document_strategy import format_document_strategy
+from app.agent.document_strategy import (
+    format_document_strategy,
+    normalize_document_plan,
+)
 from app.agent.events import emit
 from app.agent.llm import get_chat_model
 from app.agent.state import AgentState
@@ -65,7 +68,10 @@ async def writer_node(state: AgentState) -> dict:
 
     image_instructions = _build_image_instructions(state.get("generated_images", []))
     strategy = state.get("document_strategy") or {}
-    document_plan = state.get("document_plan") or {}
+    document_plan = normalize_document_plan(
+        state.get("document_plan") or {},
+        strategy,
+    )
     system_prompt = WRITER_SYSTEM_PROMPT.format(image_instructions=image_instructions)
 
     user_parts = [

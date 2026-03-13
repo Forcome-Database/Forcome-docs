@@ -1,4 +1,4 @@
-import { AgentSSEEvent } from '../types/agent.types';
+import type { AgentResumeValue, AgentSSEEvent } from '../types/agent.types';
 
 export interface AgentGenerateParams {
   files: File[];
@@ -107,7 +107,7 @@ export function agentGenerate(
 
 export function resumeAgent(
   threadId: string,
-  resumeValue: Record<string, any>,
+  resumeValue: AgentResumeValue,
   onEvent: (event: AgentSSEEvent) => void,
   onError: (error: string) => void,
   onComplete: () => void,

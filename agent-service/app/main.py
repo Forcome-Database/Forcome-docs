@@ -18,6 +18,7 @@ from app.agent.cancellation import (
     register_task,
     unregister_task,
 )
+from app.agent.document_strategy import empty_document_plan
 from app.agent.events import create_queue, emit, emit_done, remove_queue
 from app.agent.graph import agent_graph_builder
 from app.agent.state import AgentState
@@ -204,7 +205,7 @@ async def run_agent(request: AgentRunRequest):
         "selected_proposal": {},
         "outline": "",
         "confirmed_outline": "",
-        "document_plan": {},
+        "document_plan": empty_document_plan(request.document_strategy),
         "phase": "explorer",
         "_task_id": task_id,
         "_thread_id": thread_id,

@@ -1,10 +1,12 @@
+import type { AiDocumentArtifact } from './document-plan';
+
 export interface AiDocumentStrategy {
   templateKey: string;
   docType: string;
   audience: string;
   objectives: string[];
-  requiredArtifacts: string[];
-  optionalArtifacts: string[];
+  requiredArtifacts: AiDocumentArtifact[];
+  optionalArtifacts: AiDocumentArtifact[];
   requiredSections: string[];
   reviewChecks: string[];
   editorSyntaxHints: string[];

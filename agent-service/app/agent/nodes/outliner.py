@@ -3,7 +3,10 @@ import json
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import interrupt
 
-from app.agent.document_strategy import format_document_strategy
+from app.agent.document_strategy import (
+    format_document_strategy,
+    normalize_document_plan,
+)
 from app.agent.events import emit
 from app.agent.llm import get_chat_model
 from app.agent.state import AgentState
@@ -28,7 +31,10 @@ async def outliner_node(state: AgentState) -> dict:
     await emit(tid, {"type": "step_start", "step": "outline", "description": "正在生成文档大纲..."})
 
     strategy = state.get("document_strategy") or {}
-    document_plan = state.get("document_plan") or {}
+    document_plan = normalize_document_plan(
+        state.get("document_plan") or {},
+        strategy,
+    )
 
     context_parts = [
         f"用户请求: {state['user_message']}",

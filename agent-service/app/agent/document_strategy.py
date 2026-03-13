@@ -3,6 +3,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.schemas.document_contracts import (
+    DOCUMENT_ARTIFACTS,
+    DOCUMENT_EVIDENCE_SOURCES,
+    AiDocumentPlan,
+    AiDocumentPlanSection,
+    AiDocumentStrategy,
+    DocumentArtifact,
+    DocumentEvidenceSource,
+)
+
 
 DEFAULT_EDITOR_HINTS = [
     "Use Markdown tables for comparisons, parameters, matrices, and checklists.",
@@ -13,8 +23,47 @@ DEFAULT_EDITOR_HINTS = [
     "Use Markdown images ![alt](url) when source or generated visuals materially help the reader.",
 ]
 
+EVIDENCE_SOURCE_ALIASES: dict[str, DocumentEvidenceSource] = {
+    "search": "web_search",
+    "crawl": "web_crawl",
+    "knowledge_base": "knowledge_search",
+    "image": "generated_image",
+    "image_generation": "generated_image",
+}
 
-def format_document_strategy(strategy: dict[str, Any] | None) -> str:
+
+def _normalize_artifacts(raw_values: Any) -> list[DocumentArtifact]:
+    if not isinstance(raw_values, list):
+        return []
+
+    normalized: list[DocumentArtifact] = []
+    for value in raw_values:
+        candidate = str(value).strip()
+        if candidate in DOCUMENT_ARTIFACTS and candidate not in normalized:
+            normalized.append(candidate)  # type: ignore[arg-type]
+    return normalized
+
+
+def _normalize_evidence_sources(raw_values: Any) -> list[DocumentEvidenceSource]:
+    if not isinstance(raw_values, list):
+        return []
+
+    normalized: list[DocumentEvidenceSource] = []
+    for value in raw_values:
+        candidate = EVIDENCE_SOURCE_ALIASES.get(str(value).strip(), str(value).strip())
+        if (
+            candidate in DOCUMENT_EVIDENCE_SOURCES
+            and candidate not in normalized
+        ):
+            normalized.append(candidate)  # type: ignore[arg-type]
+    return normalized
+
+
+def empty_document_plan(strategy: AiDocumentStrategy | None = None) -> AiDocumentPlan:
+    return normalize_document_plan({}, strategy)
+
+
+def format_document_strategy(strategy: AiDocumentStrategy | dict[str, Any] | None) -> str:
     strategy = strategy or {}
     lines: list[str] = []
 
@@ -45,7 +94,7 @@ def format_document_strategy(strategy: dict[str, Any] | None) -> str:
     return "\n".join(lines).strip()
 
 
-def derive_visual_requirements(state: dict[str, Any]) -> list[str]:
+def derive_visual_requirements(state: dict[str, Any]) -> list[DocumentArtifact]:
     text = " ".join(
         filter(
             None,
@@ -65,13 +114,16 @@ def derive_visual_requirements(state: dict[str, Any]) -> list[str]:
         hints.append("image")
     if any(token in text for token in ["代码", "script", "命令", "sql", "api", "curl", "yaml", "json"]):
         hints.append("code_block")
-    return sorted(set(hints))
+    return [artifact for artifact in DOCUMENT_ARTIFACTS if artifact in hints]
 
 
-def normalize_document_plan(raw: Any, strategy: dict[str, Any] | None = None) -> dict[str, Any]:
+def normalize_document_plan(
+    raw: Any,
+    strategy: AiDocumentStrategy | dict[str, Any] | None = None,
+) -> AiDocumentPlan:
     strategy = strategy or {}
     required_sections = strategy.get("requiredSections") or []
-    required_artifacts = strategy.get("requiredArtifacts") or []
+    required_artifacts = _normalize_artifacts(strategy.get("requiredArtifacts") or [])
 
     if not isinstance(raw, dict):
         raw = {}
@@ -89,7 +141,7 @@ def normalize_document_plan(raw: Any, strategy: dict[str, Any] | None = None) ->
             for title in required_sections
         ]
 
-    normalized_sections = []
+    normalized_sections: list[AiDocumentPlanSection] = []
     for index, section in enumerate(sections, start=1):
         if not isinstance(section, dict):
             continue
@@ -98,15 +150,17 @@ def normalize_document_plan(raw: Any, strategy: dict[str, Any] | None = None) ->
                 "id": section.get("id") or f"section-{index}",
                 "title": str(section.get("title") or f"Section {index}"),
                 "goal": str(section.get("goal") or section.get("title") or f"Section {index}"),
-                "artifacts": list(dict.fromkeys(section.get("artifacts") or [])),
+                "artifacts": _normalize_artifacts(section.get("artifacts") or []),
                 "must_cover": list(dict.fromkeys(section.get("must_cover") or [])),
-                "evidence": list(dict.fromkeys(section.get("evidence") or [])),
+                "evidence": _normalize_evidence_sources(section.get("evidence") or []),
             }
         )
 
     return {
         "doc_type": str(raw.get("doc_type") or strategy.get("docType") or "general-document"),
         "audience": str(raw.get("audience") or strategy.get("audience") or ""),
-        "required_artifacts": list(dict.fromkeys(raw.get("required_artifacts") or required_artifacts)),
+        "required_artifacts": _normalize_artifacts(
+            raw.get("required_artifacts") or required_artifacts
+        ),
         "sections": normalized_sections,
     }

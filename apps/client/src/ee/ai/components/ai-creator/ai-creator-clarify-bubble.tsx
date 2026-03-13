@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { Button, Textarea, Text, Stack } from '@mantine/core';
 import { IconSend } from '@tabler/icons-react';
 import { AiCreatorMessage } from './ai-creator.types';
+import type { AgentResumeValue } from '@/ee/ai/types/agent.types';
 import classes from './ai-creator.module.css';
 
 interface Props {
   message: AiCreatorMessage;
-  onResume: (value: Record<string, any>) => void;
+  onResume: (value: AgentResumeValue) => void;
 }
 
 export function AiCreatorClarifyBubble({ message, onResume }: Props) {

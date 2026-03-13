@@ -27,7 +27,7 @@ Return only a JSON object with this shape:
       "goal": "Why this section exists",
       "artifacts": ["table"],
       "must_cover": ["point 1", "point 2"],
-      "evidence": ["uploaded_files", "page_context", "web_search", "knowledge_base"]
+      "evidence": ["uploaded_files", "page_context", "page_read", "knowledge_search", "web_search", "web_crawl", "vision", "generated_image"]
     }
   ]
 }
