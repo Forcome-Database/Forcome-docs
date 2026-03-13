@@ -337,8 +337,22 @@
   - `E:\test\Docmost\findings.md` (updated)
   - `E:\test\Docmost\progress.md` (updated)
 
+### 2026-03-13: Browser Smoke Automation
+- **Status:** complete
+- **Started:** 2026-03-13 03:00 Asia/Shanghai
+- Actions taken:
+  - Confirmed there is no installed Playwright dependency in the repo, so switched to the available DrissionPage browser automation skill.
+  - Built a reusable browser smoke script that creates a real temporary page, signs a real auth token, opens the Vite client, toggles AI Creator agent mode, opens the AI panel, and submits a prompt through the real UI.
+  - Stabilized the browser script by locating the AI Creator trigger relative to the visible `分享` button and by using verified panel/runtime markers instead of fixed viewport assumptions.
+  - Validated the real browser flow reaches live AI execution and returns visible runtime state such as `AI 正在写作...`.
+- Files created/modified:
+  - `E:\test\Docmost\agent-service\tests\browser_ai_creator_smoke.py` (created)
+  - `E:\test\Docmost\findings.md` (updated)
+  - `E:\test\Docmost\progress.md` (updated)
+
 ## Additional Eval/Test Results
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
 | Agent quality evals | `python -m pytest agent-service/tests/test_document_strategy.py agent-service/tests/test_quality_evals.py` | Strategy tests + fixture-backed evals pass | 9 tests passed | Pass |
 | Agent compile sweep | `python -m compileall agent-service/app agent-service/tests` | App + tests compile cleanly | Compile succeeded | Pass |
+| Browser smoke | `python agent-service/tests/browser_ai_creator_smoke.py` | Real browser opens AI Creator and reaches live runtime response state | Passed with `AI 正在写作...` marker on a temporary page | Pass |

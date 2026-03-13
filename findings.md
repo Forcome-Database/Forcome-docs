@@ -268,6 +268,22 @@
   - a report draft that uses a table but misses a required findings section
 - This is not yet a full model-based eval system, but it turns the documented quality bar into repeatable repository checks and gives a clean place to keep growing the dataset.
 
+## 2026-03-13: Browser smoke automation added
+
+- Added a reusable DrissionPage-based browser smoke script:
+  - `agent-service/tests/browser_ai_creator_smoke.py`
+- The script now:
+  - creates a temporary page through the real server API
+  - signs a real `authToken` using local `.env` settings
+  - opens the Vite client in a real Chromium session
+  - enables `aiAgentMode=true` and `aiAutoInsert=false`
+  - opens the AI Creator panel from the real page header
+  - submits a prompt through the real UI
+  - waits for real runtime response markers such as `AI 正在写作` or `需要进一步了解`
+- The browser selector was hardened after a flaky rerun:
+  - the AI Creator trigger is now located relative to the visible `分享` button instead of assuming a fixed far-right viewport position
+- Local runtime validation confirms the browser path reaches live AI execution rather than failing at auth, panel open, or submit.
+
 ## Updated Source Links
 
 - OpenAI prompt guidance: https://developers.openai.com/api/docs/guides/prompt-guidance/
