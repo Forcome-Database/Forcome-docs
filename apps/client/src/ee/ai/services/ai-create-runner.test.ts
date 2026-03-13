@@ -97,3 +97,15 @@ test("normalizeAgentRunEvent preserves session and completion metadata", () => {
     },
   );
 });
+
+test("normalizeAgentRunEvent preserves blocked payloads", () => {
+  const event = normalizeAgentRunEvent({
+    type: "blocked",
+    message: "fetch failed",
+  });
+
+  assert.deepEqual(event, {
+    type: "blocked",
+    message: "fetch failed",
+  });
+});

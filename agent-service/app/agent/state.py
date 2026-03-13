@@ -56,9 +56,10 @@ class AgentState(TypedDict):
     outline: str
     confirmed_outline: str
     document_plan: AiDocumentPlan
+    blocked_reason: str
 
     # Control
-    phase: str                     # "router" | "explorer" | "clarifier" | "proposer" | "outliner" | "writer" | "reviewer"
+    phase: str                     # "router" | "evidence_acquirer" | "evidence_gate" | "blocked" | "explorer" | "clarifier" | "proposer" | "outliner" | "writer" | "reviewer"
     needs_revision: bool
     revision_feedback: str
     iteration_count: int

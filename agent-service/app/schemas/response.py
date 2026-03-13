@@ -50,6 +50,10 @@ class ErrorEvent(BaseModel):
     type: Literal["error"] = "error"
     message: str
 
+class BlockedEvent(BaseModel):
+    type: Literal["blocked"] = "blocked"
+    message: str
+
 class DoneEvent(BaseModel):
     type: Literal["done"] = "done"
     final_content: str
@@ -76,4 +80,4 @@ class SessionEvent(BaseModel):
 class CancelledEvent(BaseModel):
     type: Literal["cancelled"] = "cancelled"
 
-SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ImageEvent | ToolCallEvent | ErrorEvent | DoneEvent | AwaitInputEvent | SessionEvent | CancelledEvent
+SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ImageEvent | ToolCallEvent | ErrorEvent | BlockedEvent | DoneEvent | AwaitInputEvent | SessionEvent | CancelledEvent

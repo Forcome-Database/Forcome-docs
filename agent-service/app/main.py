@@ -125,6 +125,8 @@ async def _run_graph_with_stream(
                 )
                 break
         else:
+            if result.get("phase") == "blocked":
+                return
             final_content = result.get("final_content", result.get("draft_content", ""))
             await emit(
                 thread_id,
@@ -209,6 +211,7 @@ def build_initial_state(
         "outline": "",
         "confirmed_outline": "",
         "document_plan": empty_document_plan(request.document_strategy),
+        "blocked_reason": "",
         "phase": "router",
         "_task_id": task_id,
         "_thread_id": thread_id,

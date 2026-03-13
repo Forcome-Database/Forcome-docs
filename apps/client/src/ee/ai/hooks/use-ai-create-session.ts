@@ -432,6 +432,9 @@ export function useAiCreateSession({
         case "error":
           handleRunError(event.message);
           return;
+        case "blocked":
+          handleRunError(event.message);
+          return;
         case "done":
           if (!awaitInputRef.current) {
             void finalizeRun(event.finalContent);

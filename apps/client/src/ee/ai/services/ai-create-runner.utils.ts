@@ -14,6 +14,7 @@ export type AiCreateRunEvent =
   | { type: "await_input"; phase: AiCreateAwaitInputPhase; data: AgentAwaitInputData }
   | { type: "done"; finalContent?: string }
   | { type: "error"; message: string }
+  | { type: "blocked"; message: string }
   | { type: "cancelled" };
 
 export function toAwaitInputPhase(phase: string): AiCreateAwaitInputPhase | null {
@@ -97,6 +98,11 @@ export function normalizeAgentRunEvent(event: AgentSSEEvent): AiCreateRunEvent |
     case "error":
       return {
         type: "error",
+        message: event.message,
+      };
+    case "blocked":
+      return {
+        type: "blocked",
         message: event.message,
       };
     case "done":

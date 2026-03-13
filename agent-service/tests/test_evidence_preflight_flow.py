@@ -4,6 +4,7 @@ import json
 import pytest
 
 from app.agent.nodes.evidence_acquirer import evidence_acquirer_node
+from app.agent.nodes.evidence_gate import evidence_gate_node
 from app.main import build_initial_state
 from app.schemas.request import AgentRunRequest
 
@@ -216,3 +217,58 @@ async def test_uploaded_image_is_understood_before_generation(monkeypatch):
         }
     ]
     assert result["evidence_items"][0]["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_required_evidence_failure_blocks_before_write():
+    result = await evidence_gate_node(
+        {
+            "evidence_items": [
+                {
+                    "kind": "reference_url",
+                    "source": "https://example.com/spec",
+                    "required": True,
+                    "status": "success",
+                    "missing": False,
+                    "error": None,
+                },
+                {
+                    "kind": "web_search",
+                    "source": "web_search",
+                    "required": True,
+                    "status": "failed",
+                    "missing": False,
+                    "error": "fetch failed",
+                },
+            ],
+            "_task_id": "task-1",
+            "_thread_id": "thread-1",
+        }
+    )
+
+    assert result["phase"] == "blocked"
+    assert "web_search" in result["blocked_reason"]
+    assert "fetch failed" in result["blocked_reason"]
+
+
+@pytest.mark.asyncio
+async def test_required_evidence_timeout_blocks_before_write():
+    result = await evidence_gate_node(
+        {
+            "evidence_items": [
+                {
+                    "kind": "reference_url",
+                    "source": "https://example.com/spec",
+                    "required": True,
+                    "status": "failed",
+                    "missing": False,
+                    "error": "timed out while reading the URL",
+                }
+            ],
+            "_task_id": "task-1",
+            "_thread_id": "thread-1",
+        }
+    )
+
+    assert result["phase"] == "blocked"
+    assert "timed out" in result["blocked_reason"]

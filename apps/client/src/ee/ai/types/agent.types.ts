@@ -69,6 +69,10 @@ export type AgentSSEEvent =
       message: string;
     }
   | {
+      type: 'blocked';
+      message: string;
+    }
+  | {
       type: 'done';
       final_content: string;
       insert_mode?: string;

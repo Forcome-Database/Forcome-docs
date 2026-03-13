@@ -8,6 +8,7 @@ from langgraph.graph import StateGraph, END
 
 from app.agent.state import AgentState
 from app.agent.nodes.evidence_acquirer import evidence_acquirer_node
+from app.agent.nodes.evidence_gate import evidence_gate_node
 from app.agent.nodes.explorer import explorer_node
 from app.agent.nodes.clarifier import clarifier_node
 from app.agent.nodes.proposer import proposer_node
@@ -36,6 +37,12 @@ def route_after_explorer(state: AgentState) -> str:
     return "clarifier"
 
 
+def route_after_evidence_gate(state: AgentState) -> str:
+    if state.get("phase") == "blocked":
+        return "blocked"
+    return route_after_router(state)
+
+
 def should_regenerate_outline(state: AgentState) -> str:
     """After Outliner: if user requested regeneration, loop back."""
     if state.get("phase") == "outliner" and not state.get("confirmed_outline"):
@@ -52,6 +59,7 @@ def build_agent_graph():
 
     graph.add_node("router", cancellable(intent_router_node))
     graph.add_node("evidence_acquirer", cancellable(evidence_acquirer_node))
+    graph.add_node("evidence_gate", cancellable(evidence_gate_node))
     graph.add_node("explorer", cancellable(explorer_node))
     graph.add_node("clarifier", cancellable(clarifier_node))
     graph.add_node("proposer", cancellable(proposer_node))
@@ -63,7 +71,9 @@ def build_agent_graph():
     graph.set_entry_point("router")
 
     graph.add_edge("router", "evidence_acquirer")
-    graph.add_conditional_edges("evidence_acquirer", route_after_router, {
+    graph.add_edge("evidence_acquirer", "evidence_gate")
+    graph.add_conditional_edges("evidence_gate", route_after_evidence_gate, {
+        "blocked": END,
         "writer": "writer",
         "explorer": "explorer",
     })
