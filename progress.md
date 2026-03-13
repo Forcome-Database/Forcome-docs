@@ -571,3 +571,87 @@
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
 | Final Playwright delivery gate | `python agent-service/tests/browser_ai_creator_agent_outline_e2e.py` | Real agent interrupt flow still passes after contract hardening | Passed with persisted marker, table, and mermaid artifacts | Pass |
+
+### 2026-03-13: Follow-up workflow diagnosis and best-practice comparison
+- **Status:** complete
+- **Started:** 2026-03-13 16:30 Asia/Shanghai
+- Actions taken:
+  - Re-read the current AI Creator client/session/server/agent files specifically through the lens of the three reported product pain points.
+  - Confirmed that selection context currently influences prompt wording and final insert mode, but does not change agent workflow routing.
+  - Confirmed that the agent graph still enforces the global explorer -> clarify -> propose -> plan -> outline -> write path for deep mode regardless of whether the task is local edit or full creation.
+  - Confirmed the standard-mode file parser remains lightweight text extraction, while agent-mode file parsing is richer but still not treated as a source-preserving transformation contract.
+  - Collected current external product references and official guidance showing that mature AI editors separate inline edit, document rewrite, and agent/task flows.
+- Files created/modified:
+  - `E:\test\Docmost\task_plan.md` (updated)
+  - `E:\test\Docmost\findings.md` (updated)
+  - `E:\test\Docmost\progress.md` (updated)
+
+### 2026-03-13: Simplified Optimization Planning
+- **Status:** complete
+- **Started:** 2026-03-13 16:40 Asia/Shanghai
+- Actions taken:
+  - Converted the earlier diagnosis into a lower-complexity implementation plan rather than a broad redesign.
+  - Reduced the optimization scope to five concrete phases: routing, local edit shortcut, source-first transform, lightweight quality guards, and regression validation.
+  - Defined acceptance criteria around user fit, source preservation, and avoiding over-compression.
+- Files created/modified:
+  - `E:\test\Docmost\task_plan.md` (updated)
+  - `E:\test\Docmost\progress.md` (updated)
+
+### 2026-03-13: User-Instruction-Priority Constraint Added
+- **Status:** complete
+- **Started:** 2026-03-13 16:45 Asia/Shanghai
+- Actions taken:
+  - Added a top-level rule to the optimization plan that explicit user instructions override default routing heuristics and default quality/protection rules.
+  - Updated the plan acceptance criteria so successful behavior now includes respecting user-requested compression, preservation, and scope constraints.
+  - Recorded the same constraint in findings so later implementation work treats it as a product requirement rather than an implementation detail.
+- Files created/modified:
+  - `E:\test\Docmost\task_plan.md` (updated)
+  - `E:\test\Docmost\findings.md` (updated)
+  - `E:\test\Docmost\progress.md` (updated)
+
+### 2026-03-13: Intent Routing and Local-Edit Development
+- **Status:** complete
+- **Started:** 2026-03-13 16:50 Asia/Shanghai
+- Actions taken:
+  - Added a client-side intent resolver that classifies requests into `selection_edit`, `document_transform`, and `document_create`.
+  - Added request metadata for route, scope, source policy, length policy, and user-instruction priority to both standard and agent submission paths.
+  - Updated standard creator mode to include current page content as source context for document-transform requests.
+  - Updated Nest strategy resolution so prompt contracts now include routing and user-priority overrides.
+  - Extended agent request/state models with routing metadata.
+  - Added an agent graph router so `selection_edit` bypasses `explorer/clarifier/proposer/planner/outliner` and `document_transform` bypasses `clarifier/proposer/planner/outliner`.
+  - Added deterministic source-first planning in explorer for document transforms.
+  - Added writer/reviewer intent-aware handling plus a basic over-compression guard for source-preserving transforms.
+  - Added focused client, Nest, and Python regression coverage for the new routing and strategy behavior.
+- Files created/modified:
+  - `E:\test\Docmost\apps\client\src\ee\ai\services\ai-intent.ts` (created)
+  - `E:\test\Docmost\apps\client\src\ee\ai\services\ai-intent.test.ts` (created)
+  - `E:\test\Docmost\apps\client\src\ee\ai\hooks\use-ai-create-session.ts` (updated)
+  - `E:\test\Docmost\apps\client\src\ee\ai\services\ai-service.ts` (updated)
+  - `E:\test\Docmost\apps\client\src\ee\ai\services\agent-service.ts` (updated)
+  - `E:\test\Docmost\apps\server\src\ee\ai\document-strategy.ts` (updated)
+  - `E:\test\Docmost\apps\server\src\ee\ai\document-strategy.spec.ts` (updated)
+  - `E:\test\Docmost\apps\server\src\ee\ai\ai.controller.ts` (updated)
+  - `E:\test\Docmost\apps\server\src\ee\ai\agent-gateway\agent-gateway.controller.ts` (updated)
+  - `E:\test\Docmost\agent-service\app\schemas\document_contracts.py` (updated)
+  - `E:\test\Docmost\agent-service\app\schemas\request.py` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\state.py` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\document_strategy.py` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\graph.py` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\nodes\explorer.py` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\nodes\writer.py` (updated)
+  - `E:\test\Docmost\agent-service\app\agent\nodes\reviewer.py` (updated)
+  - `E:\test\Docmost\agent-service\app\main.py` (updated)
+  - `E:\test\Docmost\agent-service\tests\test_document_strategy.py` (updated)
+  - `E:\test\Docmost\findings.md` (updated)
+  - `E:\test\Docmost\progress.md` (updated)
+
+## Additional Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Client intent tests | `pnpm exec tsx --test apps/client/src/ee/ai/services/ai-intent.test.ts apps/client/src/ee/ai/services/ai-create-runner.test.ts` | Intent routing + existing runner normalization pass | 10 tests passed | Pass |
+| Client targeted lint | `pnpm --filter ./apps/client exec eslint ...` on touched AI intent/session/service files | New client routing files lint cleanly | Lint passed | Pass |
+| Server strategy tests | `pnpm --filter ./apps/server exec jest --runInBand src/ee/ai/document-strategy.spec.ts src/ee/ai/document-plan.spec.ts` | Route-aware strategy overrides still pass | 6 tests passed | Pass |
+| Server targeted lint | `pnpm --filter ./apps/server exec eslint ...` on touched strategy/controller files | New server routing files lint cleanly | Lint passed | Pass |
+| Server TS build check | `pnpm --filter ./apps/server exec tsc -p tsconfig.build.json --noEmit` | Route metadata compiles cleanly on Nest side | Typecheck passed | Pass |
+| Agent routing compile | `python -m py_compile ...` on touched agent files | Routing/state/writer/reviewer changes compile | Compile succeeded | Pass |
+| Agent routing tests | `python -m pytest agent-service/tests/test_document_strategy.py agent-service/tests/test_quality_evals.py agent-service/tests/test_protocol_schemas.py agent-service/tests/test_event_queue.py` | Routing-related Python regressions pass | 24 tests passed | Pass |

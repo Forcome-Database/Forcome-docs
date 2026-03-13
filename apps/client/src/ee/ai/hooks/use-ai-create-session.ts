@@ -15,6 +15,7 @@ import {
   stopAgentAiCreateTask,
 } from "../services/ai-create-runner";
 import type { AiCreateRunEvent } from "../services/ai-create-runner";
+import { resolveAiIntent } from "../services/ai-intent";
 import type { SelectionRange } from "../components/ai-creator/ai-creator-atoms";
 import {
   aiCreateSessionReducer,
@@ -466,6 +467,7 @@ export function useAiCreateSession({
       fullPrompt: string,
       history: { role: "user" | "assistant"; content: string }[],
       insertMode: AiCreateInsertMode,
+      intent: ReturnType<typeof resolveAiIntent>,
     ) => {
       controllerRef.current = await runStandardAiCreate(
         {
@@ -473,6 +475,13 @@ export function useAiCreateSession({
           prompt: fullPrompt,
           template: params.template || undefined,
           pageId,
+          pageContent:
+            intent.route === "document_transform" && editor
+              ? editor.state.doc.textBetween(
+                  0,
+                  Math.min(8000, editor.state.doc.content.size),
+                )
+              : undefined,
           insertMode,
           existingContentSummary:
             insertMode === "append" && editor
@@ -483,6 +492,11 @@ export function useAiCreateSession({
               : undefined,
           pageTitle: params.pageTitle,
           history: history.length > 0 ? history : undefined,
+          intentRoute: intent.route,
+          scope: intent.scope,
+          sourcePolicy: intent.sourcePolicy,
+          lengthPolicy: intent.lengthPolicy,
+          prioritizeUserInstructions: intent.prioritizeUserInstructions,
         },
         handleRunEvent,
       );
@@ -496,6 +510,7 @@ export function useAiCreateSession({
       fullPrompt: string,
       history: { role: "user" | "assistant"; content: string }[],
       insertMode: AiCreateInsertMode,
+      intent: ReturnType<typeof resolveAiIntent>,
     ) => {
       setSteps([]);
       controllerRef.current = runAgentAiCreate(
@@ -515,6 +530,11 @@ export function useAiCreateSession({
           selectedText: params.selection || undefined,
           selectionRange: params.selectionRange || undefined,
           history: history.length > 0 ? history : undefined,
+          intentRoute: intent.route,
+          scope: intent.scope,
+          sourcePolicy: intent.sourcePolicy,
+          lengthPolicy: intent.lengthPolicy,
+          prioritizeUserInstructions: intent.prioritizeUserInstructions,
         },
         handleRunEvent,
       );
@@ -536,6 +556,13 @@ export function useAiCreateSession({
         params.selection,
         params.pageHasContent,
       );
+      const intent = resolveAiIntent({
+        prompt: userPrompt,
+        selection: params.selection,
+        files: params.files,
+        pageHasContent: params.pageHasContent,
+        agentMode: params.agentMode,
+      });
       setSteps([]);
 
       appendMessage({
@@ -554,19 +581,19 @@ export function useAiCreateSession({
       });
 
       prepareRun(
-        params.agentMode ? "agent" : "standard",
+        intent.effectiveMode,
         insertMode,
         params.selectionRange,
         params.autoInsert,
       );
 
       try {
-        if (params.agentMode) {
-          startAgentRun(params, fullPrompt, history, insertMode);
+        if (intent.effectiveMode === "agent") {
+          startAgentRun(params, fullPrompt, history, insertMode, intent);
           return;
         }
 
-        await startStandardRun(params, fullPrompt, history, insertMode);
+        await startStandardRun(params, fullPrompt, history, insertMode, intent);
       } catch (error: any) {
         handleRunError(error.message || t("Failed to start AI creation"));
       }

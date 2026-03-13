@@ -19,6 +19,10 @@ import { AgentResumeDto } from './dto/agent-resume.dto';
 import { EnvironmentService } from '../../../integrations/environment/environment.service';
 import { AiTemplateService } from '../services/ai-template.service';
 import {
+  type AiIntentRoute,
+  type AiIntentScope,
+  type AiLengthPolicy,
+  type AiSourcePolicy,
   resolveAiDocumentStrategy,
 } from '../document-strategy';
 
@@ -36,6 +40,14 @@ function writeSseHeaders(res: FastifyReply, taskId?: string) {
     Connection: 'keep-alive',
     ...(taskId ? { 'X-Task-Id': taskId } : {}),
   });
+}
+
+function parseBooleanField(value?: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return value === 'true';
 }
 
 @Controller('agent')
@@ -84,6 +96,12 @@ export class AgentGatewayController {
     const globalSystemPrompt = await this.aiTemplateService.getSystemPrompt(
       workspace.id,
     );
+    const intentRoute = (fields.intentRoute || 'document_create') as AiIntentRoute;
+    const scope = (fields.scope || 'blank_page') as AiIntentScope;
+    const sourcePolicy = (fields.sourcePolicy || 'create_new') as AiSourcePolicy;
+    const lengthPolicy = (fields.lengthPolicy || 'preserve') as AiLengthPolicy;
+    const prioritizeUserInstructions =
+      parseBooleanField(fields.prioritizeUserInstructions) ?? true;
     const templatePrompt = fields.templateId
       ? await this.aiTemplateService.getTemplatePrompt(
           fields.templateId,
@@ -91,7 +109,13 @@ export class AgentGatewayController {
           user.id,
         )
       : null;
-    const documentStrategy = resolveAiDocumentStrategy(fields.templateId);
+    const documentStrategy = resolveAiDocumentStrategy(fields.templateId, {
+      intentRoute,
+      scope,
+      sourcePolicy,
+      lengthPolicy,
+      prioritizeUserInstructions,
+    });
 
     const agentBody = {
       user_message: fields.prompt || '',
@@ -107,6 +131,11 @@ export class AgentGatewayController {
       system_prompt: globalSystemPrompt || null,
       template_prompt: templatePrompt,
       document_strategy: documentStrategy,
+      intent_route: intentRoute,
+      scope,
+      source_policy: sourcePolicy,
+      length_policy: lengthPolicy,
+      prioritize_user_instructions: prioritizeUserInstructions,
       conversation_history: history,
       workspace_id: workspace.id,
       config: {

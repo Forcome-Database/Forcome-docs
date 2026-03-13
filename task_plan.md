@@ -74,3 +74,68 @@ Complete
 - This delivery includes code changes, focused tests, and updated planning artifacts, not only a proposal.
 - Remaining implementation hardening is now focused on browser-level regression coverage rather than more architecture changes.
 - As of 2026-03-13, the stricter browser insert E2E is passing locally and this phase is ready to be closed in git history.
+- Follow-up analysis on 2026-03-13 focused specifically on three live product pain points: rigid global workflow routing, failed local/selection editing behavior, and document-content loss between upload/parsing and prompt execution.
+
+## 2026-03-13 Simplified Optimization Plan
+
+### Goal
+Improve AI Creator without a rewrite so it better matches user intent, preserves uploaded/source content, supports true local edits, and avoids over-compressing source documents.
+
+### Top-Level Principle
+- User instructions have the highest priority.
+- Routing defaults, prompt templates, source-preservation rules, and quality guards must follow the user's explicit request instead of overriding it.
+- Default protections only apply when the user has not clearly specified the desired scope, compression level, or transformation style.
+- Example:
+  - if the user says "only fix formatting, do not shorten", the system must preserve length unless impossible
+  - if the user says "compress this into a short summary", compression rules should allow aggressive trimming
+  - if the user says "rewrite only the selected paragraph", local-edit routing must win over full-document planning
+
+### Implementation Phases
+
+#### Phase A: Intent Routing
+- Add a small routing layer before execution.
+- Route requests into:
+  - `selection_edit`
+  - `document_transform`
+  - `document_create`
+- Keep `agentMode` as an override/upgrade signal, not the only routing rule.
+- **Status:** complete
+
+#### Phase B: Local Edit Shortcut
+- When the user has selected content and the request is an edit/rewrite/formatting task, skip `clarifier -> proposer -> planner -> outliner`.
+- Reuse existing writer + commit replace path for direct in-place editing.
+- Only escalate to the full agent flow when the user explicitly asks for research, outline, or full-document regeneration.
+- **Status:** complete
+
+#### Phase C: Source-First Document Transform
+- For uploaded-document or current-page transform tasks, treat source material as primary context.
+- Reuse richer parsing output where possible and prefer relevant source chunks over generic research context.
+- Add simple task metadata:
+  - `scope`
+  - `source_policy`
+  - `length_policy`
+- **Status:** complete
+
+#### Phase D: Lightweight Quality Guards
+- Add minimal reviewer checks for:
+  - missing required source coverage
+  - suspicious over-compression
+  - accidental full-document rewrite during selection edits
+- Reviewer checks must treat explicit user instructions as the comparison baseline, not generic defaults.
+- Fail soft by keeping the draft in chat and retrying once rather than silently committing weak output.
+- **Status:** complete
+
+#### Phase E: Regression Validation
+- Add focused scenarios for:
+  - selection-only local edit
+  - uploaded document format optimization
+  - source-preserving rewrite without major content loss
+- Roll out behind a feature flag or narrow routing switch first.
+- **Status:** complete
+
+### Acceptance Criteria
+1. Selection edits no longer trigger outline/proposal flow by default.
+2. Uploaded-document optimization keeps source structure and does not behave like a blank-page rewrite.
+3. “Optimize/format this document” does not materially over-trim content unless the user explicitly requests compression.
+4. Existing create-from-scratch scenarios remain functional.
+5. When user instructions conflict with defaults, the system follows the user instruction.

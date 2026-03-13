@@ -29,4 +29,20 @@ describe('document strategy', () => {
     expect(prompt).toContain('code_block');
     expect(prompt).toContain('Mermaid');
   });
+
+  it('applies request-specific routing overrides', () => {
+    const strategy = resolveAiDocumentStrategy('technical-doc', {
+      intentRoute: 'document_transform',
+      scope: 'uploaded_document',
+      sourcePolicy: 'preserve_source',
+      lengthPolicy: 'compress',
+      prioritizeUserInstructions: true,
+    });
+
+    expect(strategy.intentRoute).toBe('document_transform');
+    expect(strategy.scope).toBe('uploaded_document');
+    expect(strategy.sourcePolicy).toBe('preserve_source');
+    expect(strategy.lengthPolicy).toBe('compress');
+    expect(strategy.prioritizeUserInstructions).toBe(true);
+  });
 });

@@ -20,6 +20,11 @@ class AgentState(TypedDict):
     system_prompt: str | None
     template_prompt: str | None
     document_strategy: AiDocumentStrategy
+    intent_route: Literal["selection_edit", "document_transform", "document_create"]
+    scope: Literal["selection", "uploaded_document", "current_page", "blank_page"]
+    source_policy: Literal["preserve_source", "transform_source", "create_new"]
+    length_policy: Literal["preserve", "compress", "expand"]
+    prioritize_user_instructions: bool
 
     # Document context
     page_id: str | None
@@ -51,7 +56,7 @@ class AgentState(TypedDict):
     document_plan: AiDocumentPlan
 
     # Control
-    phase: str                     # "explorer" | "clarifier" | "proposer" | "outliner" | "writer" | "reviewer"
+    phase: str                     # "router" | "explorer" | "clarifier" | "proposer" | "outliner" | "writer" | "reviewer"
     needs_revision: bool
     revision_feedback: str
     iteration_count: int

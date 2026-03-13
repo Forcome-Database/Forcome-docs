@@ -98,6 +98,51 @@ describe('PageService.commitAiContent', () => {
     expect(collaborationGateway.handleYjsEvent).not.toHaveBeenCalled();
   });
 
+  it('allows replace commits to continue when only the page version changed', async () => {
+    const { service, pageRepo, collaborationGateway } = createService();
+    const releaseLock = jest.fn().mockResolvedValue(undefined);
+
+    collaborationGateway.lockDocument.mockResolvedValue(releaseLock);
+    pageRepo.findById.mockResolvedValue({
+      ...page,
+      updatedAt: new Date('2026-03-12T12:00:01.000Z'),
+    });
+    collaborationGateway.handleYjsEvent.mockResolvedValue({
+      appliedMode: 'replace',
+      fallbackReason: null,
+    });
+
+    const result = await service.commitAiContent(
+      page,
+      {
+        content: 'replacement',
+        insertMode: 'replace',
+        expectedUpdatedAt: '2026-03-12T12:00:00.000Z',
+        selectionSnapshot: {
+          from: 1,
+          to: 4,
+          text: 'old',
+        },
+      },
+      user,
+    );
+
+    expect(result.appliedMode).toBe('replace');
+    expect(collaborationGateway.handleYjsEvent).toHaveBeenCalledWith(
+      'applyAiCommit',
+      'page.page-1',
+      expect.objectContaining({
+        insertMode: 'replace',
+        selectionSnapshot: {
+          from: 1,
+          to: 4,
+          text: 'old',
+        },
+      }),
+    );
+    expect(releaseLock).toHaveBeenCalled();
+  });
+
   it('requires a selection snapshot for replace commits', async () => {
     const { service, pageRepo, collaborationGateway } = createService();
     const releaseLock = jest.fn().mockResolvedValue(undefined);

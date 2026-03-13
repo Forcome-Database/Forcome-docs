@@ -295,10 +295,11 @@ export class PageService {
         throw new NotFoundException('Page not found');
       }
 
-      if (
+      const pageVersionChanged =
         currentPage.updatedAt &&
-        currentPage.updatedAt.getTime() !== expectedUpdatedAt.getTime()
-      ) {
+        currentPage.updatedAt.getTime() !== expectedUpdatedAt.getTime();
+
+      if (pageVersionChanged && params.insertMode !== 'replace') {
         throw new ConflictException(
           'Page changed during generation. Review the draft and retry.',
         );

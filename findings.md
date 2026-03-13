@@ -557,3 +557,71 @@
   - CI-hosted browser automation
   - replacing `updatedAt` with a dedicated revision counter
   - richer retry/manual-commit UX for conflict recovery
+
+## 2026-03-13: Follow-up diagnosis for live AI Creator pain points
+
+- Current intent routing is mode-driven, not task-driven:
+  - the client only switches between standard and agent flows via `agentMode`, while selection is merely attached as context and does not alter the workflow path.
+  - `use-ai-create-session.ts` builds a restrictive local-edit prompt for selections, but still routes to the full agent flow whenever `agentMode` is enabled.
+- The deep/agent graph remains globally document-oriented even when the request is clearly a local edit:
+  - `graph.py` always enters `explorer -> clarifier -> proposer -> planner -> outliner -> writer -> reviewer`.
+  - there is no branch for direct in-place edit / patch / rewrite-on-selection behavior.
+- Uploaded-document information is carried, but not prioritized strongly enough:
+  - standard mode extracts only plain text/images through `pdf-parse` and `mammoth`, which loses structural cues.
+  - agent mode parses files with `docling_parser`, but downstream nodes still treat parsed file content as one evidence bucket among many rather than the primary source document to preserve and transform.
+- The resulting product mismatch is predictable:
+  - users asking "optimize this uploaded document" expect transform/edit behavior anchored to the source artifact.
+  - the current flow interprets the same request as "generate a new document after clarification/planning/outline", which compresses or replaces the original material.
+
+## 2026-03-13: External product-pattern comparison
+
+- Microsoft Word Copilot exposes selection-scoped rewrite flows with explicit apply behavior; this matches user expectations for local editing rather than forcing a new-document workflow.
+- GitHub Copilot documents separate modes for lightweight inline edits versus broader agent/task flows; this supports the conclusion that Docmost should route by intent granularity, not one global SOP.
+- Cursor documentation/search results describe selection/file-scoped inline editing as distinct from broader chat/agent workflows, reinforcing the same routing principle.
+- Cross-product pattern: high-performing AI editors keep three layers distinct:
+  - inline selection edit
+  - document-level rewrite/transform
+  - multi-step research/agent creation
+- Cross-product pattern: uploaded or selected source material remains the primary context object for transform tasks, rather than being reduced to optional background context.
+- Additional product requirement clarified by the user on 2026-03-13:
+  - explicit user instructions must outrank system defaults such as “preserve length”, “keep source structure”, or “skip compression”
+  - defaults should guide ambiguous requests, not override clear requests like “shorten this”, “rewrite only this paragraph”, or “keep all details”
+
+## 2026-03-13: Simplified optimization slice implemented
+
+- Client-side routing now classifies requests into:
+  - `selection_edit`
+  - `document_transform`
+  - `document_create`
+- Routing is now driven by actual context instead of only the deep-mode toggle:
+  - selection present => `selection_edit`
+  - uploaded files or current-page content => `document_transform`
+  - blank-page generation => `document_create`
+- Explicit user instructions now influence length handling directly:
+  - explicit compression requests map to `lengthPolicy=compress`
+  - explicit "do not shorten" requests map back to `lengthPolicy=preserve`
+- The client now sends route metadata through both standard and agent flows:
+  - `intentRoute`
+  - `scope`
+  - `sourcePolicy`
+  - `lengthPolicy`
+  - `prioritizeUserInstructions`
+- Standard creator mode now receives current page content for document-transform tasks instead of only append summaries, which closes one major source-context gap.
+- Nest now resolves document strategy with request-specific overrides, so prompt guidance includes:
+  - route type
+  - source policy
+  - length policy
+  - explicit user-instruction priority
+- Agent-service now accepts and persists the same route metadata in request + state.
+- Agent graph no longer forces every deep-mode request through the full SOP:
+  - `selection_edit` routes directly to `writer`
+  - `document_transform` routes `router -> explorer -> writer`
+  - only `document_create` keeps the full `explorer -> clarifier -> proposer -> planner -> outliner -> writer -> reviewer` flow
+- Explorer now uses a deterministic source-first plan for document-transform tasks:
+  - parse uploaded files if present
+  - avoid unnecessary external-research planning
+- Writer now receives explicit execution-intent instructions, including:
+  - local edit must only return replacement text
+  - document transform must treat source content as primary material
+  - default preservation/compression rules must yield to explicit user requests
+- Reviewer now applies lighter validation for `selection_edit` and adds a basic over-compression guard for `document_transform` when the user did not request summarization.

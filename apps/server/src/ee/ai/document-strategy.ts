@@ -1,5 +1,20 @@
 import type { AiDocumentArtifact } from './document-plan';
 
+export type AiIntentRoute =
+  | 'selection_edit'
+  | 'document_transform'
+  | 'document_create';
+export type AiIntentScope =
+  | 'selection'
+  | 'uploaded_document'
+  | 'current_page'
+  | 'blank_page';
+export type AiSourcePolicy =
+  | 'preserve_source'
+  | 'transform_source'
+  | 'create_new';
+export type AiLengthPolicy = 'preserve' | 'compress' | 'expand';
+
 export interface AiDocumentStrategy {
   templateKey: string;
   docType: string;
@@ -10,6 +25,11 @@ export interface AiDocumentStrategy {
   requiredSections: string[];
   reviewChecks: string[];
   editorSyntaxHints: string[];
+  intentRoute: AiIntentRoute;
+  scope: AiIntentScope;
+  sourcePolicy: AiSourcePolicy;
+  lengthPolicy: AiLengthPolicy;
+  prioritizeUserInstructions: boolean;
 }
 
 const COMMON_EDITOR_HINTS = [
@@ -38,6 +58,11 @@ const DEFAULT_STRATEGY: AiDocumentStrategy = {
     'Prefer compact structure over repetitive prose.',
   ],
   editorSyntaxHints: COMMON_EDITOR_HINTS,
+  intentRoute: 'document_create',
+  scope: 'blank_page',
+  sourcePolicy: 'create_new',
+  lengthPolicy: 'preserve',
+  prioritizeUserInstructions: true,
 };
 
 const TEMPLATE_STRATEGIES: Record<string, Partial<AiDocumentStrategy>> = {
@@ -137,6 +162,16 @@ const TEMPLATE_STRATEGIES: Record<string, Partial<AiDocumentStrategy>> = {
 
 export function resolveAiDocumentStrategy(
   templateKey?: string | null,
+  overrides?: Partial<
+    Pick<
+      AiDocumentStrategy,
+      | 'intentRoute'
+      | 'scope'
+      | 'sourcePolicy'
+      | 'lengthPolicy'
+      | 'prioritizeUserInstructions'
+    >
+  >,
 ): AiDocumentStrategy {
   const key = templateKey || 'general';
   const override = TEMPLATE_STRATEGIES[key] || {};
@@ -144,6 +179,7 @@ export function resolveAiDocumentStrategy(
   return {
     ...DEFAULT_STRATEGY,
     ...override,
+    ...overrides,
     templateKey: key,
     objectives: override.objectives || DEFAULT_STRATEGY.objectives,
     requiredArtifacts:
@@ -155,6 +191,13 @@ export function resolveAiDocumentStrategy(
     reviewChecks: override.reviewChecks || DEFAULT_STRATEGY.reviewChecks,
     editorSyntaxHints:
       override.editorSyntaxHints || DEFAULT_STRATEGY.editorSyntaxHints,
+    intentRoute: overrides?.intentRoute || DEFAULT_STRATEGY.intentRoute,
+    scope: overrides?.scope || DEFAULT_STRATEGY.scope,
+    sourcePolicy: overrides?.sourcePolicy || DEFAULT_STRATEGY.sourcePolicy,
+    lengthPolicy: overrides?.lengthPolicy || DEFAULT_STRATEGY.lengthPolicy,
+    prioritizeUserInstructions:
+      overrides?.prioritizeUserInstructions ??
+      DEFAULT_STRATEGY.prioritizeUserInstructions,
   };
 }
 
@@ -195,6 +238,14 @@ export function formatDocumentStrategyForPrompt(
       lines.push(`  - ${item}`);
     }
   }
+
+  lines.push(`- Intent route: ${strategy.intentRoute}`);
+  lines.push(`- Scope: ${strategy.scope}`);
+  lines.push(`- Source policy: ${strategy.sourcePolicy}`);
+  lines.push(`- Length policy: ${strategy.lengthPolicy}`);
+  lines.push(
+    `- User instructions have highest priority: ${strategy.prioritizeUserInstructions ? 'yes' : 'no'}`,
+  );
 
   lines.push('- Editor syntax hints:');
   for (const item of strategy.editorSyntaxHints) {

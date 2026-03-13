@@ -28,6 +28,11 @@ class AgentRunRequest(BaseModel):
     workspace_id: str = ""
     config: dict = Field(default_factory=dict)
     thread_id: str | None = None
+    intent_route: Literal["selection_edit", "document_transform", "document_create"] = "document_create"
+    scope: Literal["selection", "uploaded_document", "current_page", "blank_page"] = "blank_page"
+    source_policy: Literal["preserve_source", "transform_source", "create_new"] = "create_new"
+    length_policy: Literal["preserve", "compress", "expand"] = "preserve"
+    prioritize_user_instructions: bool = True
 
 
 class ClarifyResumeValue(BaseModel):

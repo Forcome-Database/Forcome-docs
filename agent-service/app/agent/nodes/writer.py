@@ -68,16 +68,55 @@ async def writer_node(state: AgentState) -> dict:
 
     image_instructions = _build_image_instructions(state.get("generated_images", []))
     strategy = state.get("document_strategy") or {}
+    intent_route = state.get("intent_route") or "document_create"
+    scope = state.get("scope") or "blank_page"
+    source_policy = state.get("source_policy") or "create_new"
+    length_policy = state.get("length_policy") or "preserve"
+    prioritize_user_instructions = bool(
+        state.get("prioritize_user_instructions", True)
+    )
     document_plan = normalize_document_plan(
         state.get("document_plan") or {},
         strategy,
     )
+    if intent_route == "selection_edit":
+        document_plan = {
+            "doc_type": "selection-edit",
+            "audience": "",
+            "required_artifacts": [],
+            "sections": [],
+        }
     system_prompt = WRITER_SYSTEM_PROMPT.format(image_instructions=image_instructions)
 
     user_parts = [
         f"文档策略:\n{format_document_strategy(strategy)}",
         f"Document plan:\n{json.dumps(document_plan, ensure_ascii=False, indent=2)}",
     ]
+
+    user_parts.append(
+        "Execution intent:\n"
+        f"- intent_route: {intent_route}\n"
+        f"- scope: {scope}\n"
+        f"- source_policy: {source_policy}\n"
+        f"- length_policy: {length_policy}\n"
+        f"- prioritize_user_instructions: {prioritize_user_instructions}"
+    )
+    if prioritize_user_instructions:
+        user_parts.append(
+            "User instructions have the highest priority. Apply default preservation or compression behavior only when the user has not clearly requested otherwise."
+        )
+    if intent_route == "selection_edit":
+        user_parts.append(
+            "This is a local selection edit. Output only the replacement for the selected content. Do not expand into a full-document rewrite."
+        )
+    elif intent_route == "document_transform":
+        user_parts.append(
+            "This is a source-first document transform. Treat the uploaded files or current page content as the primary source material."
+        )
+        if length_policy != "compress":
+            user_parts.append(
+                "Preserve important structure, detail, and reference information unless the user explicitly asked for a shorter output."
+            )
 
     if state.get("system_prompt"):
         user_parts.append(f"Workspace system prompt:\n{state['system_prompt']}")

@@ -43,6 +43,10 @@ import {
   SpaceCaslSubject,
 } from '../../core/casl/interfaces/space-ability.type';
 import {
+  type AiIntentRoute,
+  type AiIntentScope,
+  type AiLengthPolicy,
+  type AiSourcePolicy,
   formatDocumentStrategyForPrompt,
   resolveAiDocumentStrategy,
 } from './document-strategy';
@@ -57,6 +61,14 @@ const ALLOWED_MIMETYPES = new Set([
   'image/gif',
   'image/webp',
 ]);
+
+function parseBooleanField(value?: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return value === 'true';
+}
 
 @Controller('ai')
 export class AiController {
@@ -193,11 +205,18 @@ export class AiController {
       template,
       insertMode,
       existingContentSummary,
+      pageContent,
       pageTitle,
       history: historyRaw,
       planningEnabled: planningEnabledRaw,
     } = fields;
     const confirmedOutline = fields.confirmedOutline || '';
+    const intentRoute = (fields.intentRoute || 'document_create') as AiIntentRoute;
+    const scope = (fields.scope || 'blank_page') as AiIntentScope;
+    const sourcePolicy = (fields.sourcePolicy || 'create_new') as AiSourcePolicy;
+    const lengthPolicy = (fields.lengthPolicy || 'preserve') as AiLengthPolicy;
+    const prioritizeUserInstructions =
+      parseBooleanField(fields.prioritizeUserInstructions) ?? true;
 
     if (!prompt) {
       res.status(400).send({ message: 'prompt is required' });
@@ -232,13 +251,43 @@ export class AiController {
       }
     }
 
-    const documentStrategy = resolveAiDocumentStrategy(template);
+    const documentStrategy = resolveAiDocumentStrategy(template, {
+      intentRoute,
+      scope,
+      sourcePolicy,
+      lengthPolicy,
+      prioritizeUserInstructions,
+    });
     systemPrompt += formatDocumentStrategyForPrompt(documentStrategy) + '\n\n';
+
+    if (prioritizeUserInstructions) {
+      systemPrompt +=
+        'User instructions have highest priority. Apply default preservation or compression heuristics only when the user has not clearly requested a different scope or length.\n\n';
+    }
+
+    if (intentRoute === 'selection_edit') {
+      systemPrompt +=
+        'Execution mode: selection edit. Return only the rewritten selection content and do not expand into a full-document rewrite.\n\n';
+    } else if (intentRoute === 'document_transform') {
+      systemPrompt +=
+        'Execution mode: document transform. Treat uploaded files and current page content as the primary source material.\n';
+      if (lengthPolicy === 'compress') {
+        systemPrompt +=
+          'The user explicitly requested summarization or shortening, so compression is allowed.\n\n';
+      } else {
+        systemPrompt +=
+          'Preserve important structure, detail, and reference information unless the user explicitly requests compression.\n\n';
+      }
+    }
 
     if (insertMode === 'append' && existingContentSummary) {
       systemPrompt += `Page title: ${pageTitle || '(Untitled)'}\n`;
       systemPrompt += `Existing content summary:\n${existingContentSummary}\n\n`;
       systemPrompt += 'Continue writing from where the existing content left off. Match the style, tone, and structure of the existing content.\n\n';
+    }
+
+    if (pageContent && intentRoute === 'document_transform') {
+      systemPrompt += `Current page source content:\n${pageContent.slice(0, 8000)}\n\n`;
     }
 
     // Keep the default creator flow single-phase unless planning is explicit.

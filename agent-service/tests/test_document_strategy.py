@@ -3,7 +3,8 @@ from app.agent.document_strategy import (
     format_document_strategy,
     normalize_document_plan,
 )
-from app.agent.nodes.explorer import should_skip_research_planning
+from app.agent.graph import route_after_explorer, route_after_router
+from app.agent.nodes.explorer import build_source_first_plan, should_skip_research_planning
 from app.agent.quality_checks import evaluate_document_quality
 from app.agent.nodes.reviewer import parse_review_result
 
@@ -88,6 +89,44 @@ def test_should_not_skip_research_planning_when_files_are_uploaded():
     assert should_skip_research_planning(state) is False
 
 
+def test_should_skip_research_planning_for_document_transforms():
+    state = {
+        "user_message": "Optimize the uploaded document formatting",
+        "uploaded_files": [{"filename": "spec.pdf"}],
+        "intent_route": "document_transform",
+    }
+
+    assert should_skip_research_planning(state) is True
+
+
+def test_build_source_first_plan_prefers_parsing_uploaded_files():
+    state = {
+        "uploaded_files": [{"filename": "spec.pdf"}],
+        "page_id": "page-1",
+        "page_content": "existing content",
+        "selected_text": "",
+    }
+
+    plan = build_source_first_plan(state)
+
+    assert plan == [
+        {
+            "step_id": 1,
+            "action": "parse",
+            "description": "解析用户上传的源文档并提取关键信息",
+            "tool": "docling_parser",
+            "args": {},
+            "status": "pending",
+        }
+    ]
+
+
+def test_graph_routes_selection_edit_directly_to_writer():
+    assert route_after_router({"intent_route": "selection_edit"}) == "writer"
+    assert route_after_explorer({"intent_route": "document_transform"}) == "writer"
+    assert route_after_explorer({"intent_route": "document_create"}) == "clarifier"
+
+
 def test_parse_review_result_falls_back_on_invalid_json():
     result = parse_review_result("not-json", "draft")
 
@@ -96,10 +135,22 @@ def test_parse_review_result_falls_back_on_invalid_json():
 
 
 def test_format_document_strategy_includes_editor_hints():
-    text = format_document_strategy({"docType": "report", "audience": "stakeholders"})
+    text = format_document_strategy(
+        {
+            "docType": "report",
+            "audience": "stakeholders",
+            "intentRoute": "document_transform",
+            "scope": "uploaded_document",
+            "sourcePolicy": "preserve_source",
+            "lengthPolicy": "preserve",
+            "prioritizeUserInstructions": True,
+        }
+    )
 
     assert "Document type: report" in text
     assert "Editor syntax hints:" in text
+    assert "Intent route: document_transform" in text
+    assert "User instructions have highest priority: yes" in text
 
 
 def test_evaluate_document_quality_flags_missing_required_artifacts_and_sections():

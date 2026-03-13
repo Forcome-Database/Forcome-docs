@@ -86,6 +86,20 @@ def format_document_strategy(strategy: AiDocumentStrategy | dict[str, Any] | Non
         for value in values:
             lines.append(f"- {value}")
 
+    if strategy.get("intentRoute"):
+        lines.append(f"Intent route: {strategy['intentRoute']}")
+    if strategy.get("scope"):
+        lines.append(f"Scope: {strategy['scope']}")
+    if strategy.get("sourcePolicy"):
+        lines.append(f"Source policy: {strategy['sourcePolicy']}")
+    if strategy.get("lengthPolicy"):
+        lines.append(f"Length policy: {strategy['lengthPolicy']}")
+    if "prioritizeUserInstructions" in strategy:
+        lines.append(
+            "User instructions have highest priority: "
+            + ("yes" if strategy.get("prioritizeUserInstructions") else "no")
+        )
+
     editor_hints = strategy.get("editorSyntaxHints") or DEFAULT_EDITOR_HINTS
     lines.append("Editor syntax hints:")
     for hint in editor_hints:

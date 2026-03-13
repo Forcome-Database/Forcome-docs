@@ -9,7 +9,7 @@ from app.agent.document_strategy import (
 )
 from app.agent.events import emit
 from app.agent.llm import get_chat_model
-from app.agent.quality_checks import evaluate_document_quality
+from app.agent.quality_checks import detect_artifacts, evaluate_document_quality
 from app.agent.state import AgentState
 
 
@@ -73,11 +73,44 @@ async def reviewer_node(state: AgentState) -> dict:
 
     draft = _auto_fix(state.get("draft_content", ""))
     strategy = state.get("document_strategy") or {}
+    intent_route = state.get("intent_route") or "document_create"
+    length_policy = state.get("length_policy") or "preserve"
     document_plan = normalize_document_plan(
         state.get("document_plan") or {},
         strategy,
     )
-    deterministic_review = evaluate_document_quality(draft, strategy, document_plan)
+    if intent_route == "selection_edit":
+        document_plan = {
+            "doc_type": "selection-edit",
+            "audience": "",
+            "required_artifacts": [],
+            "sections": [],
+        }
+    if intent_route == "selection_edit":
+        deterministic_review = {
+            "used_artifacts": detect_artifacts(draft),
+            "missing_artifacts": [],
+            "missing_sections": [],
+            "missing_coverage": [],
+            "issues": [],
+            "needs_rewrite": False,
+        }
+    else:
+        deterministic_review = evaluate_document_quality(draft, strategy, document_plan)
+
+    if intent_route == "document_transform" and length_policy != "compress":
+        source_parts: list[str] = []
+        if state.get("page_content"):
+            source_parts.append(str(state.get("page_content") or ""))
+        for item in state.get("parsed_files", []):
+            source_parts.append(str(item.get("content") or ""))
+
+        source_text = "\n".join(part for part in source_parts if part).strip()
+        if len(source_text) > 1200 and len(draft) < max(400, int(len(source_text) * 0.2)):
+            deterministic_review["issues"].append(
+                "Draft appears over-compressed relative to the source material"
+            )
+            deterministic_review["needs_rewrite"] = True
     used_artifacts = deterministic_review["used_artifacts"]
 
     messages = [

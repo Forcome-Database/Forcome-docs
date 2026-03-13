@@ -25,6 +25,31 @@ DOCUMENT_EVIDENCE_SOURCES = (
     "generated_image",
 )
 
+DOCUMENT_INTENT_ROUTES = (
+    "selection_edit",
+    "document_transform",
+    "document_create",
+)
+
+DOCUMENT_SCOPES = (
+    "selection",
+    "uploaded_document",
+    "current_page",
+    "blank_page",
+)
+
+DOCUMENT_SOURCE_POLICIES = (
+    "preserve_source",
+    "transform_source",
+    "create_new",
+)
+
+DOCUMENT_LENGTH_POLICIES = (
+    "preserve",
+    "compress",
+    "expand",
+)
+
 DocumentArtifact: TypeAlias = Literal[
     "table",
     "mermaid",
@@ -45,6 +70,31 @@ DocumentEvidenceSource: TypeAlias = Literal[
     "generated_image",
 ]
 
+DocumentIntentRoute: TypeAlias = Literal[
+    "selection_edit",
+    "document_transform",
+    "document_create",
+]
+
+DocumentScope: TypeAlias = Literal[
+    "selection",
+    "uploaded_document",
+    "current_page",
+    "blank_page",
+]
+
+DocumentSourcePolicy: TypeAlias = Literal[
+    "preserve_source",
+    "transform_source",
+    "create_new",
+]
+
+DocumentLengthPolicy: TypeAlias = Literal[
+    "preserve",
+    "compress",
+    "expand",
+]
+
 
 class AiDocumentStrategy(TypedDict, total=False):
     templateKey: str
@@ -56,6 +106,11 @@ class AiDocumentStrategy(TypedDict, total=False):
     requiredSections: list[str]
     reviewChecks: list[str]
     editorSyntaxHints: list[str]
+    intentRoute: DocumentIntentRoute
+    scope: DocumentScope
+    sourcePolicy: DocumentSourcePolicy
+    lengthPolicy: DocumentLengthPolicy
+    prioritizeUserInstructions: bool
 
 
 class AiDocumentPlanSection(TypedDict):

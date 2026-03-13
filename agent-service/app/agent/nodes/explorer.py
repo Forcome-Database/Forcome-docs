@@ -59,11 +59,53 @@ RESEARCH_SKIP_PHRASES = (
 
 
 def should_skip_research_planning(state: AgentState) -> bool:
+    intent_route = state.get("intent_route") or "document_create"
+
+    if intent_route == "selection_edit":
+        return True
+
+    if intent_route == "document_transform":
+        return True
+
     if state.get("uploaded_files"):
         return False
 
     message = str(state.get("user_message", "") or "").lower()
     return any(phrase in message for phrase in RESEARCH_SKIP_PHRASES)
+
+
+def build_source_first_plan(state: AgentState) -> list[dict]:
+    plan: list[dict] = []
+
+    if state.get("uploaded_files"):
+        plan.append(
+            {
+                "step_id": 1,
+                "action": "parse",
+                "description": "解析用户上传的源文档并提取关键信息",
+                "tool": "docling_parser",
+                "args": {},
+                "status": "pending",
+            }
+        )
+
+    if (
+        state.get("page_id")
+        and not state.get("page_content")
+        and not state.get("selected_text")
+    ):
+        plan.append(
+            {
+                "step_id": len(plan) + 1,
+                "action": "page_read",
+                "description": "读取当前页面内容作为改写依据",
+                "tool": "docmost_page_read",
+                "args": {},
+                "status": "pending",
+            }
+        )
+
+    return plan
 
 
 async def _upload_image_to_docmost(b64_data: str, filename: str, page_id: str) -> str:
@@ -122,7 +164,10 @@ async def explorer_node(state: AgentState) -> dict:
     if visual_requirements:
         context_parts.append(f"从任务中推断的优先 artifact: {', '.join(visual_requirements)}")
 
-    if should_skip_research_planning(state):
+    intent_route = state.get("intent_route") or "document_create"
+    if intent_route == "document_transform":
+        plan = build_source_first_plan(state)
+    elif should_skip_research_planning(state):
         plan = []
     else:
         messages = [

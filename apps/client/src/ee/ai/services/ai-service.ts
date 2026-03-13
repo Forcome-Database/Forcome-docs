@@ -16,12 +16,18 @@ export interface CreatorGenerateParams {
   prompt: string;
   template?: string;
   pageId: string;
+  pageContent?: string;
   insertMode?: string;
   existingContentSummary?: string;
   pageTitle?: string;
   history?: CreatorHistoryMessage[];
   planningEnabled?: boolean;
   confirmedOutline?: string;
+  intentRoute?: "selection_edit" | "document_transform" | "document_create";
+  scope?: "selection" | "uploaded_document" | "current_page" | "blank_page";
+  sourcePolicy?: "preserve_source" | "transform_source" | "create_new";
+  lengthPolicy?: "preserve" | "compress" | "expand";
+  prioritizeUserInstructions?: boolean;
 }
 
 export interface CreatorCommitSelectionSnapshot {
@@ -145,6 +151,7 @@ export async function creatorGenerate(
       formData.append("prompt", data.prompt);
       if (data.template) formData.append("template", data.template);
       formData.append("pageId", data.pageId);
+      if (data.pageContent) formData.append("pageContent", data.pageContent);
       if (data.insertMode) formData.append("insertMode", data.insertMode);
       if (data.existingContentSummary)
         formData.append("existingContentSummary", data.existingContentSummary);
@@ -153,6 +160,16 @@ export async function creatorGenerate(
       if (data.planningEnabled) formData.append("planningEnabled", "true");
       if (data.confirmedOutline) {
         formData.append("confirmedOutline", data.confirmedOutline);
+      }
+      if (data.intentRoute) formData.append("intentRoute", data.intentRoute);
+      if (data.scope) formData.append("scope", data.scope);
+      if (data.sourcePolicy) formData.append("sourcePolicy", data.sourcePolicy);
+      if (data.lengthPolicy) formData.append("lengthPolicy", data.lengthPolicy);
+      if (data.prioritizeUserInstructions !== undefined) {
+        formData.append(
+          "prioritizeUserInstructions",
+          String(data.prioritizeUserInstructions),
+        );
       }
 
       const response = await fetch("/api/ai/creator/generate", {

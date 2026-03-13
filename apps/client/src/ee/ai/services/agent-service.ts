@@ -11,6 +11,11 @@ export interface AgentGenerateParams {
   selectedText?: string;
   selectionRange?: { from: number; to: number } | null;
   history?: { role: string; content: string }[];
+  intentRoute?: "selection_edit" | "document_transform" | "document_create";
+  scope?: "selection" | "uploaded_document" | "current_page" | "blank_page";
+  sourcePolicy?: "preserve_source" | "transform_source" | "create_new";
+  lengthPolicy?: "preserve" | "compress" | "expand";
+  prioritizeUserInstructions?: boolean;
 }
 
 function createReaderErrorMessage(): string {
@@ -38,6 +43,16 @@ export function agentGenerate(
     formData.append('selectionRange', JSON.stringify(params.selectionRange));
   }
   if (params.history) formData.append('history', JSON.stringify(params.history));
+  if (params.intentRoute) formData.append('intentRoute', params.intentRoute);
+  if (params.scope) formData.append('scope', params.scope);
+  if (params.sourcePolicy) formData.append('sourcePolicy', params.sourcePolicy);
+  if (params.lengthPolicy) formData.append('lengthPolicy', params.lengthPolicy);
+  if (params.prioritizeUserInstructions !== undefined) {
+    formData.append(
+      'prioritizeUserInstructions',
+      String(params.prioritizeUserInstructions),
+    );
+  }
   for (const file of params.files) {
     formData.append('files', file);
   }

@@ -17,6 +17,24 @@ from app.agent.nodes.reviewer import reviewer_node
 from app.agent.cancellation import cancellable
 
 
+async def intent_router_node(state: AgentState) -> dict:
+    return {"phase": "router"}
+
+
+def route_after_router(state: AgentState) -> str:
+    intent_route = state.get("intent_route") or "document_create"
+    if intent_route == "selection_edit":
+        return "writer"
+    return "explorer"
+
+
+def route_after_explorer(state: AgentState) -> str:
+    intent_route = state.get("intent_route") or "document_create"
+    if intent_route == "document_transform":
+        return "writer"
+    return "clarifier"
+
+
 def should_regenerate_outline(state: AgentState) -> str:
     """After Outliner: if user requested regeneration, loop back."""
     if state.get("phase") == "outliner" and not state.get("confirmed_outline"):
@@ -31,6 +49,7 @@ def build_agent_graph():
     """
     graph = StateGraph(AgentState)
 
+    graph.add_node("router", cancellable(intent_router_node))
     graph.add_node("explorer", cancellable(explorer_node))
     graph.add_node("clarifier", cancellable(clarifier_node))
     graph.add_node("proposer", cancellable(proposer_node))
@@ -39,9 +58,16 @@ def build_agent_graph():
     graph.add_node("writer", cancellable(writer_node))
     graph.add_node("reviewer", cancellable(reviewer_node))
 
-    graph.set_entry_point("explorer")
+    graph.set_entry_point("router")
 
-    graph.add_edge("explorer", "clarifier")
+    graph.add_conditional_edges("router", route_after_router, {
+        "writer": "writer",
+        "explorer": "explorer",
+    })
+    graph.add_conditional_edges("explorer", route_after_explorer, {
+        "writer": "writer",
+        "clarifier": "clarifier",
+    })
     graph.add_edge("clarifier", "proposer")
     graph.add_edge("proposer", "planner")
     graph.add_edge("planner", "outliner")
