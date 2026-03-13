@@ -54,6 +54,10 @@ def _has_list_structure(content: str) -> bool:
     return bool(re.search(r"^(?:\s*[-*]\s+|\s*\d+\.\s+)", content, flags=re.MULTILINE))
 
 
+def _has_unresolved_artifact_placeholders(content: str) -> bool:
+    return bool(re.search(r"\[Artifact:\s*[^\]]+\]", content))
+
+
 def evaluate_document_quality(
     draft: str,
     strategy: AiDocumentStrategy | dict[str, Any] | None = None,
@@ -111,6 +115,8 @@ def evaluate_document_quality(
         issues.append(
             "Missing required coverage points: " + ", ".join(missing_coverage)
         )
+    if _has_unresolved_artifact_placeholders(draft):
+        issues.append("Draft still contains unresolved artifact placeholders")
     if len(draft) > 1200 and not headings:
         issues.append("Draft is long prose without clear markdown section headings")
     if required_artifacts and len(used_artifacts) == 0:

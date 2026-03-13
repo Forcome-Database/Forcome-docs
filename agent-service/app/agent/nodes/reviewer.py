@@ -104,6 +104,8 @@ async def reviewer_node(state: AgentState) -> dict:
             source_parts.append(str(state.get("page_content") or ""))
         for item in state.get("parsed_files", []):
             source_parts.append(str(item.get("content") or ""))
+        for item in state.get("research_results", []):
+            source_parts.append(str(item.get("content") or ""))
 
         source_text = "\n".join(part for part in source_parts if part).strip()
         if len(source_text) > 1200 and len(draft) < max(400, int(len(source_text) * 0.2)):
@@ -156,4 +158,6 @@ async def reviewer_node(state: AgentState) -> dict:
     return {
         "final_content": final_content,
         "needs_revision": needs_rewrite,
+        "revision_feedback": "; ".join(merged_issues),
+        "iteration_count": state.get("iteration_count", 0) + 1,
     }

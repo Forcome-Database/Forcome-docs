@@ -43,6 +43,14 @@ def route_after_evidence_gate(state: AgentState) -> str:
     return route_after_router(state)
 
 
+def route_after_reviewer(state: AgentState) -> str:
+    max_iterations = int(state.get("max_iterations", 1) or 1)
+    iteration_count = int(state.get("iteration_count", 0) or 0)
+    if state.get("needs_revision") and iteration_count < max_iterations:
+        return "writer"
+    return "done"
+
+
 def should_regenerate_outline(state: AgentState) -> str:
     """After Outliner: if user requested regeneration, loop back."""
     if state.get("phase") == "outliner" and not state.get("confirmed_outline"):
@@ -91,7 +99,10 @@ def build_agent_graph():
     })
 
     graph.add_edge("writer", "reviewer")
-    graph.add_edge("reviewer", END)
+    graph.add_conditional_edges("reviewer", route_after_reviewer, {
+        "writer": "writer",
+        "done": END,
+    })
 
     return graph
 

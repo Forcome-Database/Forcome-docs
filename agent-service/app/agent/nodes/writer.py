@@ -1,6 +1,8 @@
 """Writer node: generate document content based on confirmed outline and document plan."""
+
 import json
 import re
+
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agent.cancellation import raise_if_cancelled
@@ -13,50 +15,84 @@ from app.agent.llm import get_chat_model
 from app.agent.state import AgentState
 
 
-WRITER_SYSTEM_PROMPT = """你是专业文档作者。基于文档策略、document plan、确认后的大纲和证据材料，生成完整 Markdown 文档。
+WRITER_SYSTEM_PROMPT = """You are a professional technical writer.
+Write a complete Markdown document grounded in the document strategy, the document plan, the confirmed outline, and the gathered evidence.
 
-硬性规则：
-1. 严格按确认后的大纲和 document plan 组织内容。
-2. 不要堆砌空泛文字；每节都必须服务于该节 goal。
-3. 当 document plan 指定 artifact 时，必须显式使用对应结构：
+Hard rules:
+1. Follow the confirmed outline and document plan when they are available.
+2. Do not pad with generic prose. Every section must serve a concrete goal.
+3. When the document plan requires an artifact, render the real structure instead of leaving placeholders:
    - mermaid: ```mermaid
-   - table: Markdown 表格
-   - code_block: 带语言标记的 fenced code block
+   - table: Markdown table
+   - code_block: fenced code block with a language tag
    - callout: :::info / :::warning / :::danger / :::success
    - details: :::details
    - image: ![alt](url)
-4. 如果证据不足，不要编造细节；应使用更保守的表述并明确缺口。
-5. 如果用户要求修改选中文本，只输出修改后的片段，不要重写全文。
+4. If evidence is incomplete, stay conservative and say what is missing instead of inventing details.
+5. For source-grounded rewrites, preserve important commands, links, structure, and platform-specific details unless the user explicitly asks to simplify them.
+6. For selection edits, output only the replacement text for the selected content.
 
-图片插入规则：
+Image usage rules:
 {image_instructions}
 """
 
 
 def _build_image_instructions(images: list[dict]) -> str:
     if not images:
-        return "当前没有可用图片。只有在确有必要且提供了有效 URL 时才插入图片。"
+        return (
+            "No usable images are currently available. Insert an image only when a valid "
+            "URL exists and the image materially helps the reader."
+        )
 
-    lines = ["以下图片已可在文档中使用，请在最相关的位置插入："]
-    for i, img in enumerate(images, start=1):
-        lines.append(f"{i}. ![{img.get('desc', f'图片{i}')}]({img['url']})")
+    lines = ["The following images are available for use in the document:"]
+    for index, img in enumerate(images, start=1):
+        alt = img.get("desc") or f"image-{index}"
+        lines.append(f"{index}. ![{alt}]({img['url']})")
         if img.get("context"):
-            lines.append(f"   - 建议位置: {img['context']}")
+            lines.append(f"   - Suggested placement: {img['context']}")
         if img.get("page_ref"):
-            lines.append(f"   - 来源: {img['page_ref']}")
+            lines.append(f"   - Source reference: {img['page_ref']}")
         if img.get("origin"):
-            lines.append(f"   - 类型: {img['origin']}")
+            lines.append(f"   - Origin: {img['origin']}")
 
-    lines.append("图片前后必须有解释文字，不能只堆图片。")
+    lines.append("Always explain why an image matters in the surrounding text.")
     return "\n".join(lines)
 
 
 def _strip_empty_images(md: str) -> str:
-    md = re.sub(r'!\[([^\]]*)\]\(\s*\)', r'> *\1*', md)
-    md = re.sub(r'!\[([^\]]*)\]\(IMAGE_PLACEHOLDER[^)]*\)', r'> *\1*', md)
-    md = re.sub(r'!\[([^\]]*)\]\((?!https?://|/api/)[^)]*\)', r'> *\1*', md)
-    md = re.sub(r'!\[([^\]]*)\](?!\()', r'> *\1*', md)
+    md = re.sub(r"!\[([^\]]*)\]\(\s*\)", r"> *\1*", md)
+    md = re.sub(r"!\[([^\]]*)\]\(IMAGE_PLACEHOLDER[^)]*\)", r"> *\1*", md)
+    md = re.sub(r"!\[([^\]]*)\]\((?!https?://|/api/)[^)]*\)", r"> *\1*", md)
+    md = re.sub(r"!\[([^\]]*)\](?!\()", r"> *\1*", md)
     return md
+
+
+def format_research_context_item(item: dict) -> str:
+    source = str(item.get("source", "unknown"))
+    label = str(item.get("url") or item.get("filename") or source)
+    content = str(item.get("content", "") or "")
+    excerpt = content[:3500]
+
+    headings = list(
+        dict.fromkeys(
+            match.group(2).strip()
+            for match in re.finditer(r"^(#{1,6})\s+(.+?)\s*$", content, flags=re.MULTILINE)
+            if match.group(2).strip()
+        )
+    )[:12]
+    urls = list(
+        dict.fromkeys(
+            match.group(0).rstrip(".,;:!?")
+            for match in re.finditer(r"https?://[^\s<>)\]]+", content)
+        )
+    )[:12]
+
+    parts = [f"[Source: {source} | {label}]\n{excerpt}"]
+    if headings:
+        parts.append("Source headings:\n- " + "\n- ".join(headings))
+    if urls:
+        parts.append("Source URLs:\n- " + "\n- ".join(urls))
+    return "\n\n".join(parts)
 
 
 async def writer_node(state: AgentState) -> dict:
@@ -64,7 +100,14 @@ async def writer_node(state: AgentState) -> dict:
     llm = get_chat_model()
     await raise_if_cancelled(state)
 
-    await emit(tid, {"type": "step_start", "step": "generate", "description": "正在生成文档内容..."})
+    await emit(
+        tid,
+        {
+            "type": "step_start",
+            "step": "generate",
+            "description": "Writing the document...",
+        },
+    )
 
     image_instructions = _build_image_instructions(state.get("generated_images", []))
     strategy = state.get("document_strategy") or {}
@@ -89,58 +132,63 @@ async def writer_node(state: AgentState) -> dict:
     system_prompt = WRITER_SYSTEM_PROMPT.format(image_instructions=image_instructions)
 
     user_parts = [
-        f"文档策略:\n{format_document_strategy(strategy)}",
+        f"Document strategy:\n{format_document_strategy(strategy)}",
         f"Document plan:\n{json.dumps(document_plan, ensure_ascii=False, indent=2)}",
-    ]
-
-    user_parts.append(
         "Execution intent:\n"
         f"- intent_route: {intent_route}\n"
         f"- scope: {scope}\n"
         f"- source_policy: {source_policy}\n"
         f"- length_policy: {length_policy}\n"
-        f"- prioritize_user_instructions: {prioritize_user_instructions}"
-    )
+        f"- prioritize_user_instructions: {prioritize_user_instructions}",
+    ]
+
     if prioritize_user_instructions:
         user_parts.append(
-            "User instructions have the highest priority. Apply default preservation or compression behavior only when the user has not clearly requested otherwise."
+            "User instructions have the highest priority. Apply default preservation or "
+            "compression behavior only when the user has not clearly requested otherwise."
         )
     if intent_route == "selection_edit":
         user_parts.append(
-            "This is a local selection edit. Output only the replacement for the selected content. Do not expand into a full-document rewrite."
+            "This is a local selection edit. Output only the replacement for the selected content. "
+            "Do not expand into a full-document rewrite."
         )
     elif intent_route == "document_transform":
         user_parts.append(
-            "This is a source-first document transform. Treat the uploaded files or current page content as the primary source material."
+            "This is a source-first document transform. Treat every gathered source as primary "
+            "material and keep platform-specific details, commands, and links intact unless the "
+            "user explicitly requests a rewrite that changes them."
         )
         if length_policy != "compress":
             user_parts.append(
-                "Preserve important structure, detail, and reference information unless the user explicitly asked for a shorter output."
+                "Preserve important structure, detail, and reference information unless the user "
+                "explicitly asked for a shorter output."
             )
 
     if state.get("system_prompt"):
         user_parts.append(f"Workspace system prompt:\n{state['system_prompt']}")
     if state.get("template_prompt"):
         user_parts.append(f"Resolved template prompt:\n{state['template_prompt']}")
+    if state.get("revision_feedback"):
+        user_parts.append(f"Revision feedback from the reviewer:\n{state['revision_feedback']}")
 
     confirmed_outline = state.get("confirmed_outline", "")
     if confirmed_outline:
-        user_parts.append(f"请严格按以下大纲写作：\n\n{confirmed_outline}")
+        user_parts.append(f"Follow this confirmed outline strictly:\n\n{confirmed_outline}")
     else:
-        user_parts.append(f"用户请求: {state['user_message']}")
+        user_parts.append(f"User request:\n{state['user_message']}")
 
     if state.get("page_content"):
-        user_parts.append(f"当前页面内容:\n{state['page_content'][:6000]}")
+        user_parts.append(f"Current page content:\n{state['page_content'][:6000]}")
     if state.get("selected_text"):
-        user_parts.append(f"用户选中文本（仅修改此部分）:\n{state['selected_text']}")
+        user_parts.append(f"Selected text to edit:\n{state['selected_text']}")
 
     research_parts = []
     for item in state.get("parsed_files", []):
-        research_parts.append(f"[文件: {item['filename']}]\n{item['content'][:3500]}")
+        research_parts.append(f"[File: {item['filename']}]\n{item['content'][:3500]}")
     for item in state.get("research_results", []):
-        research_parts.append(f"[来源: {item.get('source', 'unknown')}]\n{item['content'][:2200]}")
+        research_parts.append(format_research_context_item(item))
     if research_parts:
-        user_parts.append(f"证据材料:\n{'---'.join(research_parts)}")
+        user_parts.append(f"Evidence material:\n{'---'.join(research_parts)}")
 
     messages = [SystemMessage(content=system_prompt)]
     for msg in state.get("conversation_history", [])[-6:]:
@@ -148,7 +196,7 @@ async def writer_node(state: AgentState) -> dict:
             messages.append(HumanMessage(content=msg["content"]))
     messages.append(HumanMessage(content="\n\n".join(user_parts)))
 
-    content_chunks = []
+    content_chunks: list[str] = []
     async for chunk in llm.astream(messages):
         await raise_if_cancelled(state)
         text = chunk.content
@@ -156,15 +204,14 @@ async def writer_node(state: AgentState) -> dict:
             content_chunks.append(text)
             await emit(tid, {"type": "content", "chunk": text})
 
-    draft_content = "".join(content_chunks)
-    draft_content = _strip_empty_images(draft_content)
+    draft_content = _strip_empty_images("".join(content_chunks))
 
     await emit(
         tid,
         {
             "type": "step_done",
             "step": "generate",
-            "result_summary": f"生成了 {len(draft_content)} 字符",
+            "result_summary": f"Wrote {len(draft_content)} characters",
         },
     )
 

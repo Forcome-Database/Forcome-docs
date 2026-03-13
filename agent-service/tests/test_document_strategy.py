@@ -3,10 +3,11 @@ from app.agent.document_strategy import (
     format_document_strategy,
     normalize_document_plan,
 )
-from app.agent.graph import route_after_explorer, route_after_router
+from app.agent.graph import route_after_explorer, route_after_reviewer, route_after_router
 from app.agent.nodes.explorer import build_source_first_plan, should_skip_research_planning
 from app.agent.quality_checks import evaluate_document_quality
 from app.agent.nodes.reviewer import parse_review_result
+from app.agent.nodes.writer import format_research_context_item
 
 
 def test_normalize_document_plan_uses_strategy_defaults():
@@ -253,3 +254,45 @@ flowchart TD
     assert result["needs_rewrite"] is False
     assert result["missing_artifacts"] == []
     assert result["missing_sections"] == []
+
+
+def test_evaluate_document_quality_flags_unresolved_artifact_placeholders():
+    result = evaluate_document_quality(
+        "# Quick Start\n\n- [Artifact: code_block]\n- [Artifact: table]",
+        {},
+        {},
+    )
+
+    assert result["needs_rewrite"] is True
+    assert any("placeholder" in issue.lower() for issue in result["issues"])
+
+
+def test_format_research_context_item_keeps_headings_and_urls_beyond_excerpt():
+    long_intro = "intro " * 900
+    content = (
+        long_intro
+        + "\n## macOS\nbrew install cliproxyapi\n"
+        + "\n## Windows\n"
+        + "Binary: https://help.router-for.me/downloads/cliproxyapi.exe\n"
+        + "EasyCLI: https://help.router-for.me/downloads/easycli.exe\n"
+    )
+
+    formatted = format_research_context_item(
+        {
+            "source": "reference_url",
+            "url": "https://help.router-for.me/cn/introduction/quick-start.html",
+            "content": content,
+        }
+    )
+
+    assert "Source headings:" in formatted
+    assert "Windows" in formatted
+    assert "Source URLs:" in formatted
+    assert "https://help.router-for.me/downloads/cliproxyapi.exe" in formatted
+    assert "https://help.router-for.me/downloads/easycli.exe" in formatted
+
+
+def test_route_after_reviewer_retries_when_quality_gate_fails():
+    assert route_after_reviewer({"needs_revision": True, "iteration_count": 1, "max_iterations": 3}) == "writer"
+    assert route_after_reviewer({"needs_revision": True, "iteration_count": 3, "max_iterations": 3}) == "done"
+    assert route_after_reviewer({"needs_revision": False, "iteration_count": 1, "max_iterations": 3}) == "done"

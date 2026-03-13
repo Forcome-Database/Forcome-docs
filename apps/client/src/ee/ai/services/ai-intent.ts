@@ -42,12 +42,12 @@ const COMPRESS_KEYWORDS = [
   "trim",
   "brief",
   "tl;dr",
-  "摘要",
-  "总结",
-  "精简",
-  "压缩",
-  "缩短",
-  "简短",
+  "\u6458\u8981",
+  "\u603b\u7ed3",
+  "\u7cbe\u7b80",
+  "\u538b\u7f29",
+  "\u7f29\u77ed",
+  "\u7b80\u77ed",
 ];
 
 const PRESERVE_LENGTH_KEYWORDS = [
@@ -59,13 +59,13 @@ const PRESERVE_LENGTH_KEYWORDS = [
   "don't summarize",
   "keep the length",
   "keep all details",
-  "保留长度",
-  "不要缩短",
-  "不要压缩",
-  "不要总结",
-  "不要摘要",
-  "保留细节",
-  "不要删减",
+  "\u4fdd\u7559\u957f\u5ea6",
+  "\u4e0d\u8981\u7f29\u77ed",
+  "\u4e0d\u8981\u538b\u7f29",
+  "\u4e0d\u8981\u603b\u7ed3",
+  "\u4e0d\u8981\u6458\u8981",
+  "\u4fdd\u7559\u7ec6\u8282",
+  "\u4e0d\u8981\u5220\u51cf",
 ];
 
 const EXPAND_KEYWORDS = [
@@ -74,12 +74,14 @@ const EXPAND_KEYWORDS = [
   "extend",
   "detail",
   "more detailed",
-  "补充",
-  "扩写",
-  "展开",
-  "详细",
-  "细化",
+  "\u8865\u5145",
+  "\u6269\u5199",
+  "\u5c55\u5f00",
+  "\u8be6\u7ec6",
+  "\u7ec6\u5316",
 ];
+
+const URL_PATTERN = /\bhttps?:\/\/[^\s<>"'`)\]]+/i;
 
 function normalizeText(text: string): string {
   return text.trim().toLowerCase();
@@ -106,6 +108,10 @@ function resolveLengthPolicy(prompt: string): AiLengthPolicy {
   return "preserve";
 }
 
+function hasReferenceUrl(prompt: string): boolean {
+  return URL_PATTERN.test(prompt);
+}
+
 export function resolveAiIntent(
   params: ResolveAiIntentParams,
 ): ResolvedAiIntent {
@@ -127,6 +133,17 @@ export function resolveAiIntent(
       route: "document_transform",
       scope: "uploaded_document",
       sourcePolicy: "preserve_source",
+      lengthPolicy,
+      prioritizeUserInstructions: true,
+      effectiveMode: params.agentMode ? "agent" : "standard",
+    };
+  }
+
+  if (hasReferenceUrl(params.prompt)) {
+    return {
+      route: "document_transform",
+      scope: "blank_page",
+      sourcePolicy: "transform_source",
       lengthPolicy,
       prioritizeUserInstructions: true,
       effectiveMode: params.agentMode ? "agent" : "standard",

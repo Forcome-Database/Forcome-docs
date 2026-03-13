@@ -71,3 +71,22 @@ test("resolveAiIntent falls back to document creation on blank pages", () => {
     effectiveMode: "standard",
   });
 });
+
+test("resolveAiIntent treats referenced URLs as source-first transforms even on blank pages", () => {
+  const result = resolveAiIntent({
+    prompt: "https://help.router-for.me/cn/introduction/quick-start.html 请复刻这个文档内容",
+    selection: "",
+    files: [],
+    pageHasContent: false,
+    agentMode: true,
+  });
+
+  assert.deepEqual(result, {
+    route: "document_transform",
+    scope: "blank_page",
+    sourcePolicy: "transform_source",
+    lengthPolicy: "preserve",
+    prioritizeUserInstructions: true,
+    effectiveMode: "agent",
+  });
+});
