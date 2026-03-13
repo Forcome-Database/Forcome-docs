@@ -1,5 +1,6 @@
 from typing import TypedDict, Literal
 
+from app.agent.evidence import EvidenceItem
 from app.schemas.document_contracts import AiDocumentPlan, AiDocumentStrategy
 
 class PlanStep(TypedDict):
@@ -40,6 +41,7 @@ class AgentState(TypedDict):
     research_results: list[dict]
     parsed_files: list[dict]
     generated_images: list[dict]
+    evidence_items: list[EvidenceItem]
 
     # Output
     draft_content: str

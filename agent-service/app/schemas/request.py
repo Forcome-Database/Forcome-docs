@@ -16,10 +16,26 @@ class PageContext(BaseModel):
     selected_text: str | None = None
     selection_range: dict | None = None
 
+
+class EvidenceRequirement(BaseModel):
+    type: Literal[
+        "reference_url",
+        "uploaded_document",
+        "uploaded_image",
+        "page_context",
+        "web_search",
+    ]
+    required: bool = True
+    url: str | None = None
+    fileName: str | None = None
+    pageId: str | None = None
+    missing: bool = False
+
 class AgentRunRequest(BaseModel):
     user_message: str
     files: list[FileInfo] = Field(default_factory=list)
     page_context: PageContext = Field(default_factory=PageContext)
+    evidence_items: list[EvidenceRequirement] = Field(default_factory=list)
     template_id: str | None = None
     system_prompt: str | None = None
     template_prompt: str | None = None

@@ -18,6 +18,7 @@ from app.agent.cancellation import (
     register_task,
     unregister_task,
 )
+from app.agent.evidence import normalize_evidence_items
 from app.agent.document_strategy import empty_document_plan
 from app.agent.events import create_queue, emit, emit_done, remove_queue
 from app.agent.graph import agent_graph_builder
@@ -159,17 +160,13 @@ async def _event_generator(thread_id: str, queue: asyncio.Queue):
         remove_queue(thread_id)
 
 
-@app.post("/agent/run", dependencies=[Depends(verify_internal_secret)])
-async def run_agent(request: AgentRunRequest):
-    global _task_counter
-    _task_counter += 1
-    task_id = f"task-{_task_counter}"
-
-    thread_id = request.thread_id or str(uuid4())
-    register_task(task_id, thread_id)
-    queue = create_queue(thread_id)
-
-    initial_state: AgentState = {
+def build_initial_state(
+    request: AgentRunRequest,
+    *,
+    task_id: str,
+    thread_id: str,
+) -> AgentState:
+    return {
         "user_message": request.user_message,
         "conversation_history": request.conversation_history,
         "uploaded_files": [file.model_dump() for file in request.files],
@@ -194,6 +191,7 @@ async def run_agent(request: AgentRunRequest):
         "research_results": [],
         "parsed_files": [],
         "generated_images": [],
+        "evidence_items": normalize_evidence_items(request.evidence_items),
         "draft_content": "",
         "final_content": "",
         "step_events": [],
@@ -215,6 +213,23 @@ async def run_agent(request: AgentRunRequest):
         "_task_id": task_id,
         "_thread_id": thread_id,
     }
+
+
+@app.post("/agent/run", dependencies=[Depends(verify_internal_secret)])
+async def run_agent(request: AgentRunRequest):
+    global _task_counter
+    _task_counter += 1
+    task_id = f"task-{_task_counter}"
+
+    thread_id = request.thread_id or str(uuid4())
+    register_task(task_id, thread_id)
+    queue = create_queue(thread_id)
+
+    initial_state = build_initial_state(
+        request,
+        task_id=task_id,
+        thread_id=thread_id,
+    )
 
     config = {"configurable": {"thread_id": thread_id}}
 
