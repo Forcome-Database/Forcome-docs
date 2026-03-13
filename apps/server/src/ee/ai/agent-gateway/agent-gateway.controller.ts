@@ -25,6 +25,7 @@ import {
   type AiSourcePolicy,
   resolveAiDocumentStrategy,
 } from '../document-strategy';
+import { deriveEvidencePreflight } from '../evidence-preflight';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const MAX_FILES = 5;
@@ -92,6 +93,18 @@ export class AgentGatewayController {
     }));
 
     const history = fields.history ? JSON.parse(fields.history) : [];
+    const evidencePreflight = deriveEvidencePreflight({
+      prompt: fields.prompt || '',
+      files: files.map((file) => ({
+        filename: file.filename,
+        mimetype: file.mimetype,
+      })),
+      pageContext: {
+        pageId: fields.pageId || undefined,
+        pageTitle: fields.pageTitle || undefined,
+        pageContent: fields.pageContent || undefined,
+      },
+    });
 
     const globalSystemPrompt = await this.aiTemplateService.getSystemPrompt(
       workspace.id,
@@ -137,6 +150,7 @@ export class AgentGatewayController {
       length_policy: lengthPolicy,
       prioritize_user_instructions: prioritizeUserInstructions,
       conversation_history: history,
+      evidence_items: evidencePreflight.requiredEvidence,
       workspace_id: workspace.id,
       config: {
         insert_mode: fields.insertMode || 'create',
