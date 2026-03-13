@@ -1,0 +1,64 @@
+[
+  {
+    "name": "technical_doc_missing_code_block",
+    "strategy": {
+      "requiredArtifacts": ["code_block"],
+      "requiredSections": ["overview", "usage"]
+    },
+    "document_plan": {
+      "required_artifacts": ["code_block"],
+      "sections": [
+        { "title": "Overview" },
+        { "title": "Usage" }
+      ]
+    },
+    "draft": "# Overview\n\nThis explains the system at a high level.\n\n## Usage\n\nRun the service by following the documented steps.",
+    "expected": {
+      "needs_rewrite": true,
+      "missing_artifacts": ["code_block"],
+      "missing_sections": []
+    }
+  },
+  {
+    "name": "operations_manual_with_warning_and_image",
+    "strategy": {
+      "requiredArtifacts": ["callout", "image"],
+      "requiredSections": ["preparation", "steps", "verification"]
+    },
+    "document_plan": {
+      "required_artifacts": ["callout", "image"],
+      "sections": [
+        { "title": "Preparation" },
+        { "title": "Steps" },
+        { "title": "Verification" }
+      ]
+    },
+    "draft": "# Preparation\n\n:::warning\nBack up the existing configuration before proceeding.\n:::\n\n# Steps\n\n1. Open the settings page.\n2. Update the required value.\n\n![Settings screen](/api/files/file-1/settings.png)\n\n# Verification\n\nConfirm the page shows the new value.",
+    "expected": {
+      "needs_rewrite": false,
+      "missing_artifacts": [],
+      "missing_sections": []
+    }
+  },
+  {
+    "name": "report_missing_findings_section",
+    "strategy": {
+      "requiredArtifacts": ["table"],
+      "requiredSections": ["executive summary", "findings", "recommendations"]
+    },
+    "document_plan": {
+      "required_artifacts": ["table"],
+      "sections": [
+        { "title": "Executive Summary" },
+        { "title": "Findings" },
+        { "title": "Recommendations" }
+      ]
+    },
+    "draft": "# Executive Summary\n\n| Metric | Value |\n| --- | --- |\n| Accuracy | 92% |\n\n# Recommendations\n\nAdopt the proposed rollout plan.",
+    "expected": {
+      "needs_rewrite": true,
+      "missing_artifacts": [],
+      "missing_sections": ["findings", "Findings"]
+    }
+  }
+]

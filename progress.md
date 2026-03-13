@@ -322,3 +322,23 @@
   - `E:\test\Docmost\agent-service\app\agent\quality_checks.py` (created)
   - `E:\test\Docmost\agent-service\app\agent\nodes\reviewer.py` (updated)
   - `E:\test\Docmost\agent-service\tests\test_document_strategy.py` (updated)
+
+### 2026-03-13: Minimal Quality Eval Fixture
+- **Status:** complete
+- **Started:** 2026-03-13 02:25 Asia/Shanghai
+- Actions taken:
+  - Added a fixture-backed eval dataset for document quality checks.
+  - Added a pytest runner that loads fixture cases and validates deterministic quality outcomes.
+  - Re-ran Python pytest across both the strategy tests and the new eval fixture tests.
+  - Re-ran Python compile checks across `agent-service/app` and `agent-service/tests`.
+- Files created/modified:
+  - `E:\test\Docmost\agent-service\tests\fixtures\document_quality_eval_cases.json` (created)
+  - `E:\test\Docmost\agent-service\tests\test_quality_evals.py` (created)
+  - `E:\test\Docmost\findings.md` (updated)
+  - `E:\test\Docmost\progress.md` (updated)
+
+## Additional Eval/Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Agent quality evals | `python -m pytest agent-service/tests/test_document_strategy.py agent-service/tests/test_quality_evals.py` | Strategy tests + fixture-backed evals pass | 9 tests passed | Pass |
+| Agent compile sweep | `python -m compileall agent-service/app agent-service/tests` | App + tests compile cleanly | Compile succeeded | Pass |

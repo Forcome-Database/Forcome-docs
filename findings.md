@@ -256,6 +256,18 @@
   - missing required artifacts / sections
   - acceptable drafts that satisfy required headings and artifact usage
 
+## 2026-03-13: Minimal eval fixture added
+
+- Added a reusable eval case dataset:
+  - `agent-service/tests/fixtures/document_quality_eval_cases.json`
+- Added a dedicated regression test runner:
+  - `agent-service/tests/test_quality_evals.py`
+- Current fixture cases cover:
+  - technical documentation missing a required code block
+  - an operations manual draft that correctly uses warning callouts and an image
+  - a report draft that uses a table but misses a required findings section
+- This is not yet a full model-based eval system, but it turns the documented quality bar into repeatable repository checks and gives a clean place to keep growing the dataset.
+
 ## Updated Source Links
 
 - OpenAI prompt guidance: https://developers.openai.com/api/docs/guides/prompt-guidance/
