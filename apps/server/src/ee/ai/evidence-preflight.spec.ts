@@ -76,6 +76,51 @@ describe('evidence preflight', () => {
     });
   });
 
+  it('does not require uploaded_document evidence for generic document-writing requests', () => {
+    expect(
+      deriveEvidencePreflight({
+        prompt:
+          'Write a technical design document about evidence-first AI execution.',
+      }),
+    ).toEqual({
+      requiredEvidence: [],
+    });
+  });
+
+  it('does not require uploaded_document evidence when a referenced URL is the source and no attachment is mentioned', () => {
+    expect(
+      deriveEvidencePreflight({
+        prompt:
+          'Use https://example.com/guide to write a concise document in the same structure.',
+      }),
+    ).toEqual({
+      requiredEvidence: [
+        {
+          type: 'reference_url',
+          required: true,
+          url: 'https://example.com/guide',
+        },
+      ],
+    });
+  });
+
+  it('does not require uploaded_document evidence for url-based Chinese prompts that mention a document generically', () => {
+    expect(
+      deriveEvidencePreflight({
+        prompt:
+          'https://help.router-for.me/cn/introduction/quick-start.html 请复刻这个文档内容',
+      }),
+    ).toEqual({
+      requiredEvidence: [
+        {
+          type: 'reference_url',
+          required: true,
+          url: 'https://help.router-for.me/cn/introduction/quick-start.html',
+        },
+      ],
+    });
+  });
+
   it('requires uploaded_image evidence when the prompt depends on attached images', () => {
     expect(
       deriveEvidencePreflight({

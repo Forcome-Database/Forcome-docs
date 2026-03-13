@@ -80,17 +80,33 @@ const DOCUMENT_MIME_PREFIXES = [
 
 const IMAGE_MIME_PREFIXES = ['image/'];
 
-const DOCUMENT_DEPENDENCY_PATTERNS = [
+const DOCUMENT_REFERENCE_PATTERNS = [
   /\bdocument\b/i,
   /\bdocx?\b/i,
   /\bpdf\b/i,
   /\bfile\b/i,
   /\bmanual\b/i,
-  /附件/,
-  /上传/,
-  /文档/,
-  /文件/,
-  /手册/,
+  /\u6587\u6863/,
+  /\u6587\u4ef6/,
+  /\u624b\u518c/,
+];
+
+const DOCUMENT_ATTACHMENT_PATTERNS = [
+  /\battached\b/i,
+  /\battachment\b/i,
+  /\bupload(?:ed)?\b/i,
+  /\u9644\u4ef6/,
+  /\u4e0a\u4f20/,
+  /\u9644\u4e0a/,
+];
+
+const DOCUMENT_DEICTIC_PATTERNS = [
+  /\bthis\s+(?:document|docx?|pdf|file|manual)\b/i,
+  /\bthe\s+(?:document|docx?|pdf|file|manual)\b/i,
+  /\bthese\s+files\b/i,
+  /\bthose\s+files\b/i,
+  /\u8fd9(?:\u4e2a|\u4efd)?(?:\u6587\u6863|\u6587\u4ef6|\u624b\u518c)/,
+  /\u8be5(?:\u6587\u6863|\u6587\u4ef6|\u624b\u518c)/,
 ];
 
 const IMAGE_DEPENDENCY_PATTERNS = [
@@ -100,9 +116,9 @@ const IMAGE_DEPENDENCY_PATTERNS = [
   /\bphoto\b/i,
   /\bdiagram\b/i,
   /\bui\b/i,
-  /截图/,
-  /图片/,
-  /界面/,
+  /\u622a\u56fe/,
+  /\u56fe\u7247/,
+  /\u754c\u9762/,
 ];
 
 const PAGE_CONTEXT_PATTERNS = [
@@ -111,10 +127,10 @@ const PAGE_CONTEXT_PATTERNS = [
   /\bthis page\b/i,
   /\bextend this page\b/i,
   /\brewrite this page\b/i,
-  /继续这个页面/,
-  /继续当前页面/,
-  /当前页面/,
-  /这个页面/,
+  /\u7ee7\u7eed\u8fd9(?:\u4e2a)?\u9875\u9762/,
+  /\u7ee7\u7eed\u5f53\u524d\u9875\u9762/,
+  /\u5f53\u524d\u9875\u9762/,
+  /\u8fd9(?:\u4e2a)?\u9875\u9762/,
 ];
 
 const SEARCH_REQUIRED_PATTERNS = [
@@ -125,11 +141,11 @@ const SEARCH_REQUIRED_PATTERNS = [
   /\brequirements?\b/i,
   /\bwhat changed\b/i,
   /\b202\d\b/,
-  /最新/,
-  /近期/,
-  /变化/,
-  /最佳实践/,
-  /要求/,
+  /\u6700\u65b0/,
+  /\u8fd1\u671f/,
+  /\u53d8\u5316/,
+  /\u6700\u4f73\u5b9e\u8df5/,
+  /\u8981\u6c42/,
 ];
 
 const REFERENCE_BOUNDED_SUMMARY_PATTERNS = [
@@ -137,8 +153,8 @@ const REFERENCE_BOUNDED_SUMMARY_PATTERNS = [
   /\bbased on\s+https?:\/\/\S+.*\bsummar(?:ize|y)\b/i,
   /\baccording to\s+https?:\/\/\S+.*\bsummar(?:ize|y)\b/i,
   /\busing\s+https?:\/\/\S+.*\brewrite\b/i,
-  /参照.*https?:\/\/\S+.*(总结|改写|仿写)/,
-  /根据.*https?:\/\/\S+.*(总结|改写|仿写)/,
+  /\u53c2\u7167.*https?:\/\/\S+.*(\u603b\u7ed3|\u6539\u5199|\u4eff\u5199)/,
+  /\u6839\u636e.*https?:\/\/\S+.*(\u603b\u7ed3|\u6539\u5199|\u4eff\u5199)/,
 ];
 
 function matchesAny(text: string, patterns: RegExp[]): boolean {
@@ -199,6 +215,23 @@ function addImageEvidence(
   }
 }
 
+function requiresUploadedDocumentEvidence(
+  prompt: string,
+  documentFiles: UploadedFile[],
+): boolean {
+  if (!matchesAny(prompt, DOCUMENT_REFERENCE_PATTERNS)) {
+    return false;
+  }
+
+  if (matchesAny(prompt, DOCUMENT_ATTACHMENT_PATTERNS)) {
+    return true;
+  }
+
+  return (
+    documentFiles.length > 0 && matchesAny(prompt, DOCUMENT_DEICTIC_PATTERNS)
+  );
+}
+
 export function extractReferencedUrls(text: string): string[] {
   const matches = text.match(URL_PATTERN) || [];
   const unique = new Set<string>();
@@ -233,6 +266,7 @@ export function deriveEvidencePreflight({
   const normalizedPrompt = prompt.trim();
   const requiredEvidence: EvidenceRequirement[] = [];
   const hasReferenceUrls = extractReferencedUrls(normalizedPrompt);
+  const documentFiles = files.filter(isDocumentFile);
 
   for (const url of hasReferenceUrls) {
     requiredEvidence.push({
@@ -242,8 +276,8 @@ export function deriveEvidencePreflight({
     });
   }
 
-  if (matchesAny(normalizedPrompt, DOCUMENT_DEPENDENCY_PATTERNS)) {
-    addMissingDocumentEvidence(requiredEvidence, files.filter(isDocumentFile));
+  if (requiresUploadedDocumentEvidence(normalizedPrompt, documentFiles)) {
+    addMissingDocumentEvidence(requiredEvidence, documentFiles);
   }
 
   if (matchesAny(normalizedPrompt, IMAGE_DEPENDENCY_PATTERNS)) {
@@ -272,7 +306,10 @@ export function deriveEvidencePreflight({
     REFERENCE_BOUNDED_SUMMARY_PATTERNS,
   );
 
-  if (!(hasReferenceUrls.length > 0 && referenceBoundedSummary) && requiresSearch) {
+  if (
+    !(hasReferenceUrls.length > 0 && referenceBoundedSummary) &&
+    requiresSearch
+  ) {
     requiredEvidence.push({
       type: 'web_search',
       required: true,
