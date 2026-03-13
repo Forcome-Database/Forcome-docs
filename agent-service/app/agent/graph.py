@@ -7,6 +7,7 @@ Topology:
 from langgraph.graph import StateGraph, END
 
 from app.agent.state import AgentState
+from app.agent.nodes.evidence_acquirer import evidence_acquirer_node
 from app.agent.nodes.explorer import explorer_node
 from app.agent.nodes.clarifier import clarifier_node
 from app.agent.nodes.proposer import proposer_node
@@ -50,6 +51,7 @@ def build_agent_graph():
     graph = StateGraph(AgentState)
 
     graph.add_node("router", cancellable(intent_router_node))
+    graph.add_node("evidence_acquirer", cancellable(evidence_acquirer_node))
     graph.add_node("explorer", cancellable(explorer_node))
     graph.add_node("clarifier", cancellable(clarifier_node))
     graph.add_node("proposer", cancellable(proposer_node))
@@ -60,7 +62,8 @@ def build_agent_graph():
 
     graph.set_entry_point("router")
 
-    graph.add_conditional_edges("router", route_after_router, {
+    graph.add_edge("router", "evidence_acquirer")
+    graph.add_conditional_edges("evidence_acquirer", route_after_router, {
         "writer": "writer",
         "explorer": "explorer",
     })
