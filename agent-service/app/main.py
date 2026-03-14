@@ -285,3 +285,89 @@ async def stop_agent(request: AgentStopRequest):
     if cancel_task(request.task_id):
         return {"status": "stopping"}
     return {"status": "not_found"}
+
+
+# ── v2 Orchestrator Endpoints ────────────────────────────────────────────
+
+from app.orchestrator.engine import OrchestratorEngine, OrchestratorRequest
+from app.orchestrator.tools.user_interaction import interaction_registry
+
+_orchestrator = OrchestratorEngine()
+
+
+async def _run_orchestrator_with_stream(
+    *,
+    task_id: str,
+    thread_id: str,
+    request: OrchestratorRequest,
+):
+    try:
+        await _orchestrator.run(request)
+    except AgentCancelledError:
+        await emit(thread_id, {"type": "cancelled"})
+    except Exception as exc:
+        await emit(thread_id, {"type": "error", "message": str(exc)[:500]})
+    finally:
+        await emit_done(thread_id)
+        unregister_task(task_id, thread_id)
+        interaction_registry.cleanup(thread_id)
+
+
+@app.post("/v2/agent/run", dependencies=[Depends(verify_internal_secret)])
+async def run_agent_v2(request: dict):
+    global _task_counter
+    _task_counter += 1
+    task_id = f"task-{_task_counter}"
+    thread_id = request.get("thread_id") or str(uuid4())
+
+    register_task(task_id, thread_id)
+    interaction_registry.register(thread_id)
+    queue = create_queue(thread_id)
+
+    orch_request = OrchestratorRequest(
+        user_message=request.get("user_message", ""),
+        thread_id=thread_id,
+        workspace_id=request.get("workspace_id", ""),
+        page_id=request.get("page_id"),
+        page_title=request.get("page_title"),
+        page_content=request.get("page_content"),
+        selected_text=request.get("selected_text"),
+        intent_route=request.get("intent_route", "document_create"),
+        insert_mode=request.get("insert_mode", "create"),
+        files=request.get("files", []),
+        template_id=request.get("template_id"),
+        system_prompt=request.get("system_prompt"),
+        template_prompt=request.get("template_prompt"),
+        conversation_history=request.get("conversation_history", []),
+    )
+
+    asyncio.create_task(
+        _run_orchestrator_with_stream(
+            task_id=task_id,
+            thread_id=thread_id,
+            request=orch_request,
+        )
+    )
+
+    return EventSourceResponse(
+        _event_generator(thread_id, queue),
+        headers={"X-Task-Id": task_id},
+    )
+
+
+@app.post("/v2/agent/resume", dependencies=[Depends(verify_internal_secret)])
+async def resume_agent_v2(request: dict):
+    thread_id = request.get("thread_id", "")
+    resume_value = request.get("resume_value", {})
+
+    ok = interaction_registry.submit_response(thread_id, resume_value)
+    if not ok:
+        return {"status": "not_found", "message": f"No pending interaction for thread {thread_id}"}
+    return {"status": "resumed"}
+
+
+@app.post("/v2/agent/stop", dependencies=[Depends(verify_internal_secret)])
+async def stop_agent_v2(request: AgentStopRequest):
+    if cancel_task(request.task_id):
+        return {"status": "stopping"}
+    return {"status": "not_found"}
