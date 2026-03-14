@@ -74,6 +74,40 @@ test("normalizeAgentRunEvent preserves typed propose interrupt payloads", () => 
   });
 });
 
+test("normalizeAgentRunEvent normalizes structured outline artifact plans", () => {
+  const event = normalizeAgentRunEvent({
+    type: "await_input",
+    phase: "outline",
+    data: {
+      type: "outline",
+      outline: "## Windows Installation\n## Verification",
+      artifact_plan: [
+        {
+          section_id: "section-1",
+          section_title: "Windows Installation",
+          artifacts: ["code_block", "table"],
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(event, {
+    type: "await_input",
+    phase: "outline",
+    data: {
+      type: "outline",
+      outline: "## Windows Installation\n## Verification",
+      artifactPlan: [
+        {
+          sectionId: "section-1",
+          sectionTitle: "Windows Installation",
+          artifacts: ["code_block", "table"],
+        },
+      ],
+    },
+  });
+});
+
 test("normalizeAgentRunEvent preserves session and completion metadata", () => {
   assert.deepEqual(
     normalizeAgentRunEvent({

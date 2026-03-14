@@ -122,7 +122,7 @@ async def _upload_image_to_docmost(b64_data: str, filename: str, page_id: str) -
                 headers={"X-Internal-Secret": settings.agent_internal_secret},
             )
 
-        if resp.status_code == 200:
+        if 200 <= resp.status_code < 300:
             result = resp.json()
             file_data = result.get("data", result)
             file_url = file_data.get("url", "")

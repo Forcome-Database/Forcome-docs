@@ -31,6 +31,7 @@ Hard rules:
 4. If evidence is incomplete, stay conservative and say what is missing instead of inventing details.
 5. For source-grounded rewrites, preserve important commands, links, structure, and platform-specific details unless the user explicitly asks to simplify them.
 6. For selection edits, output only the replacement text for the selected content.
+7. Never invent image URLs, placeholder-image URLs, or stock-image links. Use only exact image URLs that are explicitly provided in the available evidence or image instructions.
 
 Image usage rules:
 {image_instructions}
@@ -62,6 +63,12 @@ def _build_image_instructions(images: list[dict]) -> str:
 def _strip_empty_images(md: str) -> str:
     md = re.sub(r"!\[([^\]]*)\]\(\s*\)", r"> *\1*", md)
     md = re.sub(r"!\[([^\]]*)\]\(IMAGE_PLACEHOLDER[^)]*\)", r"> *\1*", md)
+    md = re.sub(
+        r"!\[([^\]]*)\]\(https?://(?:via\.placeholder\.com|placehold\.co|dummyimage\.com|fakeimg\.pl)[^)]*\)",
+        r"> *\1*",
+        md,
+        flags=re.IGNORECASE,
+    )
     md = re.sub(r"!\[([^\]]*)\]\((?!https?://|/api/)[^)]*\)", r"> *\1*", md)
     md = re.sub(r"!\[([^\]]*)\](?!\()", r"> *\1*", md)
     return md

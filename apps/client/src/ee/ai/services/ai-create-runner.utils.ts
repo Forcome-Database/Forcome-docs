@@ -1,5 +1,7 @@
 import type {
   AgentAwaitInputData,
+  AgentDocumentArtifact,
+  AgentOutlineArtifactPlanItem,
   AgentSSEEvent,
 } from "../types/agent.types";
 import type { AiCreateAwaitInputPhase } from "../components/ai-creator/ai-create-session.types";
@@ -17,6 +19,36 @@ export type AiCreateRunEvent =
   | { type: "blocked"; message: string }
   | { type: "cancelled" };
 
+type RawClarifyAwaitInputData = {
+  type: "clarify";
+  questions: string[];
+};
+
+type RawProposeAwaitInputData = {
+  type: "propose";
+  proposals: { title: string; description: string }[];
+};
+
+type RawOutlineArtifactPlanItem = {
+  sectionId?: unknown;
+  section_id?: unknown;
+  sectionTitle?: unknown;
+  section_title?: unknown;
+  artifacts?: unknown;
+};
+
+type RawOutlineAwaitInputData = {
+  type: "outline";
+  outline: string;
+  artifactPlan?: unknown;
+  artifact_plan?: unknown;
+};
+
+type RawAwaitInputData =
+  | RawClarifyAwaitInputData
+  | RawProposeAwaitInputData
+  | RawOutlineAwaitInputData;
+
 export function toAwaitInputPhase(phase: string): AiCreateAwaitInputPhase | null {
   if (phase === "clarify" || phase === "propose" || phase === "outline") {
     return phase;
@@ -25,10 +57,10 @@ export function toAwaitInputPhase(phase: string): AiCreateAwaitInputPhase | null
   return null;
 }
 
-function isAgentAwaitInputData(
+function isRawAwaitInputData(
   phase: AiCreateAwaitInputPhase,
   data: unknown,
-): data is AgentAwaitInputData {
+): data is RawAwaitInputData {
   if (!data || typeof data !== "object") {
     return false;
   }
@@ -51,6 +83,91 @@ function isAgentAwaitInputData(
     (data as { type?: unknown }).type === "outline" &&
     typeof (data as { outline?: unknown }).outline === "string"
   );
+}
+
+function isDocumentArtifact(value: unknown): value is AgentDocumentArtifact {
+  return (
+    value === "table" ||
+    value === "mermaid" ||
+    value === "code_block" ||
+    value === "image" ||
+    value === "callout" ||
+    value === "details"
+  );
+}
+
+function normalizeOutlineArtifactPlanItem(
+  item: RawOutlineArtifactPlanItem,
+): AgentOutlineArtifactPlanItem | null {
+  const sectionId =
+    typeof item.sectionId === "string"
+      ? item.sectionId
+      : typeof item.section_id === "string"
+        ? item.section_id
+        : null;
+  const sectionTitle =
+    typeof item.sectionTitle === "string"
+      ? item.sectionTitle
+      : typeof item.section_title === "string"
+        ? item.section_title
+        : null;
+  const artifacts = Array.isArray(item.artifacts)
+    ? item.artifacts.filter(isDocumentArtifact)
+    : [];
+
+  if (!sectionId || !sectionTitle) {
+    return null;
+  }
+
+  return {
+    sectionId,
+    sectionTitle,
+    artifacts,
+  };
+}
+
+function normalizeOutlineArtifactPlan(
+  data: RawOutlineAwaitInputData,
+): AgentOutlineArtifactPlanItem[] {
+  const rawPlan = Array.isArray(data.artifactPlan)
+    ? data.artifactPlan
+    : Array.isArray(data.artifact_plan)
+      ? data.artifact_plan
+      : [];
+
+  return rawPlan.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+
+    const normalizedItem = normalizeOutlineArtifactPlanItem(
+      item as RawOutlineArtifactPlanItem,
+    );
+    return normalizedItem ? [normalizedItem] : [];
+  });
+}
+
+function normalizeAwaitInputData(
+  phase: AiCreateAwaitInputPhase,
+  data: unknown,
+): AgentAwaitInputData | null {
+  if (!isRawAwaitInputData(phase, data)) {
+    return null;
+  }
+
+  if (phase === "clarify") {
+    return data;
+  }
+
+  if (phase === "propose") {
+    return data;
+  }
+
+  return {
+    type: "outline",
+    outline: data.outline,
+    artifactPlan: normalizeOutlineArtifactPlan(data),
+  };
 }
 
 export function normalizeAgentRunEvent(event: AgentSSEEvent): AiCreateRunEvent | null {
@@ -81,13 +198,16 @@ export function normalizeAgentRunEvent(event: AgentSSEEvent): AiCreateRunEvent |
       };
     case "await_input": {
       const normalizedPhase = toAwaitInputPhase(event.phase);
-      if (!normalizedPhase || !isAgentAwaitInputData(normalizedPhase, event.data)) {
+      const normalizedData = normalizedPhase
+        ? normalizeAwaitInputData(normalizedPhase, event.data)
+        : null;
+      if (!normalizedPhase || !normalizedData) {
         return null;
       }
       return {
         type: "await_input",
         phase: normalizedPhase,
-        data: event.data,
+        data: normalizedData,
       };
     }
     case "session":

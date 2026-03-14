@@ -1,3 +1,5 @@
+import type { AgentOutlineArtifactPlanItem } from "../../types/agent.types";
+
 export interface AiCreatorMessage {
   id: string;
   role: 'user' | 'assistant' | 'clarify' | 'propose' | 'outline';
@@ -8,6 +10,7 @@ export interface AiCreatorMessage {
   questions?: string[];                                    // for clarify role
   proposals?: { title: string; description: string }[];    // for propose role
   outline?: string;                                        // for outline role
+  artifactPlan?: AgentOutlineArtifactPlanItem[];           // for outline role
   threadId?: string;                                       // session tracking
 }
 

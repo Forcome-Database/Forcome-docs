@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Group, Textarea } from '@mantine/core';
+import { Badge, Button, Group, Paper, Stack, Text, Textarea } from '@mantine/core';
 import { IconCheck, IconEdit, IconRefresh, IconX } from '@tabler/icons-react';
 import { AiCreatorMessage } from './ai-creator.types';
 import type { AgentResumeValue } from '@/ee/ai/types/agent.types';
@@ -22,8 +22,18 @@ interface Props {
   onResume: (value: AgentResumeValue) => void;
 }
 
+const ARTIFACT_LABELS: Record<string, string> = {
+  code_block: 'Code block',
+  table: 'Table',
+  mermaid: 'Mermaid',
+  callout: 'Callout',
+  details: 'Details',
+  image: 'Image',
+};
+
 export function AiCreatorOutlineBubble({ message, onResume }: Props) {
   const outline = message.outline || message.content || '';
+  const artifactPlan = message.artifactPlan || [];
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(outline);
 
@@ -64,6 +74,28 @@ export function AiCreatorOutlineBubble({ message, onResume }: Props) {
           className={classes.aiContent}
           dangerouslySetInnerHTML={{ __html: renderOutlineHtml(outline) }}
         />
+      )}
+
+      {!isEditing && artifactPlan.length > 0 && (
+        <Stack gap="xs" mt="md">
+          <Text size="xs" fw={600} c="dimmed">
+            Planned artifacts
+          </Text>
+          {artifactPlan.map((section) => (
+            <Paper key={section.sectionId} withBorder radius="md" p="xs">
+              <Text size="sm" fw={500}>
+                {section.sectionTitle}
+              </Text>
+              <Group gap={6} mt={6}>
+                {section.artifacts.map((artifact) => (
+                  <Badge key={`${section.sectionId}-${artifact}`} variant="light" size="sm">
+                    {ARTIFACT_LABELS[artifact] || artifact}
+                  </Badge>
+                ))}
+              </Group>
+            </Paper>
+          ))}
+        </Stack>
       )}
 
       <Group mt="sm" gap="xs">

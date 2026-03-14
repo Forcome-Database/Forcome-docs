@@ -43,6 +43,36 @@ def test_await_input_event_requires_typed_phase_payload_match():
     assert event.data.proposals[1].title == "Option B"
 
 
+def test_outline_await_input_event_accepts_structured_artifact_plan():
+    event = AwaitInputEvent.model_validate(
+        {
+            "type": "await_input",
+            "phase": "outline",
+            "data": {
+                "type": "outline",
+                "outline": "## Windows Installation\n## Verification",
+                "artifact_plan": [
+                    {
+                        "section_id": "section-1",
+                        "section_title": "Windows Installation",
+                        "artifacts": ["code_block", "table"],
+                    },
+                    {
+                        "section_id": "section-2",
+                        "section_title": "Verification",
+                        "artifacts": ["callout"],
+                    },
+                ],
+            },
+        }
+    )
+
+    assert event.phase == "outline"
+    assert event.data.type == "outline"
+    assert event.data.artifact_plan[0].section_title == "Windows Installation"
+    assert event.data.artifact_plan[0].artifacts == ["code_block", "table"]
+
+
 def test_cancelled_event_schema_exists():
     event = CancelledEvent.model_validate({"type": "cancelled"})
 

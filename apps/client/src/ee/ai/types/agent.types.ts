@@ -10,6 +10,20 @@ export interface AgentProposalOption {
   description: string;
 }
 
+export type AgentDocumentArtifact =
+  | 'table'
+  | 'mermaid'
+  | 'code_block'
+  | 'image'
+  | 'callout'
+  | 'details';
+
+export interface AgentOutlineArtifactPlanItem {
+  sectionId: string;
+  sectionTitle: string;
+  artifacts: AgentDocumentArtifact[];
+}
+
 export interface AgentClarifyAwaitInputData {
   type: 'clarify';
   questions: string[];
@@ -23,6 +37,7 @@ export interface AgentProposeAwaitInputData {
 export interface AgentOutlineAwaitInputData {
   type: 'outline';
   outline: string;
+  artifactPlan?: AgentOutlineArtifactPlanItem[];
 }
 
 export type AgentAwaitInputData =

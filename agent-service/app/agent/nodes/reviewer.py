@@ -36,6 +36,12 @@ Rules:
 def _auto_fix(draft: str) -> str:
     draft = re.sub(r'!\[([^\]]*)\]\(\s*\)', r'> *\1*', draft)
     draft = re.sub(r'!\[([^\]]*)\]\(IMAGE_PLACEHOLDER[^)]*\)', r'> *\1*', draft)
+    draft = re.sub(
+        r'!\[([^\]]*)\]\(https?://(?:via\.placeholder\.com|placehold\.co|dummyimage\.com|fakeimg\.pl)[^)]*\)',
+        r'> *\1*',
+        draft,
+        flags=re.IGNORECASE,
+    )
     draft = re.sub(r'!\[([^\]]*)\]\((?!https?://|/api/)[^)]*\)', r'> *\1*', draft)
     draft = re.sub(r'!\[([^\]]*)\](?!\()', r'> *\1*', draft)
     draft = re.sub(r'[ \t]+$', '', draft, flags=re.MULTILINE)

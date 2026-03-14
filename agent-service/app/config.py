@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     firecrawl_api_url: str = "https://api.firecrawl.dev"
 
     # Image generation (OpenAI-compatible endpoint)
-    agent_image_api_url: str = "https://api.forcome.com/v1beta"
+    agent_image_api_url: str = "https://api.forcome.com/v1"
     agent_image_model: str = "gemini-3-pro-image-preview"
 
     # Internal communication

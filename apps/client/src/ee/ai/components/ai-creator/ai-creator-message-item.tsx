@@ -25,6 +25,7 @@ import { AiCreatorAgentSteps } from "./ai-creator-agent-steps";
 import { AiCreatorClarifyBubble } from './ai-creator-clarify-bubble';
 import { AiCreatorProposeBubble } from './ai-creator-propose-bubble';
 import { AiCreatorOutlineBubble } from './ai-creator-outline-bubble';
+import { BUBBLE_ALLOWED_URI_REGEXP } from "./ai-creator-bubble-render";
 import classes from "./ai-creator.module.css";
 
 // Create an ISOLATED marked instance for bubble rendering (with hljs highlight)
@@ -66,7 +67,7 @@ const PURIFY_CONFIG = {
     'viewBox', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
     'd', 'x', 'y', 'width', 'height', 'rx', 'ry', 'xmlns',
   ],
-  ALLOWED_URI_REGEXP: /^(?:https?|data):/i,
+  ALLOWED_URI_REGEXP: BUBBLE_ALLOWED_URI_REGEXP,
 };
 
 /** Render markdown for display in the chat bubble (with hljs highlight) */

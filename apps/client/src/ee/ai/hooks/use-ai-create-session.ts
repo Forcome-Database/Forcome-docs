@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { notifications } from "@mantine/notifications";
 import { useTranslation } from "react-i18next";
-import { v7 as uuid7 } from "uuid";
 import type {
   AgentAwaitInputData,
   AgentResumeValue,
@@ -21,6 +20,12 @@ import {
   aiCreateSessionReducer,
   createInitialAiCreateSessionState,
 } from "../components/ai-creator/ai-create-session.reducer";
+import {
+  createAssistantPlaceholderMessage,
+  createInteractiveMessage,
+  createPendingRunMessages,
+} from "../components/ai-creator/ai-create-session.messages";
+import { applyAgentStepEvent } from "../components/ai-creator/ai-create-session.steps";
 import type {
   AiCreateAwaitInputPhase,
   AiCreateInsertMode,
@@ -92,37 +97,6 @@ function resolveInsertMode(
   return isContinueIntent(prompt) ? "append" : "overwrite";
 }
 
-function createInteractiveMessage(
-  phase: AiCreateAwaitInputPhase,
-  data: AgentAwaitInputData,
-): AiCreatorMessage {
-  const baseMessage = {
-    id: uuid7(),
-    role: phase,
-    content: "",
-    timestamp: Date.now(),
-  } satisfies Pick<AiCreatorMessage, "id" | "role" | "content" | "timestamp">;
-
-  if (phase === "clarify" && data.type === "clarify") {
-    return {
-      ...baseMessage,
-      questions: data.questions,
-    };
-  }
-
-  if (phase === "propose" && data.type === "propose") {
-    return {
-      ...baseMessage,
-      proposals: data.proposals,
-    };
-  }
-
-  return {
-    ...baseMessage,
-    outline: data.type === "outline" ? data.outline : undefined,
-  };
-}
-
 function formatElapsed(startedAt: number | null): string | null {
   if (!startedAt) {
     return null;
@@ -166,6 +140,7 @@ export function useAiCreateSession({
   const startedAtRef = useRef<number | null>(null);
   const autoInsertRef = useRef(false);
   const awaitInputRef = useRef(false);
+  const replayedStepRef = useRef<string | null>(null);
   const pageVersionRef = useRef<string | null>(
     normalizePageVersion(pageUpdatedAt),
   );
@@ -230,6 +205,7 @@ export function useAiCreateSession({
     insertModeRef.current = null;
     threadIdRef.current = null;
     startedAtRef.current = null;
+    replayedStepRef.current = null;
     clearController();
     dispatch({ type: "reset" });
 
@@ -257,6 +233,7 @@ export function useAiCreateSession({
       clearController();
       unlockEditor();
       accumulatedContentRef.current = "";
+      replayedStepRef.current = null;
       dispatch({ type: "error", message });
       setIsStreaming(false);
       notifications.show({ color: "red", message });
@@ -273,6 +250,7 @@ export function useAiCreateSession({
       clearController();
       dispatch({ type: "done" });
       setIsStreaming(false);
+      replayedStepRef.current = null;
 
       if (autoInsertRef.current && content && insertMode) {
         const expectedUpdatedAt = pageVersionRef.current;
@@ -329,25 +307,24 @@ export function useAiCreateSession({
     [clearController, pageId, t, unlockEditor, updateLastAssistant],
   );
 
-  const updateStep = useCallback((step: string, update: Partial<AgentStepInfo>) => {
-    setSteps((prev) => {
-      const next = [...prev];
-      const index = next.findIndex(
-        (item) => item.step === step && item.status !== "done",
-      );
-      if (index >= 0) {
-        next[index] = { ...next[index], ...update };
-      } else {
-        next.push({
-          step,
-          description: "",
-          status: "pending",
-          ...update,
-        } as AgentStepInfo);
-      }
-      return next;
-    });
-  }, []);
+  const updateStep = useCallback(
+    (
+      event:
+        | { type: "step_start"; step: string; description: string }
+        | { type: "step_done"; step: string; resultSummary?: string },
+    ) => {
+      setSteps((prev) => {
+        const result = applyAgentStepEvent(
+          prev,
+          event,
+          replayedStepRef.current,
+        );
+        replayedStepRef.current = result.replayedStep;
+        return result.steps;
+      });
+    },
+    [],
+  );
 
   const prepareRun = useCallback(
     (
@@ -405,14 +382,16 @@ export function useAiCreateSession({
           dispatch({ type: "session_received", threadId: event.threadId });
           return;
         case "step_start":
-          updateStep(event.step, {
+          updateStep({
+            type: "step_start",
+            step: event.step,
             description: event.description,
-            status: "running",
           });
           return;
         case "step_done":
-          updateStep(event.step, {
-            status: "done",
+          updateStep({
+            type: "step_done",
+            step: event.step,
             resultSummary: event.resultSummary,
           });
           return;
@@ -427,15 +406,19 @@ export function useAiCreateSession({
           updateLastAssistant(() => "");
           return;
         case "await_input":
+          replayedStepRef.current = null;
           addInteractiveMessage(event.phase, event.data);
           return;
         case "error":
+          replayedStepRef.current = null;
           handleRunError(event.message);
           return;
         case "blocked":
+          replayedStepRef.current = null;
           handleRunError(event.message);
           return;
         case "done":
+          replayedStepRef.current = null;
           if (!awaitInputRef.current) {
             void finalizeRun(event.finalContent);
           } else {
@@ -443,6 +426,7 @@ export function useAiCreateSession({
           }
           return;
         case "cancelled":
+          replayedStepRef.current = null;
           clearController();
           unlockEditor();
           accumulatedContentRef.current = "";
@@ -568,20 +552,13 @@ export function useAiCreateSession({
       });
       setSteps([]);
 
-      appendMessage({
-        id: uuid7(),
-        role: "user",
-        content: userPrompt,
-        timestamp: Date.now(),
-        selectionContext: params.selection || undefined,
-        selectionRange: params.selectionRange || undefined,
+      const [userMessage, assistantMessage] = createPendingRunMessages({
+        prompt: userPrompt,
+        selection: params.selection,
+        selectionRange: params.selectionRange,
       });
-      appendMessage({
-        id: uuid7(),
-        role: "assistant",
-        content: "",
-        timestamp: Date.now(),
-      });
+      appendMessage(userMessage);
+      appendMessage(assistantMessage);
 
       prepareRun(
         intent.effectiveMode,
@@ -622,12 +599,7 @@ export function useAiCreateSession({
 
       awaitInputRef.current = false;
       const startedAt = Date.now();
-      appendMessage({
-        id: uuid7(),
-        role: "assistant",
-        content: "",
-        timestamp: Date.now(),
-      });
+      appendMessage(createAssistantPlaceholderMessage());
       dispatch({
         type: "run_started",
         mode: currentState.mode || "agent",
@@ -638,6 +610,7 @@ export function useAiCreateSession({
       });
       startedAtRef.current = startedAt;
       accumulatedContentRef.current = "";
+      replayedStepRef.current = currentState.awaitInput?.phase ?? null;
       if (autoInsertRef.current) {
         lockEditor();
       }
@@ -657,6 +630,7 @@ export function useAiCreateSession({
     controllerRef.current?.abort();
     controllerRef.current = null;
     taskIdRef.current = null;
+    replayedStepRef.current = null;
 
     if (taskId) {
       void stopAgentAiCreateTask(taskId).catch(() => {});

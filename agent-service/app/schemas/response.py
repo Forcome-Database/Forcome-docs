@@ -1,6 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
+
+from app.schemas.document_contracts import DocumentArtifact
 
 
 class ClarifyAwaitInputData(BaseModel):
@@ -18,9 +20,16 @@ class ProposeAwaitInputData(BaseModel):
     proposals: list[ProposalOption]
 
 
+class OutlineArtifactPlanItem(BaseModel):
+    section_id: str
+    section_title: str
+    artifacts: list[DocumentArtifact] = Field(default_factory=list)
+
+
 class OutlineAwaitInputData(BaseModel):
     type: Literal["outline"] = "outline"
     outline: str
+    artifact_plan: list[OutlineArtifactPlanItem] = Field(default_factory=list)
 
 class StepStartEvent(BaseModel):
     type: Literal["step_start"] = "step_start"
