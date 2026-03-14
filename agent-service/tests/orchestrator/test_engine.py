@@ -106,6 +106,10 @@ class TestOrchestratorEngineInit:
         engine = OrchestratorEngine()
         assert callable(engine._execute_level1)
 
+    def test_engine_has_execute_level2_method(self):
+        engine = OrchestratorEngine()
+        assert callable(engine._execute_level2)
+
 
 # ---------------------------------------------------------------------------
 # Empty message validation
@@ -158,7 +162,7 @@ class TestComplexityDispatch:
             assert result == "edited content"
 
     @pytest.mark.asyncio
-    async def test_level2_falls_back_to_level1(self):
+    async def test_level2_routes_to_execute_level2(self):
         engine = OrchestratorEngine()
         with (
             patch(
@@ -166,14 +170,14 @@ class TestComplexityDispatch:
                 return_value={"level": 2, "reasoning": "test"},
             ),
             patch.object(
-                engine, "_execute_level1", new=AsyncMock(return_value="formatted content")
+                engine, "_execute_level2", new=AsyncMock(return_value="level2 content")
             ) as mock_execute,
             patch("app.orchestrator.engine.emit", new=AsyncMock()),
         ):
             req = OrchestratorRequest(thread_id="t", user_message="format this")
             result = await engine.run(req)
             mock_execute.assert_called_once_with(req)
-            assert result == "formatted content"
+            assert result == "level2 content"
 
     @pytest.mark.asyncio
     async def test_level3_falls_back_to_level1(self):
@@ -217,3 +221,219 @@ class TestComplexityDispatch:
         event_types = [e["type"] for e in emit_calls]
         assert "step_start" in event_types
         assert "step_done" in event_types
+
+
+# ---------------------------------------------------------------------------
+# Level 2 routing and _execute_level2
+# ---------------------------------------------------------------------------
+
+class TestLevel2Routing:
+    @pytest.mark.asyncio
+    async def test_level2_routes_to_execute_level2(self):
+        engine = OrchestratorEngine()
+        with (
+            patch(
+                "app.orchestrator.engine.analyze_task_complexity",
+                return_value={"level": 2, "reasoning": "structured creation"},
+            ),
+            patch.object(
+                engine, "_execute_level2", new=AsyncMock(return_value="l2 content")
+            ) as mock_l2,
+            patch("app.orchestrator.engine.emit", new=AsyncMock()),
+        ):
+            req = OrchestratorRequest(
+                thread_id="t",
+                user_message="create a report from this PDF",
+                files=[{"name": "report.pdf", "type": "application/pdf"}],
+            )
+            result = await engine.run(req)
+            mock_l2.assert_called_once_with(req)
+            assert result == "l2 content"
+
+    @pytest.mark.asyncio
+    async def test_level1_not_called_when_level2(self):
+        engine = OrchestratorEngine()
+        with (
+            patch(
+                "app.orchestrator.engine.analyze_task_complexity",
+                return_value={"level": 2, "reasoning": "test"},
+            ),
+            patch.object(
+                engine, "_execute_level1", new=AsyncMock(return_value="l1 content")
+            ) as mock_l1,
+            patch.object(
+                engine, "_execute_level2", new=AsyncMock(return_value="l2 content")
+            ),
+            patch("app.orchestrator.engine.emit", new=AsyncMock()),
+        ):
+            req = OrchestratorRequest(thread_id="t", user_message="format this")
+            await engine.run(req)
+            mock_l1.assert_not_called()
+
+
+class TestExecuteLevel2:
+    @pytest.mark.asyncio
+    async def test_execute_level2_calls_parse_assets_when_files_present(self):
+        engine = OrchestratorEngine()
+        from app.models.asset_map import AssetMap
+        from app.models.brief import CreationBrief
+        from app.models.blueprint import CreationBlueprint
+
+        with (
+            patch(
+                "app.orchestrator.engine.parse_assets_tool",
+                new_callable=AsyncMock,
+                return_value=AssetMap(),
+            ) as mock_parse,
+            patch(
+                "app.orchestrator.engine.generate_brief",
+                new_callable=AsyncMock,
+                return_value=CreationBrief(),
+            ),
+            patch(
+                "app.orchestrator.engine.generate_blueprint",
+                new_callable=AsyncMock,
+                return_value=CreationBlueprint(),
+            ),
+            patch(
+                "app.orchestrator.engine.execute_simple_edit",
+                new_callable=AsyncMock,
+                return_value="content",
+            ),
+            patch(
+                "app.orchestrator.engine.finalize_and_emit",
+                new_callable=AsyncMock,
+                return_value="final content",
+            ),
+            patch("app.orchestrator.engine.emit", new=AsyncMock()),
+        ):
+            req = OrchestratorRequest(
+                thread_id="t",
+                user_message="create a report",
+                files=[{"content_b64": "abc", "filename": "doc.pdf", "mimetype": "application/pdf"}],
+            )
+            result = await engine._execute_level2(req)
+            mock_parse.assert_called_once()
+            assert result == "final content"
+
+    @pytest.mark.asyncio
+    async def test_execute_level2_skips_parse_assets_when_no_files(self):
+        engine = OrchestratorEngine()
+        from app.models.brief import CreationBrief
+        from app.models.blueprint import CreationBlueprint
+
+        with (
+            patch(
+                "app.orchestrator.engine.parse_assets_tool",
+                new_callable=AsyncMock,
+                return_value=None,
+            ) as mock_parse,
+            patch(
+                "app.orchestrator.engine.generate_brief",
+                new_callable=AsyncMock,
+                return_value=CreationBrief(),
+            ),
+            patch(
+                "app.orchestrator.engine.generate_blueprint",
+                new_callable=AsyncMock,
+                return_value=CreationBlueprint(),
+            ),
+            patch(
+                "app.orchestrator.engine.execute_simple_edit",
+                new_callable=AsyncMock,
+                return_value="content",
+            ),
+            patch(
+                "app.orchestrator.engine.finalize_and_emit",
+                new_callable=AsyncMock,
+                return_value="final",
+            ),
+            patch("app.orchestrator.engine.emit", new=AsyncMock()),
+        ):
+            req = OrchestratorRequest(
+                thread_id="t",
+                user_message="create something",
+                files=[],  # no files
+            )
+            await engine._execute_level2(req)
+            mock_parse.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_level2_emits_ask_user_brief_and_blueprint(self):
+        engine = OrchestratorEngine()
+        from app.models.brief import CreationBrief
+        from app.models.blueprint import CreationBlueprint
+
+        emitted_events: list[dict] = []
+
+        async def capture_emit(thread_id: str, event: dict) -> None:
+            emitted_events.append(event)
+
+        with (
+            patch(
+                "app.orchestrator.engine.generate_brief",
+                new_callable=AsyncMock,
+                return_value=CreationBrief(audience="engineers"),
+            ),
+            patch(
+                "app.orchestrator.engine.generate_blueprint",
+                new_callable=AsyncMock,
+                return_value=CreationBlueprint(title="My Doc"),
+            ),
+            patch(
+                "app.orchestrator.engine.execute_simple_edit",
+                new_callable=AsyncMock,
+                return_value="content",
+            ),
+            patch(
+                "app.orchestrator.engine.finalize_and_emit",
+                new_callable=AsyncMock,
+                return_value="final",
+            ),
+            patch("app.orchestrator.engine.emit", side_effect=capture_emit),
+        ):
+            req = OrchestratorRequest(
+                thread_id="t-ask",
+                user_message="create a report",
+            )
+            await engine._execute_level2(req)
+
+        ask_user_events = [e for e in emitted_events if e.get("type") == "ask_user"]
+        phases = {e.get("phase") for e in ask_user_events}
+        assert "brief" in phases
+        assert "blueprint" in phases
+
+    @pytest.mark.asyncio
+    async def test_execute_level2_returns_string(self):
+        engine = OrchestratorEngine()
+        from app.models.brief import CreationBrief
+        from app.models.blueprint import CreationBlueprint
+
+        with (
+            patch(
+                "app.orchestrator.engine.generate_brief",
+                new_callable=AsyncMock,
+                return_value=CreationBrief(),
+            ),
+            patch(
+                "app.orchestrator.engine.generate_blueprint",
+                new_callable=AsyncMock,
+                return_value=CreationBlueprint(),
+            ),
+            patch(
+                "app.orchestrator.engine.execute_simple_edit",
+                new_callable=AsyncMock,
+                return_value="written content",
+            ),
+            patch(
+                "app.orchestrator.engine.finalize_and_emit",
+                new_callable=AsyncMock,
+                return_value="final document",
+            ),
+            patch("app.orchestrator.engine.emit", new=AsyncMock()),
+        ):
+            req = OrchestratorRequest(thread_id="t", user_message="create a report")
+            result = await engine._execute_level2(req)
+
+        assert isinstance(result, str)
+        assert result == "final document"
