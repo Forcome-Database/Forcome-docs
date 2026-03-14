@@ -371,3 +371,39 @@ async def stop_agent_v2(request: AgentStopRequest):
     if cancel_task(request.task_id):
         return {"status": "stopping"}
     return {"status": "not_found"}
+
+
+# ── Draft Management Endpoints ────────────────────────────────────
+from app.orchestrator.draft_manager import draft_store
+
+
+@app.post("/v2/draft/get", dependencies=[Depends(verify_internal_secret)])
+async def get_draft(request: dict):
+    draft = draft_store.get_draft(
+        workspace_id=request.get("workspace_id", ""),
+        page_id=request.get("page_id", ""),
+        task_id=request.get("task_id", ""),
+    )
+    if not draft:
+        return {"status": "not_found"}
+    return {"status": "ok", "draft": draft}
+
+
+@app.post("/v2/draft/merge", dependencies=[Depends(verify_internal_secret)])
+async def get_merged_draft(request: dict):
+    content = draft_store.get_merged_content(
+        workspace_id=request.get("workspace_id", ""),
+        page_id=request.get("page_id", ""),
+        task_id=request.get("task_id", ""),
+    )
+    return {"status": "ok", "content": content}
+
+
+@app.post("/v2/draft/delete", dependencies=[Depends(verify_internal_secret)])
+async def delete_draft(request: dict):
+    ok = draft_store.delete_draft(
+        workspace_id=request.get("workspace_id", ""),
+        page_id=request.get("page_id", ""),
+        task_id=request.get("task_id", ""),
+    )
+    return {"status": "deleted" if ok else "not_found"}
