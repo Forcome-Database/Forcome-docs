@@ -33,6 +33,10 @@ from app.orchestrator.draft_manager import draft_store
 from app.models.brief import CreationBrief
 from app.models.blueprint import CreationBlueprint
 
+# Phase 4 tools
+from app.orchestrator.tools.evaluate import evaluate_quality
+from app.orchestrator.tools.fix_tools import fix_selected_issues
+
 
 class OrchestratorRequest(BaseModel):
     """Input model for an orchestrator run."""
@@ -333,6 +337,44 @@ class OrchestratorEngine:
 
         # 8. Run consistency checks
         consistency_issues = run_consistency_checks(section_drafts, blueprint)
+
+        # 8b. Evaluate quality
+        review_report = await evaluate_quality(
+            drafts=section_drafts,
+            blueprint=blueprint,
+            brief=brief,
+            asset_map=asset_map,
+            thread_id=request.thread_id,
+        )
+
+        # 8c. Auto-fix format issues
+        from app.workers.fixer import apply_auto_fixes
+        section_levels = {s.id: s.level for s in blueprint.sections}
+        auto_fixable = [i for i in review_report.issues if i.auto_fixable]
+        if auto_fixable:
+            section_drafts, auto_count = apply_auto_fixes(section_drafts, review_report.issues, section_levels)
+            review_report.auto_fixed_count = auto_count
+
+        # 8d. If there are user-decision issues, show Review Card
+        user_issues = [i for i in review_report.issues if not i.auto_fixable and not i.fixed]
+        if user_issues:
+            await emit(request.thread_id, {
+                "type": "await_input",
+                "phase": "review",
+                "data": review_report.model_dump(),
+            })
+            review_response = await interaction_registry.wait_for_response(request.thread_id)
+
+            if isinstance(review_response, dict):
+                selected_ids = review_response.get("selected_issue_ids", [])
+                if selected_ids:
+                    section_drafts = await fix_selected_issues(
+                        drafts=section_drafts,
+                        issues=review_report.issues,
+                        selected_issue_ids=selected_ids,
+                        blueprint=blueprint,
+                        thread_id=request.thread_id,
+                    )
 
         # 9. Merge and finalize
         merged_sections = [
