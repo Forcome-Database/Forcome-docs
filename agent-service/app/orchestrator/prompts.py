@@ -58,12 +58,29 @@ Steps:
 6. **write**: Generate content for each section using section word budgets.
 7. **finalize**: Merge sections, emit the final done event.
 
-## Level 3 Pipeline (Phase 3 — not yet implemented)
+## Level 3 Pipeline
 
-For complex, multi-document creation tasks:
+For complex, long-form creation tasks (full articles, reports, technical documents):
 
 ```
 parse_assets → create_brief → ask_user(brief) → create_blueprint → ask_user(blueprint)
-→ research (per section) → write (per section) → review → ask_user(review) → finalize
+→ write_all_sections → save_draft → run_consistency_checks → finalize
 ```
+
+Steps:
+1. **parse_assets** (optional): Parse all uploaded files into a structured AssetMap.
+2. **create_brief**: Analyze user request + assets to produce a Smart Brief
+   (audience, goal, target_length, style, tone, structure_strategy, image_strategy).
+3. **ask_user(phase="brief")**: Emit the brief for user confirmation and optional editing.
+4. **create_blueprint**: Plan the document structure — sections, word budgets,
+   asset assignments, visual suggestions.
+5. **ask_user(phase="blueprint")**: Emit the blueprint for user confirmation.
+   User may reorder sections, adjust word budgets, etc.
+6. **write_all_sections**: Generate content for each section sequentially using word budgets.
+   Each section uses a sliding window of the previous section's tail for coherence.
+   Emits `section_progress` events for live progress updates.
+7. **save_draft**: Persist all section drafts to draft_store for retrieval/editing.
+8. **run_consistency_checks**: Validate cross-section heading levels, term usage,
+   cross-references, and empty sections.
+9. **finalize**: Merge sections and emit the final `done` event.
 """
