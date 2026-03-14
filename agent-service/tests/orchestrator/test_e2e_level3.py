@@ -22,12 +22,15 @@ async def test_level3_full_pipeline():
          patch("app.orchestrator.engine.interaction_registry") as mock_registry, \
          patch("app.orchestrator.engine.write_all_sections") as mock_write, \
          patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
+         patch("app.orchestrator.engine.evaluate_quality") as mock_evaluate, \
+         patch("app.workers.fixer.apply_auto_fixes") as mock_autofix, \
          patch("app.orchestrator.engine.finalize_and_emit") as mock_finalize, \
          patch("app.orchestrator.engine.emit") as mock_emit, \
          patch("app.orchestrator.engine.draft_store") as mock_draft:
 
         from app.models import CreationBrief, CreationBlueprint, SectionDraft
         from app.models.blueprint import SectionPlan
+        from app.models.review import ReviewReport
 
         mock_complexity.return_value = {"level": 3, "reasoning": "creation keyword"}
         mock_brief.return_value = CreationBrief(
@@ -53,7 +56,9 @@ async def test_level3_full_pipeline():
             SectionDraft(section_id="s3", content="实践建议内容", word_count=1000),
             SectionDraft(section_id="s4", content="总结内容", word_count=500),
         ]
-        mock_consistency.return_value = []  # No issues
+        mock_consistency.return_value = []
+        mock_evaluate.return_value = ReviewReport(overall_score=85, issues=[])
+        mock_autofix.return_value = (mock_write.return_value, 0)
         mock_finalize.return_value = "Full document content"
         mock_draft.save_draft = MagicMock()
 
@@ -89,11 +94,14 @@ async def test_level3_with_files():
          patch("app.orchestrator.engine.interaction_registry") as mock_registry, \
          patch("app.orchestrator.engine.write_all_sections") as mock_write, \
          patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
+         patch("app.orchestrator.engine.evaluate_quality") as mock_evaluate, \
+         patch("app.workers.fixer.apply_auto_fixes") as mock_autofix, \
          patch("app.orchestrator.engine.finalize_and_emit") as mock_finalize, \
          patch("app.orchestrator.engine.emit") as mock_emit, \
          patch("app.orchestrator.engine.draft_store") as mock_draft:
 
         from app.models import AssetMap, CreationBrief, CreationBlueprint, SectionDraft
+        from app.models.review import ReviewReport
 
         mock_complexity.return_value = {"level": 3, "reasoning": "multi file"}
         mock_parse.return_value = AssetMap(source_word_count=5000)
@@ -104,6 +112,8 @@ async def test_level3_with_files():
         mock_registry.cleanup = MagicMock()
         mock_write.return_value = [SectionDraft(section_id="s1", content="content", word_count=5000)]
         mock_consistency.return_value = []
+        mock_evaluate.return_value = ReviewReport(overall_score=90, issues=[])
+        mock_autofix.return_value = (mock_write.return_value, 0)
         mock_finalize.return_value = "content"
         mock_draft.save_draft = MagicMock()
 
