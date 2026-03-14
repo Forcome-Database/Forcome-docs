@@ -51,7 +51,8 @@ type RawAwaitInputData =
   | RawOutlineAwaitInputData;
 
 export function toAwaitInputPhase(phase: string): AiCreateAwaitInputPhase | null {
-  if (phase === "clarify" || phase === "propose" || phase === "outline") {
+  if (phase === "clarify" || phase === "propose" || phase === "outline" ||
+      phase === "brief" || phase === "blueprint" || phase === "review") {
     return phase;
   }
 
@@ -152,23 +153,35 @@ function normalizeAwaitInputData(
   phase: AiCreateAwaitInputPhase,
   data: unknown,
 ): AgentAwaitInputData | null {
+  // V2 phases: pass through as-is (brief/blueprint/review carry their own structure)
+  if (phase === "brief" || phase === "blueprint" || phase === "review") {
+    if (!data || typeof data !== "object") {
+      return null;
+    }
+    return data as AgentAwaitInputData;
+  }
+
   if (!isRawAwaitInputData(phase, data)) {
     return null;
   }
 
-  if (phase === "clarify") {
-    return data;
+  if (phase === "clarify" && data.type === "clarify") {
+    return data as AgentAwaitInputData;
   }
 
-  if (phase === "propose") {
-    return data;
+  if (phase === "propose" && data.type === "propose") {
+    return data as AgentAwaitInputData;
   }
 
-  return {
-    type: "outline",
-    outline: data.outline,
-    artifactPlan: normalizeOutlineArtifactPlan(data),
-  };
+  if (data.type === "outline") {
+    return {
+      type: "outline",
+      outline: data.outline,
+      artifactPlan: normalizeOutlineArtifactPlan(data),
+    };
+  }
+
+  return null;
 }
 
 /**

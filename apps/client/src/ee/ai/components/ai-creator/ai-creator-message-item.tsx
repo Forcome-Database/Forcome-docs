@@ -20,8 +20,14 @@ import hljs from "highlight.js";
 import DOMPurify from "dompurify";
 import { markdownToHtml } from "@docmost/editor-ext";
 import { useTranslation } from "react-i18next";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { AiCreatorAgentSteps } from "./ai-creator-agent-steps";
+import { SmartBriefCard } from "./smart-brief/SmartBriefCard";
+import { BlueprintModal } from "./blueprint/BlueprintModal";
+import { ReviewModal } from "./review/ReviewModal";
+import type { CreationBrief } from "../../types/brief.types";
+import type { CreationBlueprint } from "../../types/blueprint.types";
+import type { ReviewReport } from "../../types/review.types";
 import { BUBBLE_ALLOWED_URI_REGEXP } from "./ai-creator-bubble-render";
 import classes from "./ai-creator.module.css";
 
@@ -91,6 +97,120 @@ interface Props {
 }
 
 import { extractTitle, stripTimestamp, preprocessImagesForEditor } from './ai-creator-utils';
+
+/* ---------- V2 wrapper sub-components (avoid conditional useState) ---------- */
+
+function BriefMessageItem({
+  briefData,
+  onResume,
+}: {
+  briefData: Record<string, unknown>;
+  onResume?: (value: AgentResumeValue) => void;
+}) {
+  return (
+    <div className={classes.messageAi}>
+      <div className={classes.messageBubbleRow + " " + classes.messageBubbleRowAi}>
+        <div className={classes.avatarAi}>
+          <img src="/icons/app-icon-192x192.png" alt="" width={28} height={28} />
+        </div>
+        <div className={classes.messageAiBubbleWrap}>
+          <SmartBriefCard
+            brief={briefData as unknown as CreationBrief}
+            onConfirm={(brief) => onResume?.({ type: 'brief', brief: brief as unknown as Record<string, unknown> })}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BlueprintMessageItem({
+  blueprintData,
+  onResume,
+}: {
+  blueprintData: Record<string, unknown>;
+  onResume?: (value: AgentResumeValue) => void;
+}) {
+  const [opened, setOpened] = useState(true);
+  return (
+    <div className={classes.messageAi}>
+      <div className={classes.messageBubbleRow + " " + classes.messageBubbleRowAi}>
+        <div className={classes.avatarAi}>
+          <img src="/icons/app-icon-192x192.png" alt="" width={28} height={28} />
+        </div>
+        <div className={classes.messageAiBubbleWrap}>
+          <BlueprintModal
+            opened={opened}
+            onClose={() => setOpened(false)}
+            blueprint={blueprintData as unknown as CreationBlueprint}
+            onConfirm={(bp) => {
+              onResume?.({ type: 'blueprint', blueprint: bp as unknown as Record<string, unknown> });
+              setOpened(false);
+            }}
+            onRegenerate={() => {
+              onResume?.({ type: 'blueprint', blueprint: null });
+              setOpened(false);
+            }}
+          />
+          <Text
+            size="sm"
+            c="dimmed"
+            p="xs"
+            style={{ cursor: 'pointer' }}
+            onClick={() => setOpened(true)}
+          >
+            创作蓝图已生成（点击查看）
+          </Text>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewMessageItem({
+  reviewData,
+  onResume,
+}: {
+  reviewData: Record<string, unknown>;
+  onResume?: (value: AgentResumeValue) => void;
+}) {
+  const [opened, setOpened] = useState(true);
+  return (
+    <div className={classes.messageAi}>
+      <div className={classes.messageBubbleRow + " " + classes.messageBubbleRowAi}>
+        <div className={classes.avatarAi}>
+          <img src="/icons/app-icon-192x192.png" alt="" width={28} height={28} />
+        </div>
+        <div className={classes.messageAiBubbleWrap}>
+          <ReviewModal
+            opened={opened}
+            onClose={() => setOpened(false)}
+            report={reviewData as unknown as ReviewReport}
+            onFixSelected={(ids, feedback) => {
+              onResume?.({ type: 'review', selected_issue_ids: ids, feedback });
+              setOpened(false);
+            }}
+            onSkip={() => {
+              onResume?.({ type: 'review', selected_issue_ids: [], skip: true });
+              setOpened(false);
+            }}
+          />
+          <Text
+            size="sm"
+            c="dimmed"
+            p="xs"
+            style={{ cursor: 'pointer' }}
+            onClick={() => setOpened(true)}
+          >
+            质量评审报告已生成（点击查看）
+          </Text>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Main message item component ---------- */
 
 export function AiCreatorMessageItem({
   message,
@@ -187,6 +307,19 @@ export function AiCreatorMessageItem({
       }
     }
   }, [t]);
+
+  // V2 interactive roles — delegate to sub-components
+  if (message.role === 'brief' && message.briefData) {
+    return <BriefMessageItem briefData={message.briefData} onResume={_onResume} />;
+  }
+
+  if (message.role === 'blueprint' && message.blueprintData) {
+    return <BlueprintMessageItem blueprintData={message.blueprintData} onResume={_onResume} />;
+  }
+
+  if (message.role === 'review' && message.reviewData) {
+    return <ReviewMessageItem reviewData={message.reviewData} onResume={_onResume} />;
+  }
 
   if (isUser) {
     return (
