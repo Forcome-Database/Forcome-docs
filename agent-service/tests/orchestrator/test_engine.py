@@ -180,7 +180,7 @@ class TestComplexityDispatch:
             assert result == "level2 content"
 
     @pytest.mark.asyncio
-    async def test_level3_falls_back_to_level1(self):
+    async def test_level3_routes_to_execute_level3(self):
         engine = OrchestratorEngine()
         with (
             patch(
@@ -188,7 +188,7 @@ class TestComplexityDispatch:
                 return_value={"level": 3, "reasoning": "test"},
             ),
             patch.object(
-                engine, "_execute_level1", new=AsyncMock(return_value="created content")
+                engine, "_execute_level3", new=AsyncMock(return_value="created content")
             ) as mock_execute,
             patch("app.orchestrator.engine.emit", new=AsyncMock()),
         ):
