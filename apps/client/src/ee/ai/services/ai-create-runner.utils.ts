@@ -5,6 +5,7 @@ import type {
   AgentSSEEvent,
 } from "../types/agent.types";
 import type { AiCreateAwaitInputPhase } from "../components/ai-creator/ai-create-session.types";
+import type { SSEEventV2 } from '../types/events-v2.types';
 
 export type AiCreateRunEvent =
   | { type: "task"; taskId: string | null }
@@ -168,6 +169,67 @@ function normalizeAwaitInputData(
     outline: data.outline,
     artifactPlan: normalizeOutlineArtifactPlan(data),
   };
+}
+
+/**
+ * Normalize a v2 SSE event into the internal AiCreateRunEvent format.
+ * This enables the existing handleRunEvent in use-ai-create-session.ts
+ * to process v2 events without major changes.
+ */
+export function normalizeV2Event(event: SSEEventV2): AiCreateRunEvent | null {
+  switch (event.type) {
+    case 'step_start':
+      return {
+        type: 'step_start',
+        step: event.step_name,
+        description: event.description || '',
+      };
+    case 'step_done':
+      return {
+        type: 'step_done',
+        step: event.step_name,
+        resultSummary: event.result_summary || '',
+      };
+    case 'content_delta':
+      return { type: 'content_delta', chunk: event.chunk || '' };
+    case 'content_cleared':
+      return { type: 'content_cleared' };
+    case 'section_progress':
+      return {
+        type: 'step_start',
+        step: `writing_section_${event.current}`,
+        description: event.section_title || `Section ${event.current}/${event.total}`,
+      };
+    case 'await_user_input': {
+      const phase = toAwaitInputPhase(event.phase);
+      if (!phase) return null;
+      return {
+        type: 'await_input',
+        phase,
+        data: event.data as any,
+      };
+    }
+    case 'done':
+      return {
+        type: 'done',
+        finalContent: event.final_content || '',
+      };
+    case 'error':
+      return {
+        type: 'error',
+        message: event.error_message || 'Unknown error',
+      };
+    case 'cancelled':
+      return { type: 'cancelled' };
+    case 'complexity_analyzed':
+      return {
+        type: 'step_done',
+        step: 'analyze_complexity',
+        resultSummary: `Level ${event.level}`,
+      };
+    default:
+      return null;
+  }
 }
 
 export function normalizeAgentRunEvent(event: AgentSSEEvent): AiCreateRunEvent | null {
