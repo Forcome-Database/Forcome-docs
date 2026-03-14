@@ -33,7 +33,7 @@ def route_after_router(state: AgentState) -> str:
 def route_after_explorer(state: AgentState) -> str:
     intent_route = state.get("intent_route") or "document_create"
     if intent_route == "document_transform":
-        return "planner"
+        return "writer"
     return "clarifier"
 
 
@@ -86,7 +86,7 @@ def build_agent_graph():
         "explorer": "explorer",
     })
     graph.add_conditional_edges("explorer", route_after_explorer, {
-        "planner": "planner",
+        "writer": "writer",
         "clarifier": "clarifier",
     })
     graph.add_edge("clarifier", "proposer")

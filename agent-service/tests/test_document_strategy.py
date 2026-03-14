@@ -124,7 +124,7 @@ def test_build_source_first_plan_prefers_parsing_uploaded_files():
 
 def test_graph_routes_selection_edit_directly_to_writer():
     assert route_after_router({"intent_route": "selection_edit"}) == "writer"
-    assert route_after_explorer({"intent_route": "document_transform"}) == "planner"
+    assert route_after_explorer({"intent_route": "document_transform"}) == "writer"
     assert route_after_explorer({"intent_route": "document_create"}) == "clarifier"
 
 
