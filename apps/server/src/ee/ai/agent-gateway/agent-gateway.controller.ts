@@ -280,4 +280,139 @@ export class AgentGatewayController {
   async getTools() {
     return this.agentGatewayService.getTools();
   }
+
+  @Post('v2/run')
+  @UseGuards(JwtAuthGuard)
+  async runAgentV2(
+    @Req() req: FastifyRequest,
+    @Res() res: FastifyReply,
+    @AuthUser() user: any,
+    @AuthWorkspace() workspace: any,
+  ) {
+    const body = req.body as any;
+
+    const agentUrl = this.environmentService.getAgentServiceUrl();
+    if (!agentUrl) {
+      res.status(503).send({ error: 'Agent service not configured' });
+      return;
+    }
+
+    // Resolve template if provided
+    let templatePrompt: string | undefined;
+    if (body.templateId) {
+      const prompt = await this.aiTemplateService.getTemplatePrompt(
+        body.templateId,
+        workspace.id,
+        user.id,
+      );
+      templatePrompt = prompt || undefined;
+    }
+
+    // Get workspace system prompt
+    const wsSettings = workspace.settings?.ai;
+    const systemPrompt: string | undefined = wsSettings?.systemPrompt || undefined;
+
+    const payload = JSON.stringify({
+      user_message: body.prompt || '',
+      thread_id: body.threadId || undefined,
+      workspace_id: workspace.id,
+      page_id: body.pageId || undefined,
+      page_title: body.pageTitle || undefined,
+      page_content: body.pageContent || undefined,
+      selected_text: body.selectedText || undefined,
+      intent_route: body.intentRoute || 'document_create',
+      insert_mode: body.insertMode || 'create',
+      files: [],
+      template_id: body.templateId || undefined,
+      system_prompt: systemPrompt,
+      template_prompt: templatePrompt,
+      conversation_history: body.conversationHistory || [],
+    });
+
+    const url = new URL('/v2/agent/run', agentUrl);
+    const secret = this.environmentService.getAgentInternalSecret();
+
+    const options: http.RequestOptions = {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': secret || '',
+      },
+    };
+
+    writeSseHeaders(res);
+
+    const proxyReq = http.request(options, (proxyRes) => {
+      proxyRes.on('data', (chunk: Buffer) => {
+        res.raw.write(chunk);
+      });
+      proxyRes.on('end', () => {
+        res.raw.end();
+      });
+    });
+
+    proxyReq.on('error', (err) => {
+      this.logger.error(`v2 proxy error: ${err.message}`);
+      if (!res.raw.headersSent) {
+        res.status(502).send({ error: 'Agent service unavailable' });
+      } else {
+        res.raw.end();
+      }
+    });
+
+    proxyReq.write(payload);
+    proxyReq.end();
+  }
+
+  @Post('v2/resume')
+  @UseGuards(JwtAuthGuard)
+  async resumeAgentV2(@Body() body: any, @Res() res: FastifyReply) {
+    const agentUrl = this.environmentService.getAgentServiceUrl();
+    if (!agentUrl) {
+      res.status(503).send({ error: 'Agent service not configured' });
+      return;
+    }
+
+    const url = new URL('/v2/agent/resume', agentUrl);
+    const secret = this.environmentService.getAgentInternalSecret();
+
+    const payload = JSON.stringify({
+      thread_id: body.threadId,
+      resume_value: body.resumeValue,
+    });
+
+    const options: http.RequestOptions = {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': secret || '',
+      },
+    };
+
+    const proxyReq = http.request(options, (proxyRes) => {
+      let data = '';
+      proxyRes.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      proxyRes.on('end', () => {
+        try {
+          res.send(JSON.parse(data));
+        } catch {
+          res.send({ status: 'ok', raw: data });
+        }
+      });
+    });
+
+    proxyReq.on('error', (err) => {
+      this.logger.error(`v2 resume proxy error: ${err.message}`);
+      res.status(502).send({ error: 'Agent service unavailable' });
+    });
+
+    proxyReq.write(payload);
+    proxyReq.end();
+  }
 }
