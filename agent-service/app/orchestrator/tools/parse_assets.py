@@ -2,18 +2,35 @@
 
 Parses all uploaded files and merges results into a single AssetMap.
 If a page_id is provided, also processes embedded images via VLM.
+
+Files are parsed in parallel and results are cached by content hash.
 """
 from __future__ import annotations
+
+import asyncio
+import hashlib
+from typing import Any
 
 from app.models.asset_map import AssetMap
 from app.workers.asset_parser import parse_document, process_images
 
+# Simple in-memory cache: content hash → AssetMap
+_asset_cache: dict[str, AssetMap] = {}
+
+
+def _file_hash(file_info: dict) -> str:
+    """Hash file content for cache key."""
+    content = file_info.get("content_b64", "")
+    return hashlib.md5(content.encode()).hexdigest()
+
 
 async def parse_assets_tool(
-    files: list[dict],
+    files: list[dict[str, Any]],
     page_id: str | None = None,
 ) -> AssetMap:
-    """Parse all uploaded files and merge results into a single AssetMap.
+    """Parse all uploaded files into a single AssetMap.
+
+    Parses files in parallel and caches results by content hash.
 
     For each file dict the following keys are expected:
     - ``content_b64`` (str): Base-64 encoded file bytes.
@@ -31,16 +48,33 @@ async def parse_assets_tool(
     Returns:
         A merged :class:`~app.models.asset_map.AssetMap` combining all files.
     """
-    combined = AssetMap()
+    if not files:
+        return AssetMap()
 
-    for file_info in files:
-        # --- Parse document structure ---
-        asset_map = parse_document(
-            file_content_b64=file_info["content_b64"],
-            filename=file_info["filename"],
-            mimetype=file_info["mimetype"],
+    async def parse_one(file_info: dict) -> AssetMap:
+        cache_key = _file_hash(file_info)
+        if cache_key in _asset_cache:
+            return _asset_cache[cache_key]
+
+        # parse_document is sync, run in executor
+        loop = asyncio.get_event_loop()
+        asset_map = await loop.run_in_executor(
+            None,
+            parse_document,
+            file_info.get("content_b64", ""),
+            file_info.get("filename", "unknown"),
+            file_info.get("mimetype", "application/octet-stream"),
         )
 
+        _asset_cache[cache_key] = asset_map
+        return asset_map
+
+    # Parse all files in parallel
+    results = await asyncio.gather(*[parse_one(f) for f in files])
+
+    # Merge results
+    combined = AssetMap()
+    for asset_map in results:
         combined.items.extend(asset_map.items)
         combined.source_word_count += asset_map.source_word_count
 
@@ -48,19 +82,24 @@ async def parse_assets_tool(
         combined.source_structure.extend(asset_map.source_structure)
 
         # Merge section counts (accumulate word counts per heading)
-        for heading, wc in asset_map.source_section_counts.items():
-            combined.source_section_counts[heading] = (
-                combined.source_section_counts.get(heading, 0) + wc
-            )
+        for key, count in asset_map.source_section_counts.items():
+            combined.source_section_counts[key] = combined.source_section_counts.get(key, 0) + count
 
-        # --- Process images if available and page_id is provided ---
-        raw_images = file_info.get("images")
-        if page_id and raw_images:
-            image_assets = process_images(
-                raw_images,
-                file_info["filename"],
-                page_id,
-            )
-            combined.items.extend(image_assets)
+    # Process images if page_id available
+    if page_id:
+        for file_info in files:
+            images = file_info.get("images")
+            if images:
+                image_assets = process_images(
+                    images,
+                    file_info.get("filename", "unknown"),
+                    page_id,
+                )
+                combined.items.extend(image_assets)
 
     return combined
+
+
+def clear_asset_cache() -> None:
+    """Clear the asset cache (for testing)."""
+    _asset_cache.clear()
