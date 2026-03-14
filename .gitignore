@@ -2,6 +2,7 @@
 .env.dev
 .env.prod
 data
+.worktrees
 # compiled output
 /dist
 /node_modules

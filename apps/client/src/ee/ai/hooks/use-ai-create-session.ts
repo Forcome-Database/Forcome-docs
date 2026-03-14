@@ -502,7 +502,6 @@ export function useAiCreateSession({
       setSteps([]);
       controllerRef.current = runAgentAiCreate(
         {
-          files: params.files,
           prompt: fullPrompt,
           pageId,
           templateId: params.template || undefined,
@@ -515,13 +514,8 @@ export function useAiCreateSession({
               )
             : undefined,
           selectedText: params.selection || undefined,
-          selectionRange: params.selectionRange || undefined,
-          history: history.length > 0 ? history : undefined,
+          conversationHistory: history.length > 0 ? history : undefined,
           intentRoute: intent.route,
-          scope: intent.scope,
-          sourcePolicy: intent.sourcePolicy,
-          lengthPolicy: intent.lengthPolicy,
-          prioritizeUserInstructions: intent.prioritizeUserInstructions,
         },
         handleRunEvent,
       );

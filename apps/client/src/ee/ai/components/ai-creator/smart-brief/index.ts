@@ -1,0 +1,1 @@
+export { SmartBriefCard } from './SmartBriefCard';

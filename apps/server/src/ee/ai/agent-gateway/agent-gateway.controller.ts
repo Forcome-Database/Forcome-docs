@@ -6,7 +6,6 @@ import {
   Res,
   UseGuards,
   Logger,
-  PayloadTooLargeException,
 } from '@nestjs/common';
 import { FastifyRequest, FastifyReply } from 'fastify';
 import * as http from 'http';
@@ -15,20 +14,8 @@ import { AuthUser } from '../../../common/decorators/auth-user.decorator';
 import { AuthWorkspace } from '../../../common/decorators/auth-workspace.decorator';
 import { AgentGatewayService } from './agent-gateway.service';
 import { AgentStopDto } from './dto/agent-stop.dto';
-import { AgentResumeDto } from './dto/agent-resume.dto';
 import { EnvironmentService } from '../../../integrations/environment/environment.service';
 import { AiTemplateService } from '../services/ai-template.service';
-import {
-  type AiIntentRoute,
-  type AiIntentScope,
-  type AiLengthPolicy,
-  type AiSourcePolicy,
-  resolveAiDocumentStrategy,
-} from '../document-strategy';
-import { deriveEvidencePreflight } from '../evidence-preflight';
-
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
-const MAX_FILES = 5;
 
 function writeSseHeaders(res: FastifyReply, taskId?: string) {
   if (res.raw.headersSent) {
@@ -41,14 +28,6 @@ function writeSseHeaders(res: FastifyReply, taskId?: string) {
     Connection: 'keep-alive',
     ...(taskId ? { 'X-Task-Id': taskId } : {}),
   });
-}
-
-function parseBooleanField(value?: string): boolean | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return value === 'true';
 }
 
 @Controller('agent')
@@ -64,210 +43,140 @@ export class AgentGatewayController {
 
   @Post('run')
   async runAgent(
-    @AuthUser() user: any,
-    @AuthWorkspace() workspace: any,
     @Req() req: FastifyRequest,
     @Res() res: FastifyReply,
+    @AuthUser() user: any,
+    @AuthWorkspace() workspace: any,
   ) {
-    const parts = req.parts();
-    const bufferedFiles: { buffer: Buffer; mimetype: string; filename: string }[] = [];
-    const fields: Record<string, string> = {};
+    const body = req.body as any;
 
-    for await (const part of parts) {
-      if (part.type === 'file') {
-        if (bufferedFiles.length >= MAX_FILES) continue;
-        const buffer = await part.toBuffer();
-        if (buffer.length > MAX_FILE_SIZE) {
-          throw new PayloadTooLargeException(`File ${part.filename} exceeds 20MB`);
-        }
-        bufferedFiles.push({ buffer, mimetype: part.mimetype, filename: part.filename });
-      } else {
-        fields[part.fieldname] = part.value as string;
-      }
+    const agentUrl = this.environmentService.getAgentServiceUrl();
+    if (!agentUrl) {
+      res.status(503).send({ error: 'Agent service not configured' });
+      return;
     }
 
-    const files = bufferedFiles.map((file) => ({
-      filename: file.filename,
-      mimetype: file.mimetype,
-      content_b64: file.buffer.toString('base64'),
-    }));
+    // Resolve template prompt if provided
+    let templatePrompt: string | undefined;
+    if (body.templateId) {
+      const prompt = await this.aiTemplateService.getTemplatePrompt(
+        body.templateId,
+        workspace.id,
+        user.id,
+      );
+      templatePrompt = prompt || undefined;
+    }
 
-    const history = fields.history ? JSON.parse(fields.history) : [];
-    const evidencePreflight = deriveEvidencePreflight({
-      prompt: fields.prompt || '',
-      files: files.map((file) => ({
-        filename: file.filename,
-        mimetype: file.mimetype,
-      })),
-      pageContext: {
-        pageId: fields.pageId || undefined,
-        pageTitle: fields.pageTitle || undefined,
-        pageContent: fields.pageContent || undefined,
-      },
-    });
+    // Get workspace system prompt
+    const wsSettings = workspace.settings?.ai;
+    const systemPrompt: string | undefined = wsSettings?.systemPrompt || undefined;
 
-    const globalSystemPrompt = await this.aiTemplateService.getSystemPrompt(
-      workspace.id,
-    );
-    const intentRoute = (fields.intentRoute || 'document_create') as AiIntentRoute;
-    const scope = (fields.scope || 'blank_page') as AiIntentScope;
-    const sourcePolicy = (fields.sourcePolicy || 'create_new') as AiSourcePolicy;
-    const lengthPolicy = (fields.lengthPolicy || 'preserve') as AiLengthPolicy;
-    const prioritizeUserInstructions =
-      parseBooleanField(fields.prioritizeUserInstructions) ?? true;
-    const templatePrompt = fields.templateId
-      ? await this.aiTemplateService.getTemplatePrompt(
-          fields.templateId,
-          workspace.id,
-          user.id,
-        )
-      : null;
-    const documentStrategy = resolveAiDocumentStrategy(fields.templateId, {
-      intentRoute,
-      scope,
-      sourcePolicy,
-      lengthPolicy,
-      prioritizeUserInstructions,
-    });
-
-    const agentBody = {
-      user_message: fields.prompt || '',
-      files,
-      page_context: {
-        page_id: fields.pageId || null,
-        page_title: fields.pageTitle || null,
-        page_content: fields.pageContent || null,
-        selected_text: fields.selectedText || null,
-        selection_range: fields.selectionRange ? JSON.parse(fields.selectionRange) : null,
-      },
-      template_id: fields.templateId || null,
-      system_prompt: globalSystemPrompt || null,
-      template_prompt: templatePrompt,
-      document_strategy: documentStrategy,
-      intent_route: intentRoute,
-      scope,
-      source_policy: sourcePolicy,
-      length_policy: lengthPolicy,
-      prioritize_user_instructions: prioritizeUserInstructions,
-      conversation_history: history,
-      evidence_items: evidencePreflight.requiredEvidence,
+    const payload = JSON.stringify({
+      user_message: body.prompt || '',
+      thread_id: body.threadId || undefined,
       workspace_id: workspace.id,
-      config: {
-        insert_mode: fields.insertMode || 'create',
-        max_iterations: 3,
+      page_id: body.pageId || undefined,
+      page_title: body.pageTitle || undefined,
+      page_content: body.pageContent || undefined,
+      selected_text: body.selectedText || undefined,
+      intent_route: body.intentRoute || 'document_create',
+      insert_mode: body.insertMode || 'create',
+      files: [],
+      template_id: body.templateId || undefined,
+      system_prompt: systemPrompt,
+      template_prompt: templatePrompt,
+      conversation_history: body.conversationHistory || [],
+    });
+
+    const url = new URL('/agent/run', agentUrl);
+    const secret = this.environmentService.getAgentInternalSecret();
+
+    const options: http.RequestOptions = {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': secret || '',
       },
     };
 
-    const agentUrl = new URL('/agent/run', this.environmentService.getAgentServiceUrl());
-    const postData = JSON.stringify(agentBody);
+    writeSseHeaders(res);
 
-    const proxyReq = http.request(
-      {
-        hostname: agentUrl.hostname,
-        port: agentUrl.port,
-        path: agentUrl.pathname,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(postData),
-          'X-Internal-Secret': this.environmentService.getAgentInternalSecret(),
-        },
-      },
-      (proxyRes) => {
-        if (proxyRes.statusCode !== 200) {
-          writeSseHeaders(res);
-          res.raw.write(`data: ${JSON.stringify({ type: 'error', message: `Agent returned ${proxyRes.statusCode}` })}\n\n`);
-          res.raw.end();
-          return;
-        }
-
-        const taskIdHeader = Array.isArray(proxyRes.headers['x-task-id'])
-          ? proxyRes.headers['x-task-id'][0]
-          : proxyRes.headers['x-task-id'];
-        writeSseHeaders(res, taskIdHeader);
-
-        proxyRes.on('data', (chunk: Buffer) => {
-          res.raw.write(chunk);
-        });
-        proxyRes.on('end', () => {
-          res.raw.end();
-        });
-        proxyRes.on('error', (err) => {
-          this.logger.error('Agent stream error', err);
-          res.raw.end();
-        });
-      },
-    );
-
-    proxyReq.on('error', (err) => {
-      this.logger.error('Agent connection error', err);
-      writeSseHeaders(res);
-      res.raw.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Agent service unavailable' })}\n\n`);
-      res.raw.end();
+    const proxyReq = http.request(options, (proxyRes) => {
+      const taskIdHeader = Array.isArray(proxyRes.headers['x-task-id'])
+        ? proxyRes.headers['x-task-id'][0]
+        : proxyRes.headers['x-task-id'];
+      if (taskIdHeader && !res.raw.headersSent) {
+        res.raw.setHeader('X-Task-Id', taskIdHeader);
+      }
+      proxyRes.on('data', (chunk: Buffer) => {
+        res.raw.write(chunk);
+      });
+      proxyRes.on('end', () => {
+        res.raw.end();
+      });
     });
 
-    proxyReq.write(postData);
+    proxyReq.on('error', (err) => {
+      this.logger.error(`Agent proxy error: ${err.message}`);
+      if (!res.raw.headersSent) {
+        res.status(502).send({ error: 'Agent service unavailable' });
+      } else {
+        res.raw.end();
+      }
+    });
+
+    proxyReq.write(payload);
     proxyReq.end();
   }
 
   @Post('resume')
-  async resumeAgent(
-    @Body() dto: AgentResumeDto,
-    @Res() res: FastifyReply,
-  ): Promise<void> {
-    const postData = JSON.stringify({
-      thread_id: dto.threadId,
-      resume_value: dto.resumeValue,
+  async resumeAgent(@Body() body: any, @Res() res: FastifyReply) {
+    const agentUrl = this.environmentService.getAgentServiceUrl();
+    if (!agentUrl) {
+      res.status(503).send({ error: 'Agent service not configured' });
+      return;
+    }
+
+    const url = new URL('/agent/resume', agentUrl);
+    const secret = this.environmentService.getAgentInternalSecret();
+
+    const payload = JSON.stringify({
+      thread_id: body.threadId,
+      resume_value: body.resumeValue,
     });
 
-    const agentUrl = new URL('/agent/resume', this.environmentService.getAgentServiceUrl());
-
-    const proxyReq = http.request(
-      {
-        hostname: agentUrl.hostname,
-        port: agentUrl.port,
-        path: agentUrl.pathname,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(postData),
-          'X-Internal-Secret': this.environmentService.getAgentInternalSecret(),
-        },
+    const options: http.RequestOptions = {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': secret || '',
       },
-      (proxyRes) => {
-        if (proxyRes.statusCode !== 200) {
-          writeSseHeaders(res);
-          res.raw.write(`data: ${JSON.stringify({ type: 'error', message: `Agent resume failed: ${proxyRes.statusCode}` })}\n\n`);
-          res.raw.end();
-          return;
+    };
+
+    const proxyReq = http.request(options, (proxyRes) => {
+      let data = '';
+      proxyRes.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      proxyRes.on('end', () => {
+        try {
+          res.send(JSON.parse(data));
+        } catch {
+          res.send({ status: 'ok', raw: data });
         }
-
-        const taskIdHeader = Array.isArray(proxyRes.headers['x-task-id'])
-          ? proxyRes.headers['x-task-id'][0]
-          : proxyRes.headers['x-task-id'];
-        writeSseHeaders(res, taskIdHeader);
-
-        proxyRes.on('data', (chunk: Buffer) => {
-          res.raw.write(chunk);
-        });
-        proxyRes.on('end', () => {
-          res.raw.end();
-        });
-        proxyRes.on('error', (err) => {
-          this.logger.error('Agent resume stream error', err);
-          res.raw.end();
-        });
-      },
-    );
+      });
+    });
 
     proxyReq.on('error', (err) => {
-      this.logger.error('Agent resume connection error', err);
-      writeSseHeaders(res);
-      res.raw.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Agent service unavailable' })}\n\n`);
-      res.raw.end();
+      this.logger.error(`Agent resume proxy error: ${err.message}`);
+      res.status(502).send({ error: 'Agent service unavailable' });
     });
 
-    proxyReq.write(postData);
+    proxyReq.write(payload);
     proxyReq.end();
   }
 

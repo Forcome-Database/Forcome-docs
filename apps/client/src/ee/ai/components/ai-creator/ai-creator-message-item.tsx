@@ -22,9 +22,6 @@ import { markdownToHtml } from "@docmost/editor-ext";
 import { useTranslation } from "react-i18next";
 import { useCallback } from "react";
 import { AiCreatorAgentSteps } from "./ai-creator-agent-steps";
-import { AiCreatorClarifyBubble } from './ai-creator-clarify-bubble';
-import { AiCreatorProposeBubble } from './ai-creator-propose-bubble';
-import { AiCreatorOutlineBubble } from './ai-creator-outline-bubble';
 import { BUBBLE_ALLOWED_URI_REGEXP } from "./ai-creator-bubble-render";
 import classes from "./ai-creator.module.css";
 
@@ -98,7 +95,8 @@ import { extractTitle, stripTimestamp, preprocessImagesForEditor } from './ai-cr
 export function AiCreatorMessageItem({
   message,
   isLast,
-  onResume,
+  // onResume is kept in Props for API compatibility but not currently used in this component
+  onResume: _onResume,
   showAgentSteps = false,
   agentSteps = [],
 }: Props) {
@@ -189,16 +187,6 @@ export function AiCreatorMessageItem({
       }
     }
   }, [t]);
-
-  if (message.role === 'clarify' && onResume) {
-    return <AiCreatorClarifyBubble message={message} onResume={onResume} />;
-  }
-  if (message.role === 'propose' && onResume) {
-    return <AiCreatorProposeBubble message={message} onResume={onResume} />;
-  }
-  if (message.role === 'outline' && onResume) {
-    return <AiCreatorOutlineBubble message={message} onResume={onResume} />;
-  }
 
   if (isUser) {
     return (

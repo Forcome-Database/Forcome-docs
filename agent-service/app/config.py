@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     # Runtime config
     agent_max_iterations: int = 3
 
+    # Role-specific model overrides
+    orchestrator_model: str = ""
+    writer_model: str = ""
+    evaluator_model: str = ""
+    fixer_model: str = ""
+    brief_model: str = ""
+    blueprint_model: str = ""
+
     # PostgreSQL connection string for LangGraph checkpointer
     database_url: str = ""
 
