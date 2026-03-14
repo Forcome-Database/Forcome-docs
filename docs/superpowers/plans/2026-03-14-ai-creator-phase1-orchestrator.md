@@ -1,0 +1,2457 @@
+# Phase 1: Core Orchestrator — Implementation Plan
+
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build the PydanticAI Orchestrator with ReAct loop, complexity analysis, user interaction tools, and Level 1 task execution — proving the new architecture works end-to-end.
+
+**Architecture:** A single PydanticAI Agent with tool calling serves as the Orchestrator. It dynamically decides what to do next based on task complexity. Tools include `analyze_complexity`, `ask_user`, `simple_edit` (for Level 1), and `finalize`. The existing `asyncio.Queue` SSE mechanism is adapted for the new event protocol. The old LangGraph code stays in place — we build v2 alongside it.
+
+**Tech Stack:** PydanticAI, FastAPI, asyncio, existing LLM abstraction from `app/config.py`
+
+**Prerequisites (from Phase 0):**
+- Pydantic models: `CreationBrief`, `AssetMap`, `CreationBlueprint`, `SectionDraft`, `ReviewReport`, `SSEEvent`, `CreationState`
+- Chinese word counting utility
+- Frontend TypeScript types
+- Empty scaffolding for orchestrator and workers
+
+---
+
+## File Structure Overview
+
+### New files (agent-service)
+
+| File | Purpose |
+|------|---------|
+| `agent-service/app/orchestrator/__init__.py` | Package init |
+| `agent-service/app/orchestrator/llm_factory.py` | PydanticAI model adapter factory |
+| `agent-service/app/orchestrator/engine.py` | Core orchestrator engine (PydanticAI Agent) |
+| `agent-service/app/orchestrator/prompts.py` | System prompts for orchestrator |
+| `agent-service/app/orchestrator/tools/__init__.py` | Tools package init |
+| `agent-service/app/orchestrator/tools/complexity.py` | `analyze_complexity` tool |
+| `agent-service/app/orchestrator/tools/user_interaction.py` | `ask_user` tool (interrupt mechanism) |
+| `agent-service/app/orchestrator/tools/simple_edit.py` | `simple_edit` tool (Level 1 execution) |
+| `agent-service/app/orchestrator/tools/finalize.py` | `finalize` tool (merge + done) |
+| `agent-service/tests/orchestrator/__init__.py` | Test package |
+| `agent-service/tests/orchestrator/test_llm_factory.py` | LLM factory tests |
+| `agent-service/tests/orchestrator/test_complexity.py` | Complexity analysis tests |
+| `agent-service/tests/orchestrator/test_user_interaction.py` | User interaction tests |
+| `agent-service/tests/orchestrator/test_simple_edit.py` | Simple edit tests |
+| `agent-service/tests/orchestrator/test_finalize.py` | Finalize tests |
+| `agent-service/tests/orchestrator/test_engine.py` | Orchestrator engine tests |
+| `agent-service/tests/orchestrator/test_e2e_level1.py` | End-to-end Level 1 integration test |
+
+### Modified files
+
+| File | Change |
+|------|--------|
+| `agent-service/app/main.py` | Add `/v2/agent/run`, `/v2/agent/resume`, `/v2/agent/stop` endpoints |
+| `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts` | Add v2 proxy routes |
+| `apps/client/src/ee/ai/services/ai-create-runner.utils.ts` | Add v2 event normalization |
+
+---
+
+## Chunk 1: LLM Adapter
+
+### Task 1: Create LLM adapter for PydanticAI
+
+PydanticAI needs a model adapter. The project supports multiple providers (OpenAI, Gemini, Ollama, OpenAI-compatible). Create a factory that reads existing `app/config.py` settings and returns the right PydanticAI model string or instance.
+
+**Files:**
+- Create: `agent-service/app/orchestrator/__init__.py`
+- Create: `agent-service/app/orchestrator/llm_factory.py`
+- Test: `agent-service/tests/orchestrator/__init__.py`
+- Test: `agent-service/tests/orchestrator/test_llm_factory.py`
+
+**Context:** The existing `app/config.py` has these resolved properties:
+- `settings.llm_provider` → `"openai"` | `"openai-compatible"` | `"gemini"` | `"ollama"`
+- `settings.llm_model` → e.g. `"gpt-4"`, `"gemini-2.0-flash"`, `"llama3"`
+- `settings.llm_api_key` → API key string
+- `settings.llm_api_url` → Base URL (relevant for openai-compatible and ollama)
+
+PydanticAI model format:
+- OpenAI: `"openai:gpt-4"` (uses `OPENAI_API_KEY` env or explicit)
+- Gemini: `"google-gla:gemini-2.0-flash"` (uses `GOOGLE_API_KEY` env or explicit)
+- Ollama: `"ollama:llama3"` (uses `OLLAMA_BASE_URL` env or explicit)
+- OpenAI-compatible: `OpenAIModel(model_name, base_url=..., api_key=...)` from `pydantic_ai.models.openai`
+
+- [ ] **Step 1: Write failing tests for LLM factory**
+
+```python
+# agent-service/tests/orchestrator/test_llm_factory.py
+
+from unittest.mock import patch
+
+import pytest
+
+
+def test_openai_provider_returns_correct_model_string():
+    """OpenAI provider should return 'openai:model-name' format."""
+    with patch("app.config.settings") as mock_settings:
+        mock_settings.llm_provider = "openai"
+        mock_settings.llm_model = "gpt-4o"
+        mock_settings.llm_api_key = "sk-test-key"
+        mock_settings.llm_api_url = "https://api.openai.com/v1"
+
+        from app.orchestrator.llm_factory import create_pydantic_ai_model
+
+        model = create_pydantic_ai_model()
+        # Should be a valid PydanticAI model (string or object)
+        assert model is not None
+
+
+def test_gemini_provider_returns_correct_model():
+    """Gemini provider should return a google-gla model."""
+    with patch("app.config.settings") as mock_settings:
+        mock_settings.llm_provider = "gemini"
+        mock_settings.llm_model = "gemini-2.0-flash"
+        mock_settings.llm_api_key = "test-gemini-key"
+        mock_settings.gemini_api_key = "test-gemini-key"
+        mock_settings.llm_api_url = ""
+
+        from app.orchestrator.llm_factory import create_pydantic_ai_model
+
+        model = create_pydantic_ai_model()
+        assert model is not None
+
+
+def test_openai_compatible_provider_returns_custom_base_url():
+    """OpenAI-compatible provider should use custom base URL."""
+    with patch("app.config.settings") as mock_settings:
+        mock_settings.llm_provider = "openai-compatible"
+        mock_settings.llm_model = "deepseek-chat"
+        mock_settings.llm_api_key = "sk-custom-key"
+        mock_settings.llm_api_url = "https://api.deepseek.com/v1"
+
+        from app.orchestrator.llm_factory import create_pydantic_ai_model
+
+        model = create_pydantic_ai_model()
+        assert model is not None
+
+
+def test_ollama_provider_returns_ollama_model():
+    """Ollama provider should return an ollama-prefixed model."""
+    with patch("app.config.settings") as mock_settings:
+        mock_settings.llm_provider = "ollama"
+        mock_settings.llm_model = "llama3"
+        mock_settings.llm_api_key = ""
+        mock_settings.llm_api_url = "http://localhost:11434"
+
+        from app.orchestrator.llm_factory import create_pydantic_ai_model
+
+        model = create_pydantic_ai_model()
+        assert model is not None
+
+
+def test_unknown_provider_falls_back_to_openai():
+    """Unknown provider should fall back to OpenAI-style model."""
+    with patch("app.config.settings") as mock_settings:
+        mock_settings.llm_provider = "unknown-provider"
+        mock_settings.llm_model = "some-model"
+        mock_settings.llm_api_key = "sk-test"
+        mock_settings.llm_api_url = "https://api.openai.com/v1"
+
+        from app.orchestrator.llm_factory import create_pydantic_ai_model
+
+        model = create_pydantic_ai_model()
+        assert model is not None
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_llm_factory.py -q
+```
+
+Expected: FAIL — `ModuleNotFoundError: No module named 'app.orchestrator'`
+
+- [ ] **Step 3: Implement the LLM factory**
+
+```python
+# agent-service/app/orchestrator/__init__.py
+# (empty package init)
+
+# agent-service/app/orchestrator/llm_factory.py
+"""PydanticAI model adapter factory.
+
+Maps the existing Docmost LLM config (app/config.py) to PydanticAI model
+instances. Supports: OpenAI, Gemini, Ollama, and OpenAI-compatible providers.
+
+Existing config properties used:
+  - settings.llm_provider: "openai" | "openai-compatible" | "gemini" | "ollama"
+  - settings.llm_model: model name string
+  - settings.llm_api_key: API key
+  - settings.llm_api_url: base URL (for openai-compatible / ollama)
+"""
+from __future__ import annotations
+
+from typing import Union
+
+from pydantic_ai.models import Model
+
+from app.config import settings
+
+
+def create_pydantic_ai_model(
+    *,
+    provider: str | None = None,
+    model_name: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> Union[str, Model]:
+    """Create and return a PydanticAI-compatible model.
+
+    Parameters override settings when provided (useful for testing).
+
+    Returns either a model string like "openai:gpt-4" or a Model instance
+    for providers that need explicit configuration (openai-compatible).
+    """
+    _provider = provider or settings.llm_provider
+    _model = model_name or settings.llm_model
+    _api_key = api_key or settings.llm_api_key
+    _base_url = base_url or settings.llm_api_url
+
+    if _provider == "gemini":
+        from pydantic_ai.models.google import GoogleModel
+
+        _gemini_key = api_key or settings.gemini_api_key or _api_key
+        return GoogleModel(_model, api_key=_gemini_key)
+
+    if _provider == "ollama":
+        from pydantic_ai.models.openai import OpenAIModel
+
+        ollama_base = _base_url or "http://localhost:11434/v1"
+        if not ollama_base.endswith("/v1"):
+            ollama_base = ollama_base.rstrip("/") + "/v1"
+        return OpenAIModel(
+            _model,
+            base_url=ollama_base,
+            api_key=_api_key or "ollama",  # Ollama doesn't need a real key
+        )
+
+    if _provider == "openai-compatible":
+        from pydantic_ai.models.openai import OpenAIModel
+
+        return OpenAIModel(
+            _model,
+            base_url=_base_url,
+            api_key=_api_key,
+        )
+
+    # Default: standard OpenAI (also handles unknown providers)
+    if _provider == "openai":
+        from pydantic_ai.models.openai import OpenAIModel
+
+        return OpenAIModel(_model, api_key=_api_key)
+
+    # Unknown provider — fall back to OpenAI-style
+    from pydantic_ai.models.openai import OpenAIModel
+
+    return OpenAIModel(
+        _model,
+        base_url=_base_url if _base_url else None,
+        api_key=_api_key,
+    )
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_llm_factory.py -q
+```
+
+Expected: PASS — all 5 tests pass.
+
+- [ ] **Step 5: Verify with a smoke test (requires real API key)**
+
+```bash
+cd agent-service && python -c "
+from app.orchestrator.llm_factory import create_pydantic_ai_model
+model = create_pydantic_ai_model()
+print(f'Model created: {model}')
+print(f'Type: {type(model).__name__}')
+"
+```
+
+Expected: prints model info without errors.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add agent-service/app/orchestrator/__init__.py agent-service/app/orchestrator/llm_factory.py agent-service/tests/orchestrator/__init__.py agent-service/tests/orchestrator/test_llm_factory.py
+git commit -m "feat(orchestrator): add PydanticAI LLM adapter factory"
+```
+
+---
+
+## Chunk 2: Complexity Analysis
+
+### Task 2: Implement analyze_complexity tool
+
+This tool analyzes user input + context to determine task complexity Level 1/2/3, which drives the orchestrator's execution strategy.
+
+**Files:**
+- Create: `agent-service/app/orchestrator/tools/__init__.py`
+- Create: `agent-service/app/orchestrator/tools/complexity.py`
+- Test: `agent-service/tests/orchestrator/test_complexity.py`
+
+**Complexity levels:**
+
+| Level | Description | Keywords (EN) | Keywords (ZH) | Behavior |
+|-------|-------------|---------------|---------------|----------|
+| 1 | Simple edit | translate, fix spelling, shorten, lengthen, simplify, change tone | 翻译, 改错, 精简, 加长, 简化, 改语气 | Single LLM call, no planning |
+| 2 | Structured edit | format, layout, continue, expand, restructure | 排版, 续写, 扩展, 重构 | Brief + single-pass write |
+| 3 | Full creation | create, write, rewrite, compose, design | 创作, 写, 仿写, 合并, 设计 | Full pipeline with blueprint |
+
+**Override rules:**
+- File uploads → at least Level 2
+- Multiple files → Level 3
+- Templates that imply creation → Level 3
+- `intent_route == "selection_edit"` → Level 1
+
+- [ ] **Step 1: Write failing tests for complexity analysis**
+
+```python
+# agent-service/tests/orchestrator/test_complexity.py
+
+import pytest
+
+from app.orchestrator.tools.complexity import analyze_task_complexity
+
+
+class TestLevel1Detection:
+    def test_translate_chinese(self):
+        result = analyze_task_complexity(
+            user_message="翻译成英文：你好世界",
+            files=[],
+            intent_route="document_create",
+            template_id=None,
+            selected_text="你好世界",
+        )
+        assert result["level"] == 1
+        assert "reasoning" in result
+
+    def test_translate_english(self):
+        result = analyze_task_complexity(
+            user_message="Translate this to French",
+            files=[],
+            intent_route="document_create",
+            template_id=None,
+            selected_text="Hello world",
+        )
+        assert result["level"] == 1
+
+    def test_fix_spelling(self):
+        result = analyze_task_complexity(
+            user_message="改错别字",
+            files=[],
+            intent_route="selection_edit",
+            template_id=None,
+            selected_text="这是一段有错别子的文字",
+        )
+        assert result["level"] == 1
+
+    def test_make_shorter(self):
+        result = analyze_task_complexity(
+            user_message="精简这段话",
+            files=[],
+            intent_route="selection_edit",
+            template_id=None,
+            selected_text="一段很长的文字...",
+        )
+        assert result["level"] == 1
+
+    def test_change_tone(self):
+        result = analyze_task_complexity(
+            user_message="改成正式语气",
+            files=[],
+            intent_route="selection_edit",
+            template_id=None,
+            selected_text="Hey what's up",
+        )
+        assert result["level"] == 1
+
+    def test_selection_edit_intent_forces_level1(self):
+        result = analyze_task_complexity(
+            user_message="帮我处理一下这段",
+            files=[],
+            intent_route="selection_edit",
+            template_id=None,
+            selected_text="some text",
+        )
+        assert result["level"] == 1
+
+    def test_simplify(self):
+        result = analyze_task_complexity(
+            user_message="Simplify this paragraph",
+            files=[],
+            intent_route="document_create",
+            template_id=None,
+            selected_text="A complex paragraph...",
+        )
+        assert result["level"] == 1
+
+
+class TestLevel2Detection:
+    def test_format_document(self):
+        result = analyze_task_complexity(
+            user_message="帮我排版这篇文章",
+            files=[],
+            intent_route="document_transform",
+            template_id=None,
+            selected_text=None,
+        )
+        assert result["level"] == 2
+
+    def test_continue_writing(self):
+        result = analyze_task_complexity(
+            user_message="续写这篇文章",
+            files=[],
+            intent_route="document_create",
+            template_id=None,
+            selected_text=None,
+        )
+        assert result["level"] == 2
+
+    def test_expand_content(self):
+        result = analyze_task_complexity(
+            user_message="扩展这一节的内容",
+            files=[],
+            intent_route="document_create",
+            template_id=None,
+            selected_text=None,
+        )
+        assert result["level"] == 2
+
+    def test_single_file_upload_bumps_to_level2(self):
+        result = analyze_task_complexity(
+            user_message="翻译这个文件",
+            files=[{"filename": "doc.pdf", "mimetype": "application/pdf"}],
+            intent_route="document_create",
+            template_id=None,
+            selected_text=None,
+        )
+        assert result["level"] >= 2
+
+
+class TestLevel3Detection:
+    def test_create_from_scratch(self):
+        result = analyze_task_complexity(
+            user_message="写一篇关于人工智能的技术博客",
+            files=[],
+            intent_route="document_create",
+            template_id=None,
+            selected_text=None,
+        )
+        assert result["level"] == 3
+
+    def test_rewrite_document(self):
+        result = analyze_task_complexity(
+            user_message="仿写这篇文章",
+            files=[],
+            intent_route="document_create",
+            template_id=None,
+            selected_text=None,
+        )
+        assert result["level"] == 3
+
+    def test_multiple_files_forces_level3(self):
+        result = analyze_task_complexity(
+            user_message="合并这些文件",
+            files=[
+                {"filename": "a.pdf", "mimetype": "application/pdf"},
+                {"filename": "b.pdf", "mimetype": "application/pdf"},
+            ],
+            intent_route="document_create",
+            template_id=None,
+            selected_text=None,
+        )
+        assert result["level"] == 3
+
+    def test_generic_creation(self):
+        result = analyze_task_complexity(
+            user_message="创作一份项目计划书",
+            files=[],
+            intent_route="document_create",
+            template_id=None,
+            selected_text=None,
+        )
+        assert result["level"] == 3
+
+    def test_template_with_creation_intent(self):
+        """Templates that imply creation should force Level 3."""
+        result = analyze_task_complexity(
+            user_message="用这个模板写一篇文章",
+            files=[],
+            intent_route="document_create",
+            template_id="blog-post-template",
+            selected_text=None,
+        )
+        assert result["level"] == 3
+
+
+class TestReasoningOutput:
+    def test_reasoning_is_non_empty(self):
+        result = analyze_task_complexity(
+            user_message="翻译成英文",
+            files=[],
+            intent_route="selection_edit",
+            template_id=None,
+            selected_text="你好",
+        )
+        assert isinstance(result["reasoning"], str)
+        assert len(result["reasoning"]) > 0
+
+    def test_result_has_correct_keys(self):
+        result = analyze_task_complexity(
+            user_message="写一篇文章",
+            files=[],
+            intent_route="document_create",
+            template_id=None,
+            selected_text=None,
+        )
+        assert "level" in result
+        assert "reasoning" in result
+        assert result["level"] in (1, 2, 3)
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_complexity.py -q
+```
+
+Expected: FAIL — `ModuleNotFoundError: No module named 'app.orchestrator.tools'`
+
+- [ ] **Step 3: Implement the complexity analyzer**
+
+```python
+# agent-service/app/orchestrator/tools/__init__.py
+# (empty package init)
+
+# agent-service/app/orchestrator/tools/complexity.py
+"""Task complexity analysis for the orchestrator.
+
+Determines whether a user request is Level 1 (simple edit), Level 2
+(structured edit), or Level 3 (full creation). This is a deterministic,
+keyword-based analysis — no LLM call needed.
+
+The orchestrator calls this as its first tool to decide which execution
+path to take.
+"""
+from __future__ import annotations
+
+import re
+from typing import Any, TypedDict
+
+
+class ComplexityResult(TypedDict):
+    level: int  # 1, 2, or 3
+    reasoning: str
+
+
+# --- Keyword sets ---
+
+_LEVEL1_KEYWORDS_EN = {
+    "translate", "fix spelling", "fix grammar", "fix typo", "fix typos",
+    "shorten", "make shorter", "make longer", "lengthen",
+    "simplify", "change tone", "make formal", "make casual",
+    "proofread", "correct",
+}
+
+_LEVEL1_KEYWORDS_ZH = {
+    "翻译", "改错", "纠错", "精简", "缩短", "加长", "简化",
+    "改语气", "改口吻", "校对", "润色", "改正", "修正",
+}
+
+_LEVEL2_KEYWORDS_EN = {
+    "format", "layout", "continue", "expand", "restructure",
+    "reorganize", "extend", "elaborate",
+}
+
+_LEVEL2_KEYWORDS_ZH = {
+    "排版", "续写", "扩展", "扩充", "重构", "重新组织", "延伸", "补充",
+}
+
+_LEVEL3_KEYWORDS_EN = {
+    "create", "write", "rewrite", "compose", "design", "draft",
+    "generate", "produce", "build", "develop", "author",
+}
+
+_LEVEL3_KEYWORDS_ZH = {
+    "创作", "写", "仿写", "合并", "设计", "撰写", "起草",
+    "生成", "编写", "制作",
+}
+
+
+def _message_matches_keywords(message: str, keywords: set[str]) -> bool:
+    """Check if the message contains any of the given keywords (case-insensitive)."""
+    lower = message.lower()
+    for kw in keywords:
+        if kw.lower() in lower:
+            return True
+    return False
+
+
+def analyze_task_complexity(
+    *,
+    user_message: str,
+    files: list[dict[str, Any]],
+    intent_route: str,
+    template_id: str | None,
+    selected_text: str | None,
+) -> ComplexityResult:
+    """Analyze user input and context to determine complexity level.
+
+    Rules (applied in priority order):
+    1. intent_route == "selection_edit" → Level 1
+    2. Level 1 keywords detected (with no files) → Level 1
+    3. Multiple files → Level 3
+    4. template_id present with creation intent → Level 3
+    5. Level 3 keywords detected → Level 3
+    6. Single file upload → at least Level 2
+    7. Level 2 keywords detected → Level 2
+    8. Default (no keywords matched) → Level 3 (assume creation)
+    """
+    reasons: list[str] = []
+
+    # Rule 1: selection_edit intent always means Level 1
+    if intent_route == "selection_edit":
+        reasons.append(f"intent_route is 'selection_edit'")
+        return ComplexityResult(level=1, reasoning="; ".join(reasons))
+
+    # Rule 2: Level 1 keywords (only if no file uploads)
+    if not files:
+        if _message_matches_keywords(user_message, _LEVEL1_KEYWORDS_EN | _LEVEL1_KEYWORDS_ZH):
+            # Check that no Level 3 keywords are also present
+            has_l3 = _message_matches_keywords(
+                user_message, _LEVEL3_KEYWORDS_EN | _LEVEL3_KEYWORDS_ZH
+            )
+            if not has_l3:
+                reasons.append("Level 1 keyword detected in message")
+                if selected_text:
+                    reasons.append("selected text present")
+                return ComplexityResult(level=1, reasoning="; ".join(reasons))
+
+    # Rule 3: Multiple files → Level 3
+    if len(files) >= 2:
+        reasons.append(f"multiple files uploaded ({len(files)})")
+        return ComplexityResult(level=3, reasoning="; ".join(reasons))
+
+    # Rule 4: Template with creation intent → Level 3
+    if template_id and intent_route == "document_create":
+        reasons.append(f"template '{template_id}' with document_create intent")
+        return ComplexityResult(level=3, reasoning="; ".join(reasons))
+
+    # Rule 5: Level 3 keywords
+    if _message_matches_keywords(user_message, _LEVEL3_KEYWORDS_EN | _LEVEL3_KEYWORDS_ZH):
+        reasons.append("Level 3 keyword detected in message")
+        return ComplexityResult(level=3, reasoning="; ".join(reasons))
+
+    # Rule 6: Single file → at least Level 2
+    if len(files) == 1:
+        # Check if Level 2 or Level 3 keywords are present
+        if _message_matches_keywords(user_message, _LEVEL3_KEYWORDS_EN | _LEVEL3_KEYWORDS_ZH):
+            reasons.append("single file + Level 3 keyword")
+            return ComplexityResult(level=3, reasoning="; ".join(reasons))
+        reasons.append("single file uploaded")
+        return ComplexityResult(level=2, reasoning="; ".join(reasons))
+
+    # Rule 7: Level 2 keywords
+    if _message_matches_keywords(user_message, _LEVEL2_KEYWORDS_EN | _LEVEL2_KEYWORDS_ZH):
+        reasons.append("Level 2 keyword detected in message")
+        return ComplexityResult(level=2, reasoning="; ".join(reasons))
+
+    # Default: Level 3 (assume full creation for unrecognized requests)
+    reasons.append("no specific keywords matched; defaulting to full creation")
+    return ComplexityResult(level=3, reasoning="; ".join(reasons))
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_complexity.py -v
+```
+
+Expected: PASS — all tests green.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add agent-service/app/orchestrator/tools/__init__.py agent-service/app/orchestrator/tools/complexity.py agent-service/tests/orchestrator/test_complexity.py
+git commit -m "feat(orchestrator): add deterministic task complexity analyzer"
+```
+
+---
+
+## Chunk 3: User Interaction (Interrupt Mechanism)
+
+### Task 3: Implement ask_user tool (interrupt mechanism)
+
+This is the most critical tool. It emits an SSE event and PAUSES the orchestrator until the user responds. Uses `asyncio.Event` for pause/resume signaling.
+
+**Files:**
+- Create: `agent-service/app/orchestrator/tools/user_interaction.py`
+- Test: `agent-service/tests/orchestrator/test_user_interaction.py`
+
+**Design:**
+
+The `ask_user` tool is called by the PydanticAI agent when it needs user input. It:
+1. Serializes the question/data as an SSE `await_input` event
+2. Pushes it to the existing `asyncio.Queue` (via `app.agent.events.emit`)
+3. Sets an `asyncio.Event` and waits on a corresponding response Event
+4. The `/v2/agent/resume` endpoint sets the response and signals the Event
+5. The tool returns the user's response to the PydanticAI agent
+
+A per-thread registry maps `thread_id` to `(asyncio.Event, response_value)` pairs.
+
+- [ ] **Step 1: Write failing tests for user interaction**
+
+```python
+# agent-service/tests/orchestrator/test_user_interaction.py
+
+import asyncio
+
+import pytest
+
+from app.orchestrator.tools.user_interaction import (
+    InteractionRegistry,
+    InteractionPhase,
+)
+
+
+@pytest.fixture
+def registry():
+    return InteractionRegistry()
+
+
+class TestInteractionRegistry:
+    @pytest.mark.asyncio
+    async def test_register_creates_pending_interaction(self, registry):
+        registry.register("thread-1")
+        assert registry.is_waiting("thread-1") is False  # not yet waiting
+
+    @pytest.mark.asyncio
+    async def test_wait_and_resume_flow(self, registry):
+        """Simulate the full pause/resume cycle."""
+        registry.register("thread-1")
+
+        async def resume_after_delay():
+            await asyncio.sleep(0.05)
+            registry.submit_response("thread-1", {"answers": "42"})
+
+        asyncio.create_task(resume_after_delay())
+
+        result = await asyncio.wait_for(
+            registry.wait_for_response("thread-1"),
+            timeout=2.0,
+        )
+        assert result == {"answers": "42"}
+
+    @pytest.mark.asyncio
+    async def test_resume_unknown_thread_returns_false(self, registry):
+        ok = registry.submit_response("nonexistent", {"x": 1})
+        assert ok is False
+
+    @pytest.mark.asyncio
+    async def test_cleanup_removes_thread(self, registry):
+        registry.register("thread-1")
+        registry.cleanup("thread-1")
+        assert registry.submit_response("thread-1", {}) is False
+
+    @pytest.mark.asyncio
+    async def test_wait_timeout(self, registry):
+        """If no response comes, wait_for_response should be cancellable."""
+        registry.register("thread-1")
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                registry.wait_for_response("thread-1"),
+                timeout=0.1,
+            )
+
+
+class TestInteractionPhase:
+    def test_valid_phases(self):
+        assert InteractionPhase.BRIEF == "brief"
+        assert InteractionPhase.BLUEPRINT == "blueprint"
+        assert InteractionPhase.REVIEW == "review"
+        assert InteractionPhase.CLARIFY == "clarify"
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_user_interaction.py -q
+```
+
+Expected: FAIL — `ModuleNotFoundError`
+
+- [ ] **Step 3: Implement the user interaction system**
+
+```python
+# agent-service/app/orchestrator/tools/user_interaction.py
+"""User interaction tool for the orchestrator.
+
+Provides the pause/resume mechanism that lets the PydanticAI agent
+ask the user a question and wait for their response. This is the
+bridge between the SSE event stream and the agent's tool-calling loop.
+
+Architecture:
+  1. Agent calls ask_user tool → emits SSE await_input event
+  2. SSE stream delivers event to frontend
+  3. User responds → frontend calls /v2/agent/resume
+  4. Resume endpoint calls registry.submit_response()
+  5. ask_user tool receives response and returns it to the agent
+
+Thread safety: Each thread_id gets its own asyncio.Event + response slot.
+"""
+from __future__ import annotations
+
+import asyncio
+from enum import StrEnum
+from typing import Any
+
+
+class InteractionPhase(StrEnum):
+    """Phases where the orchestrator can pause for user input."""
+    BRIEF = "brief"
+    BLUEPRINT = "blueprint"
+    REVIEW = "review"
+    CLARIFY = "clarify"
+
+
+class _PendingInteraction:
+    """Internal state for a single pending user interaction."""
+
+    __slots__ = ("event", "response")
+
+    def __init__(self):
+        self.event = asyncio.Event()
+        self.response: Any = None
+
+
+class InteractionRegistry:
+    """Registry of pending user interactions, keyed by thread_id.
+
+    Lifecycle:
+      1. register(thread_id) — called before waiting
+      2. wait_for_response(thread_id) — blocks until response arrives
+      3. submit_response(thread_id, data) — called by resume endpoint
+      4. cleanup(thread_id) — called when thread completes
+
+    This is NOT a singleton — the orchestrator engine creates one instance
+    and shares it with the FastAPI endpoints via dependency injection.
+    """
+
+    def __init__(self):
+        self._pending: dict[str, _PendingInteraction] = {}
+
+    def register(self, thread_id: str) -> None:
+        """Register a thread for potential user interaction."""
+        self._pending[thread_id] = _PendingInteraction()
+
+    def is_waiting(self, thread_id: str) -> bool:
+        """Check if a thread is currently waiting for user response."""
+        pending = self._pending.get(thread_id)
+        if pending is None:
+            return False
+        return not pending.event.is_set()
+
+    async def wait_for_response(self, thread_id: str) -> Any:
+        """Block until the user submits a response for this thread.
+
+        Raises KeyError if thread_id is not registered.
+        Can be cancelled via asyncio.wait_for(timeout=...).
+        """
+        pending = self._pending.get(thread_id)
+        if pending is None:
+            raise KeyError(f"No pending interaction for thread {thread_id}")
+
+        await pending.event.wait()
+        response = pending.response
+
+        # Reset for next interaction in the same thread
+        self._pending[thread_id] = _PendingInteraction()
+
+        return response
+
+    def submit_response(self, thread_id: str, data: Any) -> bool:
+        """Submit a user response, unblocking the waiting tool.
+
+        Returns True if the thread was waiting, False if not found.
+        """
+        pending = self._pending.get(thread_id)
+        if pending is None:
+            return False
+
+        pending.response = data
+        pending.event.set()
+        return True
+
+    def cleanup(self, thread_id: str) -> None:
+        """Remove a thread from the registry."""
+        self._pending.pop(thread_id, None)
+
+
+# Module-level singleton for use by FastAPI endpoints
+interaction_registry = InteractionRegistry()
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_user_interaction.py -v
+```
+
+Expected: PASS — all tests green.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add agent-service/app/orchestrator/tools/user_interaction.py agent-service/tests/orchestrator/test_user_interaction.py
+git commit -m "feat(orchestrator): add user interaction pause/resume mechanism"
+```
+
+---
+
+## Chunk 4: Simple Edit (Level 1)
+
+### Task 4: Implement simple_edit tool (Level 1 execution)
+
+For Level 1 tasks: single LLM call with user prompt + selected text + page context. Streams content via SSE `content_delta` events. No planning, no blueprint, no review.
+
+**Files:**
+- Create: `agent-service/app/orchestrator/tools/simple_edit.py`
+- Test: `agent-service/tests/orchestrator/test_simple_edit.py`
+
+**Design:**
+- Takes: `user_message`, `selected_text`, `page_context`, `system_prompt`
+- Uses PydanticAI agent with streaming for the actual LLM call
+- Emits `step_start` → streams `content` events → emits `step_done`
+- Returns the complete generated text
+
+- [ ] **Step 1: Write failing tests for simple_edit**
+
+```python
+# agent-service/tests/orchestrator/test_simple_edit.py
+
+import asyncio
+from unittest.mock import AsyncMock, patch, MagicMock
+
+import pytest
+
+from app.orchestrator.tools.simple_edit import (
+    build_simple_edit_prompt,
+    SimpleEditRequest,
+)
+
+
+class TestBuildSimpleEditPrompt:
+    def test_translate_prompt_with_selected_text(self):
+        prompt = build_simple_edit_prompt(
+            user_message="翻译成英文",
+            selected_text="你好世界",
+            page_content=None,
+            system_prompt=None,
+        )
+        assert "翻译成英文" in prompt
+        assert "你好世界" in prompt
+
+    def test_fix_spelling_prompt(self):
+        prompt = build_simple_edit_prompt(
+            user_message="fix spelling errors",
+            selected_text="Ths is a tset",
+            page_content=None,
+            system_prompt=None,
+        )
+        assert "fix spelling" in prompt
+        assert "Ths is a tset" in prompt
+
+    def test_includes_system_prompt_when_provided(self):
+        prompt = build_simple_edit_prompt(
+            user_message="shorten this",
+            selected_text="a long paragraph",
+            page_content=None,
+            system_prompt="You are a professional editor.",
+        )
+        assert "professional editor" in prompt
+
+    def test_includes_page_context_when_no_selection(self):
+        prompt = build_simple_edit_prompt(
+            user_message="改成正式语气",
+            selected_text=None,
+            page_content="# My Doc\n\nSome informal content here bro",
+            system_prompt=None,
+        )
+        assert "informal content" in prompt
+
+
+class TestSimpleEditRequest:
+    def test_request_model_validates(self):
+        req = SimpleEditRequest(
+            user_message="translate to english",
+            selected_text="你好",
+            page_content=None,
+            system_prompt=None,
+            thread_id="test-thread",
+        )
+        assert req.user_message == "translate to english"
+        assert req.selected_text == "你好"
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_simple_edit.py -q
+```
+
+Expected: FAIL — `ModuleNotFoundError`
+
+- [ ] **Step 3: Implement simple_edit**
+
+```python
+# agent-service/app/orchestrator/tools/simple_edit.py
+"""Simple edit tool for Level 1 tasks.
+
+Handles translation, spell-check, tone changes, shortening, lengthening,
+and other single-pass edits. Uses a single LLM call with streaming.
+
+This tool does NOT go through the full orchestration pipeline.
+It is the fast path for simple, well-understood operations.
+"""
+from __future__ import annotations
+
+from pydantic import BaseModel
+
+from app.agent.events import emit
+from app.orchestrator.llm_factory import create_pydantic_ai_model
+
+
+class SimpleEditRequest(BaseModel):
+    """Request model for simple edit operations."""
+    user_message: str
+    selected_text: str | None = None
+    page_content: str | None = None
+    system_prompt: str | None = None
+    thread_id: str = ""
+
+
+_SIMPLE_EDIT_SYSTEM = """You are a precise text editor. You receive an editing instruction and source text.
+Apply the requested edit and return ONLY the edited result. Do not add explanations, commentary, or markdown formatting unless the instruction specifically asks for it.
+Preserve the original structure, formatting, and style unless the instruction explicitly asks you to change them."""
+
+
+def build_simple_edit_prompt(
+    *,
+    user_message: str,
+    selected_text: str | None,
+    page_content: str | None,
+    system_prompt: str | None,
+) -> str:
+    """Build the prompt for a simple edit LLM call.
+
+    Combines the system prompt, user instruction, and source text
+    into a single prompt string.
+    """
+    parts: list[str] = []
+
+    if system_prompt:
+        parts.append(f"[System context]\n{system_prompt}\n")
+
+    parts.append(f"[Editing instruction]\n{user_message}\n")
+
+    if selected_text:
+        parts.append(f"[Source text to edit]\n{selected_text}")
+    elif page_content:
+        parts.append(f"[Page content]\n{page_content}")
+
+    return "\n".join(parts)
+
+
+async def execute_simple_edit(
+    request: SimpleEditRequest,
+) -> str:
+    """Execute a simple edit and stream results via SSE.
+
+    Steps:
+    1. Emit step_start event
+    2. Build prompt from request
+    3. Call LLM with streaming
+    4. Emit content chunks as they arrive
+    5. Emit step_done event
+    6. Return complete text
+
+    Args:
+        request: The simple edit request with user message and context.
+
+    Returns:
+        The complete edited text.
+    """
+    from pydantic_ai import Agent
+
+    thread_id = request.thread_id
+
+    # Emit step_start
+    await emit(thread_id, {
+        "type": "step_start",
+        "step": "simple_edit",
+        "description": request.user_message[:100],
+    })
+
+    # Build prompt
+    prompt = build_simple_edit_prompt(
+        user_message=request.user_message,
+        selected_text=request.selected_text,
+        page_content=request.page_content,
+        system_prompt=request.system_prompt,
+    )
+
+    # Create a one-shot PydanticAI agent for the edit
+    model = create_pydantic_ai_model()
+    agent = Agent(
+        model,
+        system_prompt=_SIMPLE_EDIT_SYSTEM,
+    )
+
+    # Run with streaming
+    full_text = ""
+    async with agent.run_stream(prompt) as result:
+        async for chunk in result.stream_text(delta=True):
+            full_text += chunk
+            await emit(thread_id, {
+                "type": "content",
+                "chunk": chunk,
+            })
+
+    # Emit step_done
+    await emit(thread_id, {
+        "type": "step_done",
+        "step": "simple_edit",
+        "result_summary": f"Completed edit ({len(full_text)} chars)",
+    })
+
+    return full_text
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_simple_edit.py -v
+```
+
+Expected: PASS — prompt building and request model tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add agent-service/app/orchestrator/tools/simple_edit.py agent-service/tests/orchestrator/test_simple_edit.py
+git commit -m "feat(orchestrator): add simple_edit tool for Level 1 tasks"
+```
+
+---
+
+## Chunk 5: Finalize Tool
+
+### Task 5: Implement finalize tool
+
+Merges all section drafts into `final_content`, computes final word count, and emits the `done` event.
+
+**Files:**
+- Create: `agent-service/app/orchestrator/tools/finalize.py`
+- Test: `agent-service/tests/orchestrator/test_finalize.py`
+
+- [ ] **Step 1: Write failing tests for finalize**
+
+```python
+# agent-service/tests/orchestrator/test_finalize.py
+
+import pytest
+
+from app.orchestrator.tools.finalize import merge_sections, compute_word_count
+
+
+class TestMergeSections:
+    def test_single_section(self):
+        sections = [{"title": "Intro", "content": "Hello world."}]
+        result = merge_sections(sections)
+        assert "Hello world." in result
+
+    def test_multiple_sections_joined(self):
+        sections = [
+            {"title": "Section 1", "content": "First paragraph."},
+            {"title": "Section 2", "content": "Second paragraph."},
+        ]
+        result = merge_sections(sections)
+        assert "First paragraph." in result
+        assert "Second paragraph." in result
+        # Sections should be separated
+        assert result.index("First") < result.index("Second")
+
+    def test_empty_sections_list(self):
+        result = merge_sections([])
+        assert result == ""
+
+    def test_plain_text_merge(self):
+        """When content is plain text (Level 1), just return it."""
+        result = merge_sections([], plain_text="Direct LLM output here.")
+        assert result == "Direct LLM output here."
+
+    def test_sections_with_headings(self):
+        sections = [
+            {"title": "Introduction", "content": "Intro text."},
+            {"title": "Details", "content": "Detail text."},
+        ]
+        result = merge_sections(sections, include_headings=True)
+        assert "# Introduction" in result or "Introduction" in result
+        assert "Intro text." in result
+
+
+class TestComputeWordCount:
+    def test_english_word_count(self):
+        count = compute_word_count("Hello world foo bar baz")
+        assert count == 5
+
+    def test_chinese_word_count(self):
+        count = compute_word_count("你好世界")
+        assert count >= 2  # Chinese chars counted individually or by segmentation
+
+    def test_mixed_content(self):
+        count = compute_word_count("Hello 你好 World 世界")
+        assert count >= 4
+
+    def test_empty_string(self):
+        count = compute_word_count("")
+        assert count == 0
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_finalize.py -q
+```
+
+Expected: FAIL — `ModuleNotFoundError`
+
+- [ ] **Step 3: Implement finalize tool**
+
+```python
+# agent-service/app/orchestrator/tools/finalize.py
+"""Finalize tool for the orchestrator.
+
+Merges section drafts into final content, computes word count,
+and emits the done event via SSE.
+"""
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from app.agent.events import emit
+
+
+def compute_word_count(text: str) -> int:
+    """Count words in mixed Chinese/English text.
+
+    Chinese characters are counted individually (each char ≈ 1 word).
+    English/Latin words are counted by whitespace separation.
+    """
+    if not text:
+        return 0
+
+    # Count Chinese characters
+    chinese_chars = len(re.findall(r"[\u4e00-\u9fff\u3400-\u4dbf]", text))
+
+    # Remove Chinese characters, then count remaining words
+    text_without_chinese = re.sub(r"[\u4e00-\u9fff\u3400-\u4dbf]", " ", text)
+    english_words = len(text_without_chinese.split())
+
+    return chinese_chars + english_words
+
+
+def merge_sections(
+    sections: list[dict[str, Any]],
+    *,
+    plain_text: str | None = None,
+    include_headings: bool = False,
+) -> str:
+    """Merge section drafts into a single document.
+
+    Args:
+        sections: List of {"title": str, "content": str} dicts.
+        plain_text: If provided, return this directly (Level 1 path).
+        include_headings: If True, prepend "# title" before each section.
+
+    Returns:
+        Merged content string.
+    """
+    if plain_text is not None:
+        return plain_text
+
+    if not sections:
+        return ""
+
+    parts: list[str] = []
+    for section in sections:
+        title = section.get("title", "")
+        content = section.get("content", "")
+
+        if include_headings and title:
+            parts.append(f"# {title}\n\n{content}")
+        else:
+            parts.append(content)
+
+    return "\n\n".join(parts)
+
+
+async def finalize_and_emit(
+    *,
+    thread_id: str,
+    sections: list[dict[str, Any]] | None = None,
+    plain_text: str | None = None,
+    insert_mode: str = "create",
+) -> str:
+    """Merge content and emit the done event.
+
+    Args:
+        thread_id: SSE thread identifier.
+        sections: Section drafts to merge (Level 2/3).
+        plain_text: Direct text result (Level 1).
+        insert_mode: How the frontend should insert the content.
+
+    Returns:
+        The final merged content.
+    """
+    final_content = merge_sections(
+        sections or [],
+        plain_text=plain_text,
+    )
+
+    word_count = compute_word_count(final_content)
+
+    await emit(thread_id, {
+        "type": "done",
+        "final_content": final_content,
+        "insert_mode": insert_mode,
+    })
+
+    return final_content
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_finalize.py -v
+```
+
+Expected: PASS — all tests green.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add agent-service/app/orchestrator/tools/finalize.py agent-service/tests/orchestrator/test_finalize.py
+git commit -m "feat(orchestrator): add finalize tool for content merging"
+```
+
+---
+
+## Chunk 6: Orchestrator Engine
+
+### Task 6: Build the Orchestrator Engine
+
+The core PydanticAI Agent that ties everything together.
+
+**Files:**
+- Create: `agent-service/app/orchestrator/prompts.py`
+- Create: `agent-service/app/orchestrator/engine.py`
+- Test: `agent-service/tests/orchestrator/test_engine.py`
+
+**Design:**
+
+The engine creates a PydanticAI Agent with:
+- System prompt from `prompts.py`
+- Tools: `analyze_complexity`, `ask_user`, `simple_edit`, `finalize`
+- Dependency injection of `CreationState` (runtime context)
+- Streaming output via SSE events
+
+The `run()` method orchestrates the full lifecycle:
+1. Creates state from request
+2. Runs PydanticAI agent — the agent decides what tools to call
+3. For Level 1: agent calls `analyze_complexity` → `simple_edit` → `finalize`
+4. For Level 2/3: agent calls `analyze_complexity` → `ask_user` (optional) → delegates to workers (Phase 2+)
+5. Handles cancellation and errors
+
+- [ ] **Step 1: Write the orchestrator system prompt**
+
+```python
+# agent-service/app/orchestrator/prompts.py
+"""System prompts for the PydanticAI orchestrator.
+
+The orchestrator prompt instructs the agent on HOW to use its tools,
+not on how to write content (that's the workers' job).
+"""
+
+ORCHESTRATOR_SYSTEM_PROMPT = """You are the orchestrator for a document creation system. Your job is to analyze the user's request, determine the right execution strategy, and coordinate the work.
+
+## Your Tools
+
+1. **analyze_complexity** — Call this FIRST on every request. It determines the task level:
+   - Level 1: Simple edit (translate, fix spelling, shorten, change tone). Use simple_edit directly.
+   - Level 2: Structured edit (format, continue, expand). Needs brief → single-pass write.
+   - Level 3: Full creation (write, rewrite, compose). Needs brief → blueprint → sectioned write → review.
+
+2. **simple_edit** — For Level 1 tasks only. Single LLM call that applies the edit and streams the result.
+
+3. **ask_user** — Pause and ask the user a question. Use ONLY when you have a specific, concrete question that cannot be answered from the available context. Do NOT ask unnecessary questions.
+
+4. **finalize** — Call this LAST to emit the done event. Pass either plain_text (Level 1) or sections (Level 2/3).
+
+## Execution Rules
+
+- ALWAYS call analyze_complexity first.
+- For Level 1: analyze_complexity → simple_edit → finalize. No questions, no planning.
+- For Level 2: analyze_complexity → [ask_user if truly needed] → (delegate to workers — not yet available, use simple_edit as fallback). → finalize.
+- For Level 3: analyze_complexity → [ask_user if truly needed] → (delegate to workers — not yet available, use simple_edit as fallback). → finalize.
+- NEVER skip analyze_complexity.
+- NEVER ask the user questions for Level 1 tasks.
+- If workers are not yet available (Phase 1), fall back to simple_edit for all levels.
+
+## Language
+
+- Respond in the same language as the user's message.
+- If the user writes in Chinese, your tool arguments and reasoning should be in Chinese.
+"""
+```
+
+- [ ] **Step 2: Write failing tests for the engine**
+
+```python
+# agent-service/tests/orchestrator/test_engine.py
+
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.orchestrator.engine import OrchestratorEngine, OrchestratorRequest
+
+
+class TestOrchestratorRequest:
+    def test_creates_from_minimal_input(self):
+        req = OrchestratorRequest(
+            user_message="翻译成英文：你好",
+            thread_id="test-thread-1",
+            workspace_id="ws-1",
+        )
+        assert req.user_message == "翻译成英文：你好"
+        assert req.thread_id == "test-thread-1"
+
+    def test_creates_with_full_context(self):
+        req = OrchestratorRequest(
+            user_message="Translate to English",
+            thread_id="test-thread-2",
+            workspace_id="ws-1",
+            selected_text="你好世界",
+            page_content="# Test Page\n\n你好世界",
+            page_id="page-1",
+            page_title="Test Page",
+            intent_route="selection_edit",
+            files=[],
+            template_id=None,
+            system_prompt=None,
+            template_prompt=None,
+            insert_mode="replace",
+        )
+        assert req.intent_route == "selection_edit"
+        assert req.insert_mode == "replace"
+
+
+class TestOrchestratorEngine:
+    def test_engine_initializes(self):
+        engine = OrchestratorEngine()
+        assert engine is not None
+
+    @pytest.mark.asyncio
+    async def test_engine_rejects_empty_message(self):
+        engine = OrchestratorEngine()
+        req = OrchestratorRequest(
+            user_message="",
+            thread_id="test-thread",
+            workspace_id="ws-1",
+        )
+        with pytest.raises(ValueError, match="empty"):
+            await engine.run(req)
+```
+
+- [ ] **Step 3: Run tests to verify they fail**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_engine.py -q
+```
+
+Expected: FAIL — `ModuleNotFoundError`
+
+- [ ] **Step 4: Implement the orchestrator engine**
+
+```python
+# agent-service/app/orchestrator/engine.py
+"""Core orchestrator engine.
+
+The orchestrator is a PydanticAI Agent that coordinates task execution.
+It analyzes complexity, decides execution strategy, and delegates to
+the appropriate tools.
+
+In Phase 1, only Level 1 (simple_edit) is fully implemented.
+Level 2/3 fall back to simple_edit until workers are built in Phase 2+.
+"""
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+from app.agent.events import create_queue, emit, emit_done, remove_queue
+from app.agent.cancellation import (
+    AgentCancelledError,
+    register_task,
+    unregister_task,
+)
+from app.orchestrator.llm_factory import create_pydantic_ai_model
+from app.orchestrator.prompts import ORCHESTRATOR_SYSTEM_PROMPT
+from app.orchestrator.tools.complexity import analyze_task_complexity
+from app.orchestrator.tools.simple_edit import execute_simple_edit, SimpleEditRequest
+from app.orchestrator.tools.finalize import finalize_and_emit
+from app.orchestrator.tools.user_interaction import interaction_registry
+
+
+class OrchestratorRequest(BaseModel):
+    """Input request for the orchestrator."""
+    user_message: str
+    thread_id: str
+    workspace_id: str = ""
+
+    # Page context
+    page_id: str | None = None
+    page_title: str | None = None
+    page_content: str | None = None
+    selected_text: str | None = None
+    selection_range: dict | None = None
+
+    # Configuration
+    intent_route: str = "document_create"
+    scope: str = "blank_page"
+    source_policy: str = "create_new"
+    length_policy: str = "preserve"
+    insert_mode: str = "create"
+
+    # Files and templates
+    files: list[dict[str, Any]] = Field(default_factory=list)
+    template_id: str | None = None
+    system_prompt: str | None = None
+    template_prompt: str | None = None
+
+    # Conversation context
+    conversation_history: list[dict] = Field(default_factory=list)
+    config: dict = Field(default_factory=dict)
+
+
+class OrchestratorEngine:
+    """The v2 orchestrator engine.
+
+    In Phase 1, this engine:
+    1. Analyzes task complexity (deterministic, no LLM)
+    2. For Level 1: runs simple_edit → finalize
+    3. For Level 2/3: falls back to simple_edit (workers not yet built)
+    4. Emits SSE events throughout
+
+    In Phase 2+, Level 2/3 will delegate to specialized workers.
+    """
+
+    async def run(self, request: OrchestratorRequest) -> str:
+        """Execute the orchestrator pipeline.
+
+        Args:
+            request: The orchestrator request.
+
+        Returns:
+            The final content string.
+
+        Raises:
+            ValueError: If user_message is empty.
+            AgentCancelledError: If the task is cancelled.
+        """
+        if not request.user_message.strip():
+            raise ValueError("User message cannot be empty")
+
+        # Step 1: Analyze complexity
+        complexity = analyze_task_complexity(
+            user_message=request.user_message,
+            files=request.files,
+            intent_route=request.intent_route,
+            template_id=request.template_id,
+            selected_text=request.selected_text,
+        )
+
+        level = complexity["level"]
+
+        # Emit complexity analysis result
+        await emit(request.thread_id, {
+            "type": "step_start",
+            "step": "analyze_complexity",
+            "description": f"Task complexity: Level {level} — {complexity['reasoning']}",
+        })
+
+        await emit(request.thread_id, {
+            "type": "step_done",
+            "step": "analyze_complexity",
+            "result_summary": f"Level {level}",
+        })
+
+        # Step 2: Execute based on level
+        if level == 1:
+            return await self._execute_level1(request)
+        elif level == 2:
+            # Phase 1 fallback: treat as Level 1
+            return await self._execute_level1(request)
+        else:
+            # Phase 1 fallback: treat as Level 1
+            return await self._execute_level1(request)
+
+    async def _execute_level1(self, request: OrchestratorRequest) -> str:
+        """Execute a Level 1 simple edit task."""
+        edit_request = SimpleEditRequest(
+            user_message=request.user_message,
+            selected_text=request.selected_text,
+            page_content=request.page_content,
+            system_prompt=request.system_prompt,
+            thread_id=request.thread_id,
+        )
+
+        result_text = await execute_simple_edit(edit_request)
+
+        # Finalize
+        final_content = await finalize_and_emit(
+            thread_id=request.thread_id,
+            plain_text=result_text,
+            insert_mode=request.insert_mode,
+        )
+
+        return final_content
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_engine.py -v
+```
+
+Expected: PASS — request model and engine initialization tests pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add agent-service/app/orchestrator/prompts.py agent-service/app/orchestrator/engine.py agent-service/tests/orchestrator/test_engine.py
+git commit -m "feat(orchestrator): add core orchestrator engine with Level 1 execution"
+```
+
+---
+
+## Chunk 7: FastAPI Endpoints
+
+### Task 7: Create new FastAPI v2 endpoints
+
+Add `/v2/agent/run`, `/v2/agent/resume`, and `/v2/agent/stop` that coexist with the old LangGraph endpoints.
+
+**Files:**
+- Modify: `agent-service/app/main.py`
+
+**Design:**
+- New endpoints use `OrchestratorEngine` instead of LangGraph
+- Same SSE event stream format (reuses `asyncio.Queue` mechanism)
+- Same auth middleware (`verify_internal_secret`)
+- Old endpoints remain untouched for backward compatibility
+
+- [ ] **Step 1: Write failing tests for v2 endpoints**
+
+```python
+# agent-service/tests/orchestrator/test_endpoints.py
+
+import pytest
+from httpx import AsyncClient, ASGITransport
+
+from app.main import app
+from app.config import settings
+
+
+@pytest.fixture
+def auth_headers():
+    return {"X-Internal-Secret": settings.agent_internal_secret}
+
+
+@pytest.mark.asyncio
+async def test_v2_run_endpoint_exists():
+    """The /v2/agent/run endpoint should exist and accept POST."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v2/agent/run",
+            json={
+                "user_message": "test",
+                "thread_id": "test-thread",
+            },
+            headers={"X-Internal-Secret": settings.agent_internal_secret},
+        )
+        # Should not be 404 (endpoint exists)
+        assert response.status_code != 404
+
+
+@pytest.mark.asyncio
+async def test_v2_stop_endpoint_exists():
+    """The /v2/agent/stop endpoint should exist and accept POST."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v2/agent/stop",
+            json={"task_id": "nonexistent"},
+            headers={"X-Internal-Secret": settings.agent_internal_secret},
+        )
+        assert response.status_code != 404
+
+
+@pytest.mark.asyncio
+async def test_v2_resume_endpoint_exists():
+    """The /v2/agent/resume endpoint should exist and accept POST."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v2/agent/resume",
+            json={
+                "thread_id": "test-thread",
+                "resume_value": {"answers": "test"},
+            },
+            headers={"X-Internal-Secret": settings.agent_internal_secret},
+        )
+        assert response.status_code != 404
+
+
+@pytest.mark.asyncio
+async def test_old_endpoints_still_work():
+    """Old /agent/run endpoint should still exist."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/agent/run",
+            json={
+                "user_message": "test",
+            },
+            headers={"X-Internal-Secret": settings.agent_internal_secret},
+        )
+        assert response.status_code != 404
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_endpoints.py -q
+```
+
+Expected: FAIL — 404 for `/v2/agent/run`
+
+- [ ] **Step 3: Add v2 endpoints to main.py**
+
+Add the following to `agent-service/app/main.py` (after the existing endpoints, keeping them intact):
+
+```python
+# --- v2 Orchestrator Endpoints ---
+# These coexist with the old LangGraph endpoints during migration.
+
+from app.orchestrator.engine import OrchestratorEngine, OrchestratorRequest
+from app.orchestrator.tools.user_interaction import interaction_registry
+
+_orchestrator = OrchestratorEngine()
+_v2_task_counter = 0
+
+
+class V2RunRequest(BaseModel):
+    """Request body for /v2/agent/run."""
+    user_message: str
+    thread_id: str | None = None
+    workspace_id: str = ""
+    page_context: PageContext = Field(default_factory=PageContext)
+    files: list[FileInfo] = Field(default_factory=list)
+    template_id: str | None = None
+    system_prompt: str | None = None
+    template_prompt: str | None = None
+    intent_route: str = "document_create"
+    scope: str = "blank_page"
+    source_policy: str = "create_new"
+    length_policy: str = "preserve"
+    conversation_history: list[dict] = Field(default_factory=list)
+    config: dict = Field(default_factory=dict)
+
+
+class V2ResumeRequest(BaseModel):
+    """Request body for /v2/agent/resume."""
+    thread_id: str
+    resume_value: dict
+
+
+class V2StopRequest(BaseModel):
+    """Request body for /v2/agent/stop."""
+    task_id: str
+
+
+async def _run_v2_orchestrator(
+    *,
+    task_id: str,
+    thread_id: str,
+    request: OrchestratorRequest,
+):
+    """Background task that runs the orchestrator and handles errors."""
+    try:
+        await _orchestrator.run(request)
+    except AgentCancelledError:
+        await emit(thread_id, {"type": "cancelled"})
+    except Exception as exc:
+        await emit(thread_id, {"type": "error", "message": str(exc)[:500]})
+    finally:
+        await emit_done(thread_id)
+        unregister_task(task_id, thread_id)
+        interaction_registry.cleanup(thread_id)
+
+
+@app.post("/v2/agent/run", dependencies=[Depends(verify_internal_secret)])
+async def run_agent_v2(request: V2RunRequest):
+    global _v2_task_counter
+    _v2_task_counter += 1
+    task_id = f"v2-task-{_v2_task_counter}"
+
+    thread_id = request.thread_id or str(uuid4())
+    register_task(task_id, thread_id)
+    queue = create_queue(thread_id)
+    interaction_registry.register(thread_id)
+
+    orchestrator_request = OrchestratorRequest(
+        user_message=request.user_message,
+        thread_id=thread_id,
+        workspace_id=request.workspace_id,
+        page_id=request.page_context.page_id,
+        page_title=request.page_context.page_title,
+        page_content=request.page_context.page_content,
+        selected_text=request.page_context.selected_text,
+        selection_range=request.page_context.selection_range,
+        intent_route=request.intent_route,
+        scope=request.scope,
+        source_policy=request.source_policy,
+        length_policy=request.length_policy,
+        insert_mode=request.config.get("insert_mode", "create"),
+        files=[f.model_dump() for f in request.files],
+        template_id=request.template_id,
+        system_prompt=request.system_prompt,
+        template_prompt=request.template_prompt,
+        conversation_history=request.conversation_history,
+        config=request.config,
+    )
+
+    asyncio.create_task(
+        _run_v2_orchestrator(
+            task_id=task_id,
+            thread_id=thread_id,
+            request=orchestrator_request,
+        )
+    )
+
+    return EventSourceResponse(
+        _event_generator(thread_id, queue),
+        headers={"X-Task-Id": task_id},
+    )
+
+
+@app.post("/v2/agent/resume", dependencies=[Depends(verify_internal_secret)])
+async def resume_agent_v2(request: V2ResumeRequest):
+    ok = interaction_registry.submit_response(
+        request.thread_id,
+        request.resume_value,
+    )
+    if ok:
+        return {"status": "resumed"}
+    return {"status": "not_found"}
+
+
+@app.post("/v2/agent/stop", dependencies=[Depends(verify_internal_secret)])
+async def stop_agent_v2(request: V2StopRequest):
+    if cancel_task(request.task_id):
+        return {"status": "stopping"}
+    return {"status": "not_found"}
+```
+
+**Important:** Add these imports at the top of `main.py`:
+
+```python
+from pydantic import BaseModel, Field
+```
+
+(`BaseModel` is already imported via `app.schemas.request`, but the v2 request models are defined inline in `main.py` for now.)
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_endpoints.py -v
+```
+
+Expected: PASS — all 4 endpoint existence tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add agent-service/app/main.py agent-service/tests/orchestrator/test_endpoints.py
+git commit -m "feat(orchestrator): add /v2/agent/run, /resume, /stop endpoints"
+```
+
+---
+
+## Chunk 8: NestJS Gateway Adaptation
+
+### Task 8: Adapt NestJS gateway for v2 endpoints
+
+Add new route handlers in the NestJS gateway that proxy to the Python `/v2/` endpoints. Keep existing routes working.
+
+**Files:**
+- Modify: `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts`
+
+- [ ] **Step 1: Add v2 proxy routes to the gateway controller**
+
+Add these methods to `AgentGatewayController` in `agent-gateway.controller.ts`:
+
+```typescript
+@Post('v2/run')
+async runAgentV2(
+  @AuthUser() user: any,
+  @AuthWorkspace() workspace: any,
+  @Req() req: FastifyRequest,
+  @Res() res: FastifyReply,
+) {
+  const parts = req.parts();
+  const bufferedFiles: { buffer: Buffer; mimetype: string; filename: string }[] = [];
+  const fields: Record<string, string> = {};
+
+  for await (const part of parts) {
+    if (part.type === 'file') {
+      if (bufferedFiles.length >= MAX_FILES) continue;
+      const buffer = await part.toBuffer();
+      if (buffer.length > MAX_FILE_SIZE) {
+        throw new PayloadTooLargeException(`File ${part.filename} exceeds 20MB`);
+      }
+      bufferedFiles.push({ buffer, mimetype: part.mimetype, filename: part.filename });
+    } else {
+      fields[part.fieldname] = part.value as string;
+    }
+  }
+
+  const files = bufferedFiles.map((file) => ({
+    filename: file.filename,
+    mimetype: file.mimetype,
+    content_b64: file.buffer.toString('base64'),
+  }));
+
+  const history = fields.history ? JSON.parse(fields.history) : [];
+
+  const globalSystemPrompt = await this.aiTemplateService.getSystemPrompt(
+    workspace.id,
+  );
+  const templatePrompt = fields.templateId
+    ? await this.aiTemplateService.getTemplatePrompt(
+        fields.templateId,
+        workspace.id,
+        user.id,
+      )
+    : null;
+
+  const agentBody = {
+    user_message: fields.prompt || '',
+    files,
+    page_context: {
+      page_id: fields.pageId || null,
+      page_title: fields.pageTitle || null,
+      page_content: fields.pageContent || null,
+      selected_text: fields.selectedText || null,
+      selection_range: fields.selectionRange ? JSON.parse(fields.selectionRange) : null,
+    },
+    template_id: fields.templateId || null,
+    system_prompt: globalSystemPrompt || null,
+    template_prompt: templatePrompt,
+    intent_route: fields.intentRoute || 'document_create',
+    scope: fields.scope || 'blank_page',
+    source_policy: fields.sourcePolicy || 'create_new',
+    length_policy: fields.lengthPolicy || 'preserve',
+    conversation_history: history,
+    workspace_id: workspace.id,
+    config: {
+      insert_mode: fields.insertMode || 'create',
+    },
+  };
+
+  const agentUrl = new URL('/v2/agent/run', this.environmentService.getAgentServiceUrl());
+  const postData = JSON.stringify(agentBody);
+
+  const proxyReq = http.request(
+    {
+      hostname: agentUrl.hostname,
+      port: agentUrl.port,
+      path: agentUrl.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'X-Internal-Secret': this.environmentService.getAgentInternalSecret(),
+      },
+    },
+    (proxyRes) => {
+      if (proxyRes.statusCode !== 200) {
+        writeSseHeaders(res);
+        res.raw.write(`data: ${JSON.stringify({ type: 'error', message: `Agent v2 returned ${proxyRes.statusCode}` })}\n\n`);
+        res.raw.end();
+        return;
+      }
+
+      const taskIdHeader = Array.isArray(proxyRes.headers['x-task-id'])
+        ? proxyRes.headers['x-task-id'][0]
+        : proxyRes.headers['x-task-id'];
+      writeSseHeaders(res, taskIdHeader);
+
+      proxyRes.on('data', (chunk: Buffer) => {
+        res.raw.write(chunk);
+      });
+      proxyRes.on('end', () => {
+        res.raw.end();
+      });
+      proxyRes.on('error', (err) => {
+        this.logger.error('Agent v2 stream error', err);
+        res.raw.end();
+      });
+    },
+  );
+
+  proxyReq.on('error', (err) => {
+    this.logger.error('Agent v2 connection error', err);
+    writeSseHeaders(res);
+    res.raw.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Agent v2 service unavailable' })}\n\n`);
+    res.raw.end();
+  });
+
+  proxyReq.write(postData);
+  proxyReq.end();
+}
+
+@Post('v2/resume')
+async resumeAgentV2(
+  @Body() dto: AgentResumeDto,
+  @Res() res: FastifyReply,
+): Promise<void> {
+  const postData = JSON.stringify({
+    thread_id: dto.threadId,
+    resume_value: dto.resumeValue,
+  });
+
+  const agentUrl = new URL('/v2/agent/resume', this.environmentService.getAgentServiceUrl());
+
+  const proxyReq = http.request(
+    {
+      hostname: agentUrl.hostname,
+      port: agentUrl.port,
+      path: agentUrl.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'X-Internal-Secret': this.environmentService.getAgentInternalSecret(),
+      },
+    },
+    (proxyRes) => {
+      let body = '';
+      proxyRes.on('data', (chunk) => { body += chunk; });
+      proxyRes.on('end', () => {
+        res.status(proxyRes.statusCode || 200).send(body);
+      });
+    },
+  );
+
+  proxyReq.on('error', (err) => {
+    this.logger.error('Agent v2 resume error', err);
+    res.status(502).send({ error: err.message });
+  });
+
+  proxyReq.write(postData);
+  proxyReq.end();
+}
+
+@Post('v2/stop')
+async stopAgentV2(@Body() dto: AgentStopDto) {
+  return this.agentGatewayService.stopAgentV2(dto.taskId);
+}
+```
+
+**Note:** The `stopAgentV2` method in `AgentGatewayService` should proxy to `/v2/agent/stop`. If the service doesn't have this method yet, add it following the same pattern as the existing `stopAgent`.
+
+- [ ] **Step 2: Verify the gateway compiles**
+
+```bash
+cd E:/test/Docmost && pnpm --filter ./apps/server exec tsc --noEmit --pretty
+```
+
+Expected: No compilation errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts
+git commit -m "feat(gateway): add v2 proxy routes for orchestrator endpoints"
+```
+
+---
+
+## Chunk 9: Level 1 End-to-End Test
+
+### Task 9: Level 1 end-to-end integration test
+
+A test that exercises the full Level 1 path: request → complexity analysis → simple_edit → finalize → SSE events.
+
+**Files:**
+- Create: `agent-service/tests/orchestrator/test_e2e_level1.py`
+
+**Note:** This test mocks the LLM layer but exercises everything else for real.
+
+- [ ] **Step 1: Write the end-to-end test**
+
+```python
+# agent-service/tests/orchestrator/test_e2e_level1.py
+"""End-to-end test for Level 1 (simple edit) path.
+
+Tests the full pipeline: v2 endpoint → OrchestratorEngine →
+analyze_complexity → simple_edit → finalize → SSE events.
+
+The LLM is mocked to return deterministic content.
+"""
+
+import asyncio
+import json
+from unittest.mock import AsyncMock, patch, MagicMock
+
+import pytest
+from httpx import AsyncClient, ASGITransport
+
+from app.config import settings
+from app.main import app
+
+
+def _make_mock_agent():
+    """Create a mock PydanticAI Agent that returns a predictable result."""
+    mock_agent = MagicMock()
+
+    class MockStreamResult:
+        async def stream_text(self, *, delta=False):
+            yield "Hello "
+            yield "World"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+    mock_agent.run_stream = MagicMock(return_value=MockStreamResult())
+    return mock_agent
+
+
+@pytest.mark.asyncio
+async def test_level1_translate_e2e():
+    """Full Level 1 flow: translate request → SSE stream with content."""
+    with patch("app.orchestrator.tools.simple_edit.Agent") as MockAgentClass, \
+         patch("app.orchestrator.tools.simple_edit.create_pydantic_ai_model") as mock_factory:
+
+        mock_factory.return_value = "test-model"
+
+        class MockStreamResult:
+            async def stream_text(self, *, delta=False):
+                yield "Hello "
+                yield "World"
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        mock_instance = MagicMock()
+        mock_instance.run_stream = MagicMock(return_value=MockStreamResult())
+        MockAgentClass.return_value = mock_instance
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/v2/agent/run",
+                json={
+                    "user_message": "翻译成英文：你好世界",
+                    "page_context": {
+                        "selected_text": "你好世界",
+                    },
+                    "intent_route": "selection_edit",
+                },
+                headers={"X-Internal-Secret": settings.agent_internal_secret},
+            )
+
+            assert response.status_code == 200
+            assert "text/event-stream" in response.headers.get("content-type", "")
+
+            # Parse SSE events
+            events = []
+            for line in response.text.split("\n"):
+                if line.startswith("data: "):
+                    data = json.loads(line[6:])
+                    events.append(data)
+
+            # Verify event sequence
+            event_types = [e["type"] for e in events]
+
+            # Should have: session → step_start (complexity) → step_done →
+            # step_start (edit) → content → content → step_done → done
+            assert "session" in event_types
+            assert "step_start" in event_types
+            assert "content" in event_types
+            assert "done" in event_types
+
+            # Verify content was streamed
+            content_chunks = [e["chunk"] for e in events if e["type"] == "content"]
+            assert "".join(content_chunks) == "Hello World"
+
+            # Verify done event has final content
+            done_events = [e for e in events if e["type"] == "done"]
+            assert len(done_events) == 1
+            assert done_events[0]["final_content"] == "Hello World"
+
+
+@pytest.mark.asyncio
+async def test_level1_completes_without_ask_user():
+    """Level 1 tasks should NEVER invoke ask_user."""
+    with patch("app.orchestrator.tools.simple_edit.Agent") as MockAgentClass, \
+         patch("app.orchestrator.tools.simple_edit.create_pydantic_ai_model"):
+
+        class MockStreamResult:
+            async def stream_text(self, *, delta=False):
+                yield "Fixed text"
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        mock_instance = MagicMock()
+        mock_instance.run_stream = MagicMock(return_value=MockStreamResult())
+        MockAgentClass.return_value = mock_instance
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/v2/agent/run",
+                json={
+                    "user_message": "改错别字",
+                    "page_context": {
+                        "selected_text": "这是一段有错别子的文字",
+                    },
+                    "intent_route": "selection_edit",
+                },
+                headers={"X-Internal-Secret": settings.agent_internal_secret},
+            )
+
+            events = []
+            for line in response.text.split("\n"):
+                if line.startswith("data: "):
+                    events.append(json.loads(line[6:]))
+
+            event_types = [e["type"] for e in events]
+            assert "await_input" not in event_types
+            assert "done" in event_types
+```
+
+- [ ] **Step 2: Run the test**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/test_e2e_level1.py -v
+```
+
+Expected: PASS — the full Level 1 pipeline works end-to-end with mocked LLM.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add agent-service/tests/orchestrator/test_e2e_level1.py
+git commit -m "test(orchestrator): add Level 1 end-to-end integration test"
+```
+
+---
+
+## Chunk 10: Frontend Event Adaptation
+
+### Task 10: Frontend event handler adaptation
+
+Add v2 event normalization alongside existing event handling. New events for Phase 2+ are defined but not yet used.
+
+**Files:**
+- Modify: `apps/client/src/ee/ai/services/ai-create-runner.utils.ts`
+
+- [ ] **Step 1: Add v2 event types to AiCreateRunEvent**
+
+Add these new event types to the `AiCreateRunEvent` union in `ai-create-runner.utils.ts`:
+
+```typescript
+// Add to the AiCreateRunEvent union type:
+| { type: "section_progress"; sectionId: string; sectionTitle: string; progress: number }
+| { type: "brief_ready"; data: unknown }
+| { type: "blueprint_ready"; data: unknown }
+| { type: "review_ready"; data: unknown }
+| { type: "complexity_analyzed"; level: 1 | 2 | 3; reasoning: string }
+```
+
+- [ ] **Step 2: Add v2 event normalization cases to normalizeAgentRunEvent**
+
+Add these cases to the `switch` in `normalizeAgentRunEvent`:
+
+```typescript
+case "section_progress":
+  return {
+    type: "section_progress",
+    sectionId: (event as any).section_id || (event as any).sectionId || "",
+    sectionTitle: (event as any).section_title || (event as any).sectionTitle || "",
+    progress: (event as any).progress || 0,
+  };
+case "brief_ready":
+  return {
+    type: "brief_ready",
+    data: (event as any).data || {},
+  };
+case "blueprint_ready":
+  return {
+    type: "blueprint_ready",
+    data: (event as any).data || {},
+  };
+case "review_ready":
+  return {
+    type: "review_ready",
+    data: (event as any).data || {},
+  };
+case "complexity_analyzed":
+  return {
+    type: "complexity_analyzed",
+    level: (event as any).level || 3,
+    reasoning: (event as any).reasoning || "",
+  };
+```
+
+- [ ] **Step 3: Verify TypeScript compiles**
+
+```bash
+cd E:/test/Docmost && pnpm --filter ./apps/client exec tsc --noEmit --pretty
+```
+
+Expected: No compilation errors.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add apps/client/src/ee/ai/services/ai-create-runner.utils.ts
+git commit -m "feat(client): add v2 event types for orchestrator SSE protocol"
+```
+
+---
+
+## Final Verification
+
+- [ ] **Step 1: Run all orchestrator tests**
+
+```bash
+cd agent-service && python -m pytest tests/orchestrator/ -v
+```
+
+Expected: All tests PASS.
+
+- [ ] **Step 2: Run existing agent tests (regression check)**
+
+```bash
+cd agent-service && python -m pytest tests/ -v --ignore=tests/orchestrator/
+```
+
+Expected: Existing tests still PASS — v2 code does not break v1.
+
+- [ ] **Step 3: Verify server compiles**
+
+```bash
+cd E:/test/Docmost && pnpm --filter ./apps/server exec tsc --noEmit --pretty
+```
+
+Expected: No errors.
+
+- [ ] **Step 4: Verify client compiles**
+
+```bash
+cd E:/test/Docmost && pnpm --filter ./apps/client exec tsc --noEmit --pretty
+```
+
+Expected: No errors.
+
+- [ ] **Step 5: Final commit and tag**
+
+```bash
+git add -A
+git commit -m "docs: add Phase 1 orchestrator implementation plan"
+```
+
+---
+
+## Dependency Graph
+
+```
+Task 1 (LLM Factory)
+    ↓
+Task 2 (Complexity) ←── independent of Task 1
+    ↓
+Task 3 (User Interaction) ←── independent of Task 1/2
+    ↓
+Task 4 (Simple Edit) ←── depends on Task 1 (llm_factory)
+    ↓
+Task 5 (Finalize) ←── independent
+    ↓
+Task 6 (Engine) ←── depends on Tasks 1-5
+    ↓
+Task 7 (FastAPI Endpoints) ←── depends on Task 6
+    ↓
+Task 8 (NestJS Gateway) ←── depends on Task 7 (endpoint URLs)
+    ↓
+Task 9 (E2E Test) ←── depends on Task 7
+    ↓
+Task 10 (Frontend Events) ←── independent of backend tasks
+```
+
+Tasks 1, 2, 3, 5, and 10 can be worked on in parallel. Task 4 depends on Task 1. Task 6 depends on all tool tasks. Tasks 7-9 are sequential.
+
+---
+
+## Phase 1 Deliverables Summary
+
+After Phase 1 is complete, the system can:
+
+1. Accept requests via `/v2/agent/run` (coexists with old `/agent/run`)
+2. Analyze task complexity deterministically (no LLM needed)
+3. Execute Level 1 tasks end-to-end (translate, fix spelling, shorten, change tone)
+4. Stream results via SSE with the same event format as v1
+5. Pause/resume via `ask_user` mechanism (infrastructure ready, used in Phase 2+)
+6. Cancel running tasks via `/v2/agent/stop`
+7. Proxy through NestJS gateway to the frontend
+
+What Phase 1 does NOT do (deferred to Phase 2+):
+- Level 2/3 tasks fall back to simple_edit (no planning/blueprint/review)
+- Worker delegation (no `plan_worker`, `write_worker`, `review_worker`)
+- Evidence acquisition (stays in v1 LangGraph path)
+- Asset map building
+- Multi-section writing
+- Review and revision loops
