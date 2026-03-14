@@ -29,6 +29,36 @@ export function createInteractiveMessage(
     };
   }
 
+  if (phase === "outline" && data.type === "outline") {
+    return {
+      ...baseMessage,
+      outline: data.outline,
+      artifactPlan: data.artifactPlan,
+    };
+  }
+
+  // V2 phases: brief / blueprint / review — store raw data
+  if (phase === "brief") {
+    return {
+      ...baseMessage,
+      briefData: data as unknown as Record<string, unknown>,
+    };
+  }
+
+  if (phase === "blueprint") {
+    return {
+      ...baseMessage,
+      blueprintData: data as unknown as Record<string, unknown>,
+    };
+  }
+
+  if (phase === "review") {
+    return {
+      ...baseMessage,
+      reviewData: data as unknown as Record<string, unknown>,
+    };
+  }
+
   return {
     ...baseMessage,
     outline: data.type === "outline" ? data.outline : undefined,

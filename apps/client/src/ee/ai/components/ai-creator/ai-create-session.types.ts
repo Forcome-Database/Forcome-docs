@@ -10,7 +10,7 @@ export type AiCreateSessionStatus =
   | "error"
   | "cancelled";
 export type AiCreateInsertMode = "create" | "append" | "overwrite" | "replace";
-export type AiCreateAwaitInputPhase = "clarify" | "propose" | "outline";
+export type AiCreateAwaitInputPhase = "clarify" | "propose" | "outline" | "brief" | "blueprint" | "review";
 
 export interface AiCreateAwaitInputState {
   phase: AiCreateAwaitInputPhase;

@@ -12,7 +12,7 @@ test("run_started resets streaming artifacts and clears thread for new runs", ()
     taskId: "task-1",
     accumulatedContent: "draft",
     mdBuffer: "buffer",
-    awaitInput: { phase: "outline" as const, data: { outline: "A" } },
+    awaitInput: { phase: "outline" as const, data: { type: "outline" as const, outline: "A" } },
   };
 
   const next = aiCreateSessionReducer(initial, {
@@ -64,14 +64,14 @@ test("await_input moves session into awaiting_input and clears task ownership", 
   const next = aiCreateSessionReducer(initial, {
     type: "await_input",
     phase: "clarify",
-    data: { questions: ["Audience?"] },
+    data: { type: "clarify" as const, questions: ["Audience?"] },
   });
 
   assert.equal(next.status, "awaiting_input");
   assert.equal(next.taskId, null);
   assert.deepEqual(next.awaitInput, {
     phase: "clarify",
-    data: { questions: ["Audience?"] },
+    data: { type: "clarify" as const, questions: ["Audience?"] },
   });
 });
 
@@ -79,7 +79,7 @@ test("done and cancelled clear pending interrupt state", () => {
   const awaitingInput = {
     ...createInitialAiCreateSessionState(),
     status: "awaiting_input" as const,
-    awaitInput: { phase: "outline" as const, data: { outline: "A" } },
+    awaitInput: { phase: "outline" as const, data: { type: "outline" as const, outline: "A" } },
     taskId: "task-3",
   };
 

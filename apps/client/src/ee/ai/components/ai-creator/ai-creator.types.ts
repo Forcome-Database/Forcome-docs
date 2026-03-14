@@ -2,7 +2,7 @@ import type { AgentOutlineArtifactPlanItem } from "../../types/agent.types";
 
 export interface AiCreatorMessage {
   id: string;
-  role: 'user' | 'assistant' | 'clarify' | 'propose' | 'outline';
+  role: 'user' | 'assistant' | 'clarify' | 'propose' | 'outline' | 'brief' | 'blueprint' | 'review';
   content: string;
   timestamp: number;
   selectionContext?: string;
@@ -12,6 +12,10 @@ export interface AiCreatorMessage {
   outline?: string;                                        // for outline role
   artifactPlan?: AgentOutlineArtifactPlanItem[];           // for outline role
   threadId?: string;                                       // session tracking
+  // V2 data fields
+  briefData?: Record<string, unknown>;                     // for brief role
+  blueprintData?: Record<string, unknown>;                 // for blueprint role
+  reviewData?: Record<string, unknown>;                    // for review role
 }
 
 export interface SelectionSnapshot {
