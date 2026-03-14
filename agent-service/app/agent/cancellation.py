@@ -2,8 +2,6 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app.agent.state import AgentState
-
 
 class AgentCancelledError(Exception):
     """Raised when a running agent task has been cancelled."""
@@ -46,15 +44,15 @@ def is_task_cancelled(task_id: str | None, thread_id: str | None) -> bool:
     return event.is_set()
 
 
-async def raise_if_cancelled(state: AgentState | dict[str, Any]) -> None:
+async def raise_if_cancelled(state: dict[str, Any]) -> None:
     if is_task_cancelled(state.get("_task_id"), state.get("_thread_id")):
         raise AgentCancelledError(state.get("_task_id", ""))
 
 
 def cancellable(
-    node_fn: Callable[[AgentState], Awaitable[dict]],
-) -> Callable[[AgentState], Awaitable[dict]]:
-    async def wrapper(state: AgentState) -> dict:
+    node_fn: Callable[[dict], Awaitable[dict]],
+) -> Callable[[dict], Awaitable[dict]]:
+    async def wrapper(state: dict) -> dict:
         await raise_if_cancelled(state)
         return await node_fn(state)
 

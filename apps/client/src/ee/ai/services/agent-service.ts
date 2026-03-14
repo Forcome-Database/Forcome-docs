@@ -1,7 +1,6 @@
 import type { AgentResumeValue, AgentSSEEvent } from '../types/agent.types';
 
 export interface AgentGenerateParams {
-  files: File[];
   prompt: string;
   pageId: string;
   templateId?: string;
@@ -9,13 +8,10 @@ export interface AgentGenerateParams {
   pageTitle?: string;
   pageContent?: string;
   selectedText?: string;
-  selectionRange?: { from: number; to: number } | null;
   history?: { role: string; content: string }[];
   intentRoute?: "selection_edit" | "document_transform" | "document_create";
-  scope?: "selection" | "uploaded_document" | "current_page" | "blank_page";
-  sourcePolicy?: "preserve_source" | "transform_source" | "create_new";
-  lengthPolicy?: "preserve" | "compress" | "expand";
-  prioritizeUserInstructions?: boolean;
+  threadId?: string;
+  conversationHistory?: { role: string; content: string }[];
 }
 
 function createReaderErrorMessage(): string {
@@ -31,35 +27,23 @@ export function agentGenerate(
 ): AbortController {
   const controller = new AbortController();
 
-  const formData = new FormData();
-  formData.append('prompt', params.prompt);
-  formData.append('pageId', params.pageId);
-  if (params.templateId) formData.append('templateId', params.templateId);
-  if (params.insertMode) formData.append('insertMode', params.insertMode);
-  if (params.pageTitle) formData.append('pageTitle', params.pageTitle);
-  if (params.pageContent) formData.append('pageContent', params.pageContent);
-  if (params.selectedText) formData.append('selectedText', params.selectedText);
-  if (params.selectionRange) {
-    formData.append('selectionRange', JSON.stringify(params.selectionRange));
-  }
-  if (params.history) formData.append('history', JSON.stringify(params.history));
-  if (params.intentRoute) formData.append('intentRoute', params.intentRoute);
-  if (params.scope) formData.append('scope', params.scope);
-  if (params.sourcePolicy) formData.append('sourcePolicy', params.sourcePolicy);
-  if (params.lengthPolicy) formData.append('lengthPolicy', params.lengthPolicy);
-  if (params.prioritizeUserInstructions !== undefined) {
-    formData.append(
-      'prioritizeUserInstructions',
-      String(params.prioritizeUserInstructions),
-    );
-  }
-  for (const file of params.files) {
-    formData.append('files', file);
-  }
+  const body = JSON.stringify({
+    prompt: params.prompt,
+    pageId: params.pageId,
+    templateId: params.templateId,
+    insertMode: params.insertMode,
+    pageTitle: params.pageTitle,
+    pageContent: params.pageContent,
+    selectedText: params.selectedText,
+    conversationHistory: params.conversationHistory ?? params.history ?? [],
+    intentRoute: params.intentRoute,
+    threadId: params.threadId,
+  });
 
   fetch('/api/agent/run', {
     method: 'POST',
-    body: formData,
+    headers: { 'Content-Type': 'application/json' },
+    body,
     signal: controller.signal,
   })
     .then(async (resp) => {
