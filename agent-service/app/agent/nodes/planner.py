@@ -76,7 +76,7 @@ async def planner_node(state: AgentState) -> dict:
     if state.get("page_title"):
         context_parts.append(f"Current page title: {state['page_title']}")
     if state.get("selected_text"):
-        context_parts.append(f"Selected text:\n{state['selected_text'][:1200]}")
+        context_parts.append(f"Selected text:\n{state['selected_text'][:4000]}")
     if state.get("parsed_files"):
         file_summaries = [f["filename"] for f in state["parsed_files"]]
         context_parts.append(f"Parsed files: {', '.join(file_summaries)}")

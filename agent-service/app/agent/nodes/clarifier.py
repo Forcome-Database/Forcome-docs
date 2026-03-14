@@ -39,7 +39,7 @@ async def clarifier_node(state: AgentState) -> dict:
     if state.get("template_id"):
         context_parts.append(f"选择的模板: {state['template_id']}")
     if state.get("research_results"):
-        summaries = [r.get("content", "")[:200] for r in state["research_results"][:3]]
+        summaries = [r.get("content", "")[:800] for r in state["research_results"][:3]]
         context_parts.append(f"调研结果摘要: {'; '.join(summaries)}")
     if state.get("parsed_files"):
         file_names = [f["filename"] for f in state["parsed_files"]]

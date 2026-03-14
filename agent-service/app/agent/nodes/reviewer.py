@@ -13,23 +13,33 @@ from app.agent.quality_checks import detect_artifacts, evaluate_document_quality
 from app.agent.state import AgentState
 
 
-REVIEWER_SYSTEM_PROMPT = """You are a strict document reviewer.
-Check whether the draft satisfies the user intent, document strategy, and document plan.
+REVIEWER_SYSTEM_PROMPT = """你是严格的文档质量审核员。
+检查草稿是否满足用户意图、文档策略和文档计划。
 
-Return only JSON:
+只返回 JSON：
 {
-  "summary": "string",
-  "issues": ["issue1", "issue2"],
+  "summary": "一句话总结审核结果",
+  "issues": ["问题1", "问题2"],
   "artifacts_used": ["table", "mermaid"],
   "needs_rewrite": true,
-  "revised_content": "string or empty"
+  "revised_content": "修改后的内容（仅小修时提供）或空字符串",
+  "length_assessment": "篇幅是否达标的评估"
 }
 
-Rules:
-1. If the draft is mostly correct but needs small fixes, provide a revised_content.
-2. If the draft is missing required artifacts, is too generic, or diverges from plan, set needs_rewrite=true.
-3. If the draft is acceptable, set needs_rewrite=false.
-4. Do not invent sources, screenshots, or images that do not exist.
+审核维度：
+1. 准确性：内容是否基于提供的素材，有无编造
+2. 完整性：是否覆盖了文档计划中所有章节和要点
+3. 篇幅合规：输出篇幅是否与 length_policy 要求一致（preserve=保持原文篇幅，expand=扩展，compress=精简）
+4. 风格一致：是否匹配目标受众和文档类型
+5. 结构清晰：是否有清晰的层次、标题和过渡
+6. 素材引用：是否合理使用了提供的图片、表格、代码等素材
+
+规则：
+1. 如果草稿基本正确，仅需小修（修正错别字、调整措辞），提供 revised_content
+2. 如果草稿严重偏离计划、篇幅严重不足、或缺少关键内容，设 needs_rewrite=true
+3. 如果草稿可以接受，设 needs_rewrite=false
+4. 不要编造不存在的来源、截图或图片
+5. 审核时不要大幅改写内容，只做必要的局部修正
 """
 
 
@@ -114,7 +124,7 @@ async def reviewer_node(state: AgentState) -> dict:
             source_parts.append(str(item.get("content") or ""))
 
         source_text = "\n".join(part for part in source_parts if part).strip()
-        if len(source_text) > 1200 and len(draft) < max(400, int(len(source_text) * 0.2)):
+        if len(source_text) > 1200 and len(draft) < max(400, int(len(source_text) * 0.7)):
             deterministic_review["issues"].append(
                 "Draft appears over-compressed relative to the source material"
             )

@@ -78,16 +78,16 @@ async def outliner_node(state: AgentState) -> dict:
             + json.dumps(state["selected_proposal"], ensure_ascii=False, indent=2)
         )
     if state.get("selected_text"):
-        context_parts.append(f"Selected text:\n{state['selected_text'][:1200]}")
+        context_parts.append(f"Selected text:\n{state['selected_text'][:4000]}")
     if state.get("parsed_files"):
         for file_info in state["parsed_files"]:
             context_parts.append(
-                f"Parsed file [{file_info['filename']}]:\n{file_info['content'][:400]}"
+                f"Parsed file [{file_info['filename']}]:\n{file_info['content'][:2000]}"
             )
     if state.get("research_results"):
         for result in state["research_results"][:4]:
             context_parts.append(
-                f"Research [{result.get('source', '')}]:\n{result.get('content', '')[:300]}"
+                f"Research [{result.get('source', '')}]:\n{result.get('content', '')[:1500]}"
             )
     if state.get("revision_feedback"):
         context_parts.append(f"Revision feedback:\n{state['revision_feedback']}")

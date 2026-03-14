@@ -33,7 +33,7 @@ def route_after_router(state: AgentState) -> str:
 def route_after_explorer(state: AgentState) -> str:
     intent_route = state.get("intent_route") or "document_create"
     if intent_route == "document_transform":
-        return "writer"
+        return "planner"
     return "clarifier"
 
 
@@ -44,7 +44,7 @@ def route_after_evidence_gate(state: AgentState) -> str:
 
 
 def route_after_reviewer(state: AgentState) -> str:
-    max_iterations = int(state.get("max_iterations", 1) or 1)
+    max_iterations = int(state.get("max_iterations", 3) or 3)
     iteration_count = int(state.get("iteration_count", 0) or 0)
     if state.get("needs_revision") and iteration_count < max_iterations:
         return "writer"
@@ -86,7 +86,7 @@ def build_agent_graph():
         "explorer": "explorer",
     })
     graph.add_conditional_edges("explorer", route_after_explorer, {
-        "writer": "writer",
+        "planner": "planner",
         "clarifier": "clarifier",
     })
     graph.add_edge("clarifier", "proposer")
