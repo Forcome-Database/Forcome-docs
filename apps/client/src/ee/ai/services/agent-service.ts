@@ -95,6 +95,49 @@ function normalizeSessionBlock(value: unknown): AgentBlockState | null {
   };
 }
 
+function normalizeSessionDraftSections(
+  value: unknown,
+): AgentSessionSnapshot['draftSections'] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') {
+      return [];
+    }
+
+    const sectionId =
+      typeof (item as { section_id?: unknown }).section_id === 'string'
+        ? (item as { section_id: string }).section_id
+        : null;
+    const nodeId =
+      typeof (item as { node_id?: unknown }).node_id === 'string'
+        ? (item as { node_id: string }).node_id
+        : sectionId
+          ? `section:${sectionId}`
+          : null;
+    const title =
+      typeof (item as { title?: unknown }).title === 'string'
+        ? (item as { title: string }).title
+        : null;
+    const level =
+      typeof (item as { level?: unknown }).level === 'number'
+        ? (item as { level: number }).level
+        : 2;
+    const content =
+      typeof (item as { content?: unknown }).content === 'string'
+        ? (item as { content: string }).content
+        : null;
+
+    if (!nodeId || !sectionId || !title || content === null) {
+      return [];
+    }
+
+    return [{ nodeId, sectionId, title, level, content }];
+  });
+}
+
 export function agentGenerate(
   params: AgentGenerateParams,
   onEvent: (event: AgentSSEEvent) => void,
@@ -312,5 +355,6 @@ export async function getAgentSession(
         : null,
     block: status === 'blocked' ? normalizeSessionBlock(session.blocked) : null,
     draftMarkdown,
+    draftSections: normalizeSessionDraftSections(session.draft_sections),
   };
 }

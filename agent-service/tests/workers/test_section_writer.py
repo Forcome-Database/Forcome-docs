@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from unittest.mock import AsyncMock
 
 from app.models.asset_map import AssetItem, AssetMap
 from app.models.blueprint import CreationBlueprint, SectionPlan, VisualPlan
@@ -11,6 +12,7 @@ from app.workers.section_writer import (
     build_section_context,
     get_next_section_header,
     get_prev_section_tail,
+    write_section,
 )
 
 
@@ -571,3 +573,48 @@ class TestGetNextSectionHeader:
         blueprint = _make_blueprint(sections=[s1, s2, s3])
         result = get_next_section_header(blueprint, 1)
         assert "Three" in result
+
+
+class _FakeRunResult:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def stream_text(self, delta: bool = True):
+        yield "Generated section content"
+
+
+class _FakeAgent:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def run_stream(self, prompt: str):
+        return _FakeRunResult()
+
+
+class TestWriteSection:
+    @pytest.mark.asyncio
+    async def test_write_section_returns_stable_node_id(self):
+        section = _make_section("s1", title="Intro")
+        blueprint = _make_blueprint(sections=[section])
+        brief = _make_brief()
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("app.workers.section_writer.create_pydantic_ai_model", lambda: object())
+            mp.setattr("pydantic_ai.Agent", _FakeAgent)
+            mp.setattr("app.workers.section_writer.emit", AsyncMock())
+
+            draft = await write_section(
+                section=section,
+                blueprint=blueprint,
+                brief=brief,
+                asset_map=None,
+                section_index=0,
+                total_sections=1,
+                thread_id="thread-1",
+            )
+
+        assert draft.section_id == "s1"
+        assert draft.node_id == "section:s1"

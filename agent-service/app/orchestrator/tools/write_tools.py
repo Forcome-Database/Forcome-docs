@@ -5,11 +5,46 @@ from app.models.blueprint import CreationBlueprint, SectionPlan
 from app.models.brief import CreationBrief
 from app.models.asset_map import AssetMap
 from app.models.draft import SectionDraft
+from app.models.document_tree import DocumentNode, DocumentTree, DOCUMENT_TITLE_NODE_ID, build_section_node_id
+from app.orchestrator.tools.finalize import document_tree_to_sections, merge_sections
 from app.workers.section_writer import (
     write_section, get_prev_section_tail, get_next_section_header,
     generate_section_visuals,
 )
 from app.agent.events import emit
+
+
+def build_document_tree(
+    blueprint: CreationBlueprint,
+    drafts: list[SectionDraft],
+) -> DocumentTree:
+    drafts_by_section = {draft.section_id: draft for draft in drafts}
+    return DocumentTree(
+        root=DocumentNode(
+            node_id=DOCUMENT_TITLE_NODE_ID,
+            title=blueprint.title,
+            level=1,
+            content="",
+        ),
+        sections=[
+            DocumentNode(
+                node_id=(
+                    drafts_by_section.get(section.id).node_id
+                    if drafts_by_section.get(section.id) and drafts_by_section.get(section.id).node_id
+                    else build_section_node_id(section.id)
+                ),
+                section_id=section.id,
+                title=section.title,
+                level=section.level,
+                content=drafts_by_section.get(section.id).content if drafts_by_section.get(section.id) else "",
+            )
+            for section in blueprint.sections
+        ],
+    )
+
+
+def render_document_tree_markdown(document_tree: DocumentTree) -> str:
+    return merge_sections(document_tree_to_sections(document_tree))
 
 
 async def write_single_section(
@@ -64,6 +99,8 @@ async def write_single_section(
     )
 
     draft.visuals_generated = generated_urls
+    if not draft.node_id:
+        draft.node_id = build_section_node_id(section.id)
     return draft
 
 

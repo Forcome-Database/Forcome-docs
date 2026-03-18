@@ -77,6 +77,7 @@ export interface AgentBlockState {
 }
 
 export interface AgentDraftPatchSection {
+  nodeId: string;
   sectionId: string;
   title: string;
   level: number;
@@ -104,6 +105,7 @@ export interface AgentSessionSnapshot {
   awaitInput: AgentSessionAwaitInputState | null;
   block: AgentBlockState | null;
   draftMarkdown: string;
+  draftSections: AgentDraftPatchSection[];
 }
 
 export type AgentAwaitInputData =
@@ -217,6 +219,7 @@ export type AgentSSEEvent =
       type: 'draft_patch';
       markdown: string;
       sections: Array<{
+        node_id?: string;
         section_id: string;
         title: string;
         level: number;

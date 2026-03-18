@@ -4,8 +4,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.models.blueprint import CreationBlueprint
+from app.models.blueprint import BlueprintChangeAuditEntry, CreationBlueprint
 from app.models.brief import CreationBrief
+from app.models.document_tree import DocumentTree
 from app.models.evidence import EvidenceItem, EvidenceSummary
 from app.models.review import ReviewReport
 
@@ -18,6 +19,7 @@ class SessionBlockState(BaseModel):
 
 
 class SessionDraftSection(BaseModel):
+    node_id: str = ""
     section_id: str
     title: str
     level: int = 2
@@ -41,9 +43,12 @@ class CreationSessionSnapshot(BaseModel):
     blocked: SessionBlockState | None = None
     brief: CreationBrief | None = None
     blueprint: CreationBlueprint | None = None
+    pending_blueprint_patch: CreationBlueprint | None = None
+    blueprint_change_audit: list[BlueprintChangeAuditEntry] = Field(default_factory=list)
     review_report: ReviewReport | None = None
     draft_markdown: str = ""
     draft_sections: list[SessionDraftSection] = Field(default_factory=list)
+    document_tree: DocumentTree | None = None
     final_content: str = ""
     last_error: str | None = None
     evidence_summary: EvidenceSummary = Field(default_factory=EvidenceSummary)

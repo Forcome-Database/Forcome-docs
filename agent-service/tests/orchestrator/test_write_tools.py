@@ -374,3 +374,39 @@ class TestWriteAllSectionsParallel:
 
         assert len(result) == 1
         assert result[0].section_id == "s0"
+
+
+class TestDocumentTreeHelpers:
+    def test_build_document_tree_uses_stable_node_ids(self):
+        from app.orchestrator.tools.write_tools import build_document_tree
+
+        s1 = _make_section("s1", "Intro")
+        s2 = _make_section("s2", "Body")
+        blueprint = _make_blueprint([s1, s2])
+        drafts = [
+            SectionDraft(section_id="s1", node_id="section:s1", content="Intro content", word_count=2),
+            SectionDraft(section_id="s2", node_id="section:s2", content="Body content", word_count=2),
+        ]
+
+        tree = build_document_tree(blueprint, drafts)
+
+        assert tree.root.node_id == "document:title"
+        assert [node.node_id for node in tree.sections] == ["section:s1", "section:s2"]
+        assert tree.sections[0].content == "Intro content"
+        assert tree.sections[1].content == "Body content"
+
+    def test_render_document_tree_markdown_uses_canonical_nodes(self):
+        from app.orchestrator.tools.write_tools import build_document_tree, render_document_tree_markdown
+
+        s1 = _make_section("s1", "Intro")
+        s2 = _make_section("s2", "Body")
+        blueprint = _make_blueprint([s1, s2])
+        drafts = [
+            SectionDraft(section_id="s1", node_id="section:s1", content="Intro content", word_count=2),
+            SectionDraft(section_id="s2", node_id="section:s2", content="Body content", word_count=2),
+        ]
+
+        tree = build_document_tree(blueprint, drafts)
+        markdown = render_document_tree_markdown(tree)
+
+        assert markdown == "# Test Doc\n\n## Intro\n\nIntro content\n\n## Body\n\nBody content"

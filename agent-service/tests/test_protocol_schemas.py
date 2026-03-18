@@ -170,6 +170,7 @@ def test_draft_patch_event_schema_accepts_markdown_and_section_patches():
             "markdown": "# Title\n\n## Intro\n\nContent",
             "sections": [
                 {
+                    "node_id": "section:intro",
                     "section_id": "intro",
                     "title": "Intro",
                     "level": 2,
@@ -180,6 +181,7 @@ def test_draft_patch_event_schema_accepts_markdown_and_section_patches():
     )
 
     assert event.markdown.startswith("# Title")
+    assert event.sections[0].node_id == "section:intro"
     assert event.sections[0].section_id == "intro"
     assert event.sections[0].content == "Content"
 
@@ -219,3 +221,107 @@ def test_creation_session_snapshot_preserves_evidence_metadata():
     }
     assert payload["failed_evidence_items"][0]["kind"] == "reference_url"
     assert payload["block_resolution_choices"] == ["retry", "remove_source"]
+
+
+def test_creation_session_snapshot_supports_pending_blueprint_patch_and_audit_trail():
+    snapshot = CreationSessionSnapshot.model_validate(
+        {
+            "session_id": "session-1",
+            "thread_id": "thread-1",
+            "blueprint": {
+                "title": "Confirmed Blueprint",
+                "sections": [
+                    {
+                        "id": "s1",
+                        "title": "Overview",
+                        "level": 2,
+                        "word_budget": 400,
+                        "must_cover": ["context"],
+                        "assets": ["asset-1"],
+                        "visuals": [
+                            {
+                                "type": "ai_image",
+                                "description": "System overview",
+                                "position": "before_section",
+                            }
+                        ],
+                    }
+                ],
+                "total_word_budget": 400,
+            },
+            "pending_blueprint_patch": {
+                "title": "Renamed Blueprint",
+                "sections": [
+                    {
+                        "id": "s1",
+                        "title": "Overview",
+                        "level": 2,
+                        "word_budget": 400,
+                        "must_cover": ["context"],
+                        "assets": ["asset-1"],
+                        "visuals": [
+                            {
+                                "type": "ai_image",
+                                "description": "System overview",
+                                "position": "before_section",
+                            }
+                        ],
+                    }
+                ],
+                "total_word_budget": 400,
+            },
+            "blueprint_change_audit": [
+                {
+                    "decision": "auto_patch",
+                    "changes": ["section s1 must_cover updated"],
+                }
+            ],
+        }
+    )
+
+    payload = snapshot.model_dump()
+
+    assert payload["pending_blueprint_patch"]["title"] == "Renamed Blueprint"
+    assert payload["blueprint_change_audit"][0]["decision"] == "auto_patch"
+    assert payload["blueprint_change_audit"][0]["changes"] == ["section s1 must_cover updated"]
+
+
+def test_creation_session_snapshot_includes_document_tree_and_draft_section_nodes():
+    snapshot = CreationSessionSnapshot.model_validate(
+        {
+            "session_id": "session-1",
+            "thread_id": "thread-1",
+            "draft_sections": [
+                {
+                    "node_id": "section:intro",
+                    "section_id": "intro",
+                    "title": "Intro",
+                    "level": 2,
+                    "content": "Content",
+                }
+            ],
+            "document_tree": {
+                "root": {
+                    "node_id": "document:title",
+                    "title": "Doc",
+                    "level": 1,
+                    "content": "",
+                },
+                "sections": [
+                    {
+                        "node_id": "section:intro",
+                        "section_id": "intro",
+                        "title": "Intro",
+                        "level": 2,
+                        "content": "Content",
+                    }
+                ],
+            },
+        }
+    )
+
+    payload = snapshot.model_dump()
+
+    assert payload["draft_sections"][0]["node_id"] == "section:intro"
+    assert payload["document_tree"]["root"]["node_id"] == "document:title"
+    assert payload["document_tree"]["sections"][0]["node_id"] == "section:intro"

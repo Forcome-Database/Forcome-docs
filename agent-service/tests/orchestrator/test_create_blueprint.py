@@ -7,13 +7,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.models.asset_map import AssetItem, AssetMap
-from app.models.blueprint import CreationBlueprint, SectionPlan
+from app.models.blueprint import CreationBlueprint, SectionPlan, VisualPlan
 from app.models.brief import CreationBrief
 from app.orchestrator.tools.create_blueprint import (
     _normalize_word_budgets,
     _summarize_brief,
     _summarize_assets_for_blueprint,
     build_blueprint_prompt,
+    classify_blueprint_delta,
     generate_blueprint,
 )
 
@@ -105,6 +106,47 @@ def _make_sections_data(n: int = 3, budget_per: int = 300) -> list[dict]:
         }
         for i in range(n)
     ]
+
+
+def _make_blueprint_for_delta(
+    *,
+    title: str = "Test Doc",
+    total_word_budget: int = 1000,
+    image_visual_type: str = "ai_image",
+) -> CreationBlueprint:
+    return CreationBlueprint(
+        title=title,
+        total_word_budget=total_word_budget,
+        sections=[
+            SectionPlan(
+                id="s1",
+                title="Overview",
+                level=2,
+                word_budget=400,
+                description="Explain the system",
+                assets=["asset-1"],
+                visuals=[
+                    VisualPlan(
+                        type=image_visual_type,  # type: ignore[arg-type]
+                        description="System overview illustration",
+                        position="before_section",
+                    )
+                ],
+                must_cover=["context", "scope"],
+            ),
+            SectionPlan(
+                id="s2",
+                title="Workflow",
+                level=2,
+                word_budget=600,
+                description="Describe the workflow",
+                assets=["asset-2"],
+                must_cover=["steps", "handoff"],
+            ),
+        ],
+        style_guide="Be concrete",
+        visual_plan_summary="One lead visual.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -591,3 +633,83 @@ class TestGenerateBlueprint:
             )
 
         assert any(v.type == "ai_image" for v in result.sections[0].visuals)
+
+
+class TestClassifyBlueprintDelta:
+    def test_allows_must_cover_updates_as_auto_patch(self):
+        confirmed = _make_blueprint_for_delta()
+        patched = confirmed.model_copy(deep=True)
+        patched.sections[0].must_cover.append("success metrics")
+
+        result = classify_blueprint_delta(confirmed, patched)
+
+        assert result.decision == "auto_patch"
+        assert any("must_cover" in change for change in result.changes)
+
+    def test_allows_asset_reassignment_as_auto_patch(self):
+        confirmed = _make_blueprint_for_delta()
+        patched = confirmed.model_copy(deep=True)
+        patched.sections[0].assets = ["asset-3", "asset-4"]
+
+        result = classify_blueprint_delta(confirmed, patched)
+
+        assert result.decision == "auto_patch"
+        assert any("assets" in change for change in result.changes)
+
+    def test_allows_single_section_budget_change_within_fifteen_percent(self):
+        confirmed = _make_blueprint_for_delta()
+        patched = confirmed.model_copy(deep=True)
+        patched.sections[0].word_budget = 460
+        patched.total_word_budget = 1060
+
+        result = classify_blueprint_delta(confirmed, patched)
+
+        assert result.decision == "auto_patch"
+        assert any("word_budget" in change for change in result.changes)
+
+    def test_allows_visual_prompt_wording_change_without_strategy_change(self):
+        confirmed = _make_blueprint_for_delta()
+        patched = confirmed.model_copy(deep=True)
+        patched.sections[0].visuals[0].description = "Annotated system overview illustration"
+
+        result = classify_blueprint_delta(confirmed, patched)
+
+        assert result.decision == "auto_patch"
+        assert any("visual" in change for change in result.changes)
+
+    @pytest.mark.parametrize(
+        ("mutation", "expected_change"),
+        [
+            (
+                lambda bp: bp.sections.append(
+                    SectionPlan(id="s3", title="Appendix", level=2, word_budget=100)
+                ),
+                "section set",
+            ),
+            (
+                lambda bp: bp.sections.__setitem__(slice(None), [bp.sections[1], bp.sections[0]]),
+                "section order",
+            ),
+            (
+                lambda bp: setattr(bp, "title", "Renamed Doc"),
+                "title",
+            ),
+            (
+                lambda bp: setattr(bp, "total_word_budget", 1200),
+                "total_word_budget",
+            ),
+            (
+                lambda bp: setattr(bp.sections[0].visuals[0], "type", "reuse_image"),
+                "image strategy",
+            ),
+        ],
+    )
+    def test_requires_reconfirmation_for_major_blueprint_changes(self, mutation, expected_change):
+        confirmed = _make_blueprint_for_delta()
+        patched = confirmed.model_copy(deep=True)
+        mutation(patched)
+
+        result = classify_blueprint_delta(confirmed, patched)
+
+        assert result.decision == "reconfirm_blueprint"
+        assert any(expected_change in change for change in result.changes)

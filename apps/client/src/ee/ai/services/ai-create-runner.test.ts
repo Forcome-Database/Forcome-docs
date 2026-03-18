@@ -138,6 +138,7 @@ test("normalizeAgentRunEvent preserves draft patch payloads", () => {
     markdown: "# Title\n\n## Intro\n\nContent",
     sections: [
       {
+        node_id: "section:intro",
         section_id: "intro",
         title: "Intro",
         level: 2,
@@ -151,6 +152,7 @@ test("normalizeAgentRunEvent preserves draft patch payloads", () => {
     markdown: "# Title\n\n## Intro\n\nContent",
     sections: [
       {
+        nodeId: "section:intro",
         sectionId: "intro",
         title: "Intro",
         level: 2,
@@ -246,6 +248,15 @@ test("getAgentSession normalizes awaiting_input snapshot state", async (t) => {
           },
           blocked: null,
           draft_markdown: "# Draft",
+          draft_sections: [
+            {
+              node_id: "section:intro",
+              section_id: "intro",
+              title: "Intro",
+              level: 2,
+              content: "Content",
+            },
+          ],
         },
       }),
     } as Response;
@@ -278,6 +289,15 @@ test("getAgentSession normalizes awaiting_input snapshot state", async (t) => {
     },
     block: null,
     draftMarkdown: "# Draft",
+    draftSections: [
+      {
+        nodeId: "section:intro",
+        sectionId: "intro",
+        title: "Intro",
+        level: 2,
+        content: "Content",
+      },
+    ],
   });
 });
 
@@ -307,6 +327,7 @@ test("getAgentSession preserves blocked snapshots and drops unsupported pending 
             allowed_resolutions: ["retry", "remove_source"],
           },
           draft_markdown: "## Partial",
+          draft_sections: [],
         },
       }),
     }) as Response) as typeof fetch;
@@ -329,5 +350,6 @@ test("getAgentSession preserves blocked snapshots and drops unsupported pending 
       allowedResolutions: ["retry", "remove_source"],
     },
     draftMarkdown: "## Partial",
+    draftSections: [],
   });
 });

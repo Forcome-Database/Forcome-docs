@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 class SectionDraft(BaseModel):
     """Draft content for a single section."""
     section_id: str
+    node_id: str = ""
     content: str = ""
     word_count: int = 0
     budget_compliance: float = 1.0

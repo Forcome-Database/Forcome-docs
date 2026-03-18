@@ -6,7 +6,12 @@ import re
 
 from app.agent.events import emit
 from app.models.asset_map import AssetMap
-from app.models.blueprint import CreationBlueprint, SectionPlan, VisualPlan
+from app.models.blueprint import (
+    BlueprintDeltaAssessment,
+    CreationBlueprint,
+    SectionPlan,
+    VisualPlan,
+)
 from app.models.brief import CreationBrief
 from app.workers.visual_planner import plan_visuals
 
@@ -195,6 +200,149 @@ def _parse_visuals(raw_visuals: object) -> list[VisualPlan]:
         except (TypeError, ValueError):
             continue
     return visuals
+
+
+def _section_order(blueprint: CreationBlueprint) -> list[str]:
+    return [section.id for section in blueprint.sections]
+
+
+def _visual_strategy_changed(
+    confirmed_visuals: list[VisualPlan],
+    proposed_visuals: list[VisualPlan],
+) -> bool:
+    if len(confirmed_visuals) != len(proposed_visuals):
+        return True
+
+    for confirmed_visual, proposed_visual in zip(confirmed_visuals, proposed_visuals):
+        if confirmed_visual.type != proposed_visual.type:
+            return True
+        if confirmed_visual.position != proposed_visual.position:
+            return True
+        if confirmed_visual.source_asset_id != proposed_visual.source_asset_id:
+            return True
+
+    return False
+
+
+def classify_blueprint_delta(
+    confirmed: CreationBlueprint,
+    proposed: CreationBlueprint,
+) -> BlueprintDeltaAssessment:
+    changes: list[str] = []
+
+    if confirmed.title != proposed.title:
+        changes.append("title changed")
+        return BlueprintDeltaAssessment(
+            decision="reconfirm_blueprint",
+            changes=changes,
+        )
+
+    confirmed_section_ids = _section_order(confirmed)
+    proposed_section_ids = _section_order(proposed)
+    if set(confirmed_section_ids) != set(proposed_section_ids):
+        changes.append("section set changed")
+        return BlueprintDeltaAssessment(
+            decision="reconfirm_blueprint",
+            changes=changes,
+        )
+
+    if confirmed_section_ids != proposed_section_ids:
+        changes.append("section order changed")
+        return BlueprintDeltaAssessment(
+            decision="reconfirm_blueprint",
+            changes=changes,
+        )
+
+    if confirmed.total_word_budget > 0:
+        budget_delta_ratio = abs(proposed.total_word_budget - confirmed.total_word_budget) / confirmed.total_word_budget
+        if budget_delta_ratio > 0.10:
+            changes.append("total_word_budget changed by more than 10%")
+            return BlueprintDeltaAssessment(
+                decision="reconfirm_blueprint",
+                changes=changes,
+            )
+
+    budget_change_count = 0
+    for confirmed_section in confirmed.sections:
+        proposed_section = proposed.section_by_id(confirmed_section.id)
+        if proposed_section is None:
+            changes.append("section set changed")
+            return BlueprintDeltaAssessment(
+                decision="reconfirm_blueprint",
+                changes=changes,
+            )
+
+        if confirmed_section.title != proposed_section.title:
+            changes.append(f"section {confirmed_section.id} title changed")
+            return BlueprintDeltaAssessment(
+                decision="reconfirm_blueprint",
+                changes=changes,
+            )
+
+        if confirmed_section.level != proposed_section.level:
+            changes.append(f"section {confirmed_section.id} level changed")
+            return BlueprintDeltaAssessment(
+                decision="reconfirm_blueprint",
+                changes=changes,
+            )
+
+        if confirmed_section.description != proposed_section.description:
+            changes.append(f"section {confirmed_section.id} description changed")
+            return BlueprintDeltaAssessment(
+                decision="reconfirm_blueprint",
+                changes=changes,
+            )
+
+        if confirmed_section.must_cover != proposed_section.must_cover:
+            changes.append(f"section {confirmed_section.id} must_cover updated")
+
+        if confirmed_section.assets != proposed_section.assets:
+            changes.append(f"section {confirmed_section.id} assets reassigned")
+
+        if confirmed_section.word_budget != proposed_section.word_budget:
+            if confirmed_section.word_budget <= 0:
+                changes.append(f"section {confirmed_section.id} word_budget changed")
+                return BlueprintDeltaAssessment(
+                    decision="reconfirm_blueprint",
+                    changes=changes,
+                )
+            section_budget_delta_ratio = abs(proposed_section.word_budget - confirmed_section.word_budget) / confirmed_section.word_budget
+            if section_budget_delta_ratio > 0.15:
+                changes.append(f"section {confirmed_section.id} word_budget changed beyond 15%")
+                return BlueprintDeltaAssessment(
+                    decision="reconfirm_blueprint",
+                    changes=changes,
+                )
+            budget_change_count += 1
+            changes.append(f"section {confirmed_section.id} word_budget updated")
+
+        if _visual_strategy_changed(confirmed_section.visuals, proposed_section.visuals):
+            changes.append(f"section {confirmed_section.id} image strategy changed")
+            return BlueprintDeltaAssessment(
+                decision="reconfirm_blueprint",
+                changes=changes,
+            )
+
+        for visual_index, (confirmed_visual, proposed_visual) in enumerate(
+            zip(confirmed_section.visuals, proposed_section.visuals),
+            start=1,
+        ):
+            if confirmed_visual.description != proposed_visual.description:
+                changes.append(
+                    f"section {confirmed_section.id} visual {visual_index} description updated"
+                )
+
+    if budget_change_count > 1:
+        changes.append("multiple section budgets changed")
+        return BlueprintDeltaAssessment(
+            decision="reconfirm_blueprint",
+            changes=changes,
+        )
+
+    return BlueprintDeltaAssessment(
+        decision="auto_patch",
+        changes=changes,
+    )
 
 
 async def generate_blueprint(

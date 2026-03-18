@@ -18,13 +18,13 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.agent.events import emit
 from app.orchestrator.tools.complexity import analyze_task_complexity
-from app.orchestrator.tools.finalize import finalize_and_emit, merge_sections
+from app.orchestrator.tools.finalize import document_tree_to_sections, finalize_and_emit
 from app.orchestrator.tools.simple_edit import SimpleEditRequest, execute_simple_edit
 
 # Phase 2 tools
 from app.orchestrator.tools.parse_assets import parse_assets_tool
 from app.orchestrator.tools.create_brief import generate_brief
-from app.orchestrator.tools.create_blueprint import generate_blueprint
+from app.orchestrator.tools.create_blueprint import classify_blueprint_delta, generate_blueprint
 from app.orchestrator.tools.user_interaction import interaction_registry
 from app.orchestrator.tools.evidence import (
     build_evidence_snapshot,
@@ -33,12 +33,13 @@ from app.orchestrator.tools.evidence import (
 )
 
 # Phase 3 tools
-from app.orchestrator.tools.write_tools import write_all_sections
+from app.orchestrator.tools.write_tools import build_document_tree, render_document_tree_markdown, write_all_sections
 from app.workers.consistency_checker import run_consistency_checks
 from app.orchestrator.draft_manager import draft_store
 from app.orchestrator.session_store import session_store
 from app.models.brief import CreationBrief
-from app.models.blueprint import CreationBlueprint
+from app.models.blueprint import BlueprintChangeAuditEntry, CreationBlueprint
+from app.models.document_tree import DocumentTree
 from app.models.review import ReviewIssue
 from app.models.session import SessionDraftSection
 
@@ -67,6 +68,27 @@ def _build_asset_summary(asset_map: object) -> dict:
         "source_word_count": asset_map.source_word_count,
         "source_section_counts": asset_map.source_section_counts,
     }
+
+
+def _append_blueprint_audit_entry(
+    thread_id: str,
+    *,
+    decision: Literal["auto_patch", "reconfirm_blueprint"],
+    changes: list[str],
+) -> None:
+    session = session_store.get_session(thread_id)
+    current_audit = list(session.blueprint_change_audit) if session else []
+    current_audit.append(
+        BlueprintChangeAuditEntry(
+            decision=decision,
+            changes=changes,
+        )
+    )
+    session_store.upsert_session(
+        session_id=thread_id,
+        thread_id=thread_id,
+        blueprint_change_audit=current_audit,
+    )
 
 
 def _build_consistency_review_issues(consistency_issues: list[object]) -> list[ReviewIssue]:
@@ -160,16 +182,12 @@ def _has_blocking_review_issues(
 def _build_draft_snapshot(
     blueprint: CreationBlueprint,
     section_drafts: list[object],
-) -> tuple[str, list[SessionDraftSection]]:
-    merged_sections = [
-        {"title": blueprint.title, "level": 1, "content": ""},
-    ] + [
-        {"title": section.title, "level": section.level, "content": draft.content}
-        for section, draft in zip(blueprint.sections, section_drafts)
-    ]
-    markdown = merge_sections(merged_sections)
+) -> tuple[str, list[SessionDraftSection], DocumentTree]:
+    document_tree = build_document_tree(blueprint, section_drafts)
+    markdown = render_document_tree_markdown(document_tree)
     sections = [
         SessionDraftSection(
+            node_id=getattr(draft, "node_id", "") or f"section:{section.id}",
             section_id=section.id,
             title=section.title,
             level=section.level,
@@ -177,7 +195,7 @@ def _build_draft_snapshot(
         )
         for section, draft in zip(blueprint.sections, section_drafts)
     ]
-    return markdown, sections
+    return markdown, sections, document_tree
 
 
 def _evidence_block_event() -> dict:
@@ -355,19 +373,80 @@ class OrchestratorEngine:
         blueprint: CreationBlueprint,
         section_drafts: list,
     ) -> None:
-        preview, sections = _build_draft_snapshot(blueprint, section_drafts)
+        preview, sections, document_tree = _build_draft_snapshot(blueprint, section_drafts)
 
         session_store.upsert_session(
             session_id=thread_id,
             thread_id=thread_id,
             draft_markdown=preview,
             draft_sections=sections,
+            document_tree=document_tree,
         )
 
         await emit(thread_id, {"type": "draft_patch", "markdown": preview, "sections": [section.model_dump() for section in sections]})
         await emit(thread_id, {"type": "content_clear"})
         for index in range(0, len(preview), 1200):
             await emit(thread_id, {"type": "content", "chunk": preview[index:index + 1200]})
+
+    async def _confirm_blueprint(
+        self,
+        *,
+        thread_id: str,
+        blueprint: CreationBlueprint,
+    ) -> CreationBlueprint:
+        current_blueprint = blueprint
+
+        while True:
+            blueprint_response = await self._await_user_input(
+                thread_id=thread_id,
+                phase="blueprint",
+                data={
+                    "type": "blueprint",
+                    "blueprint": current_blueprint.model_dump(),
+                },
+                timeout_message="绛夊緟 Blueprint 纭瓒呮椂锛?0鍒嗛挓锛夛紝浠诲姟宸插彇娑?",
+            )
+
+            if not isinstance(blueprint_response, dict) or not blueprint_response.get("blueprint"):
+                break
+
+            proposed_blueprint = CreationBlueprint.model_validate(blueprint_response["blueprint"])
+            assessment = classify_blueprint_delta(current_blueprint, proposed_blueprint)
+            _append_blueprint_audit_entry(
+                thread_id,
+                decision=assessment.decision,
+                changes=assessment.changes,
+            )
+
+            if assessment.decision == "auto_patch":
+                current_blueprint = proposed_blueprint
+                session_store.upsert_session(
+                    session_id=thread_id,
+                    thread_id=thread_id,
+                    phase="blueprint",
+                    blueprint=current_blueprint,
+                    pending_blueprint_patch=None,
+                    pending_decision=None,
+                )
+                break
+
+            current_blueprint = proposed_blueprint
+            session_store.upsert_session(
+                session_id=thread_id,
+                thread_id=thread_id,
+                phase="blueprint",
+                pending_blueprint_patch=current_blueprint,
+            )
+
+        session_store.upsert_session(
+            session_id=thread_id,
+            thread_id=thread_id,
+            phase="blueprint_confirmed",
+            blueprint=current_blueprint,
+            pending_blueprint_patch=None,
+            pending_decision=None,
+        )
+        return current_blueprint
 
     async def _build_review_report(
         self,
@@ -742,23 +821,9 @@ class OrchestratorEngine:
         )
 
         # 5. Ask user to confirm blueprint
-        blueprint_response = await self._await_user_input(
+        blueprint = await self._confirm_blueprint(
             thread_id=request.thread_id,
-            phase="blueprint",
-            data={
-                "type": "blueprint",
-                "blueprint": blueprint.model_dump(),
-            },
-            timeout_message="等待 Blueprint 确认超时（10分钟），任务已取消",
-        )
-        if isinstance(blueprint_response, dict) and blueprint_response.get("blueprint"):
-            blueprint = CreationBlueprint.model_validate(blueprint_response["blueprint"])
-        session_store.upsert_session(
-            session_id=request.thread_id,
-            thread_id=request.thread_id,
-            phase="blueprint_confirmed",
             blueprint=blueprint,
-            pending_decision=None,
         )
 
         # 6. Write all sections
@@ -902,17 +967,12 @@ class OrchestratorEngine:
         if _build_section_alignment_issues(section_drafts, blueprint):
             raise RuntimeError("章节集合与 blueprint 不一致，无法 finalize")
 
-        # 9. Merge and finalize — prepend document title as H1
-        merged_sections = [
-            {"title": blueprint.title, "level": 1, "content": ""},
-        ] + [
-            {"title": s.title, "level": s.level, "content": d.content}
-            for s, d in zip(blueprint.sections, section_drafts)
-        ]
+        # 9. Merge and finalize — derive final markdown from the canonical document tree
+        document_tree = build_document_tree(blueprint, section_drafts)
 
         final_content = await finalize_and_emit(
             thread_id=request.thread_id,
-            sections=merged_sections,
+            sections=document_tree_to_sections(document_tree),
             insert_mode=request.insert_mode,
         )
         session_store.upsert_session(
@@ -924,6 +984,7 @@ class OrchestratorEngine:
             blocked=None,
             final_content=final_content,
             draft_markdown=final_content,
+            document_tree=document_tree,
         )
 
         return final_content

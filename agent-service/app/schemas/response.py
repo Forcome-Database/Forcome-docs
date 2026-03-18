@@ -58,6 +58,7 @@ class ImageEvent(BaseModel):
 
 
 class DraftPatchSection(BaseModel):
+    node_id: str = ""
     section_id: str
     title: str
     level: int = 2

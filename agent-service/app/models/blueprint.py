@@ -40,3 +40,13 @@ class CreationBlueprint(BaseModel):
             return True
         ratio = total / self.total_word_budget
         return 0.9 <= ratio <= 1.1
+
+
+class BlueprintDeltaAssessment(BaseModel):
+    decision: Literal["auto_patch", "reconfirm_blueprint"]
+    changes: list[str] = Field(default_factory=list)
+
+
+class BlueprintChangeAuditEntry(BaseModel):
+    decision: Literal["auto_patch", "reconfirm_blueprint"]
+    changes: list[str] = Field(default_factory=list)

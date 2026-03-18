@@ -54,6 +54,11 @@ function normalizeDraftPatchSections(data: unknown): AgentDraftPatchSection[] {
     const sectionId = typeof (item as { section_id?: unknown }).section_id === "string"
       ? (item as { section_id: string }).section_id
       : null;
+    const nodeId = typeof (item as { node_id?: unknown }).node_id === "string"
+      ? (item as { node_id: string }).node_id
+      : sectionId
+        ? `section:${sectionId}`
+        : null;
     const title = typeof (item as { title?: unknown }).title === "string"
       ? (item as { title: string }).title
       : null;
@@ -64,11 +69,11 @@ function normalizeDraftPatchSections(data: unknown): AgentDraftPatchSection[] {
       ? (item as { content: string }).content
       : null;
 
-    if (!sectionId || !title || content === null) {
+    if (!nodeId || !sectionId || !title || content === null) {
       return [];
     }
 
-    return [{ sectionId, title, level, content }];
+    return [{ nodeId, sectionId, title, level, content }];
   });
 }
 

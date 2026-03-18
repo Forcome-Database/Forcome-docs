@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.models.review import ReviewIssue, ReviewReport
 from app.orchestrator.engine import OrchestratorEngine, OrchestratorRequest
+from app.orchestrator.session_store import session_store
 
 
 @pytest.mark.asyncio
@@ -422,3 +423,166 @@ async def test_level3_optional_web_search_failure_does_not_block_blank_page_crea
         len(call.args) == 2 and call.args[1].get("type") == "blocked"
         for call in mock_emit.await_args_list
     )
+
+
+@pytest.mark.asyncio
+async def test_level3_auto_applies_allowed_blueprint_patch_and_records_audit():
+    session_store.clear()
+    engine = OrchestratorEngine()
+
+    request = OrchestratorRequest(
+        user_message="Write a system design document.",
+        thread_id="test-l3-blueprint-auto-patch",
+        workspace_id="ws-test",
+        intent_route="document_create",
+    )
+
+    with patch("app.orchestrator.engine.analyze_task_complexity") as mock_complexity, \
+         patch("app.orchestrator.tools.evidence.research_tool", new_callable=AsyncMock) as mock_research, \
+         patch("app.orchestrator.engine.generate_brief") as mock_brief, \
+         patch("app.orchestrator.engine.generate_blueprint") as mock_blueprint, \
+         patch("app.orchestrator.engine.interaction_registry") as mock_registry, \
+         patch("app.orchestrator.engine.write_all_sections") as mock_write, \
+         patch("app.orchestrator.engine.evaluate_quality") as mock_evaluate, \
+         patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
+         patch("app.orchestrator.engine.apply_auto_fixes") as mock_autofix, \
+         patch("app.orchestrator.engine.finalize_and_emit") as mock_finalize, \
+         patch("app.orchestrator.engine.emit") as mock_emit, \
+         patch("app.orchestrator.engine.draft_store") as mock_draft:
+
+        from app.models import CreationBrief, CreationBlueprint, SectionDraft
+        from app.models.blueprint import SectionPlan, VisualPlan
+
+        mock_complexity.return_value = {"level": 3, "reasoning": "creation keyword"}
+        mock_research.return_value = []
+        mock_brief.return_value = CreationBrief(audience="developers", goal="design doc", target_length=1200)
+        confirmed_blueprint = CreationBlueprint(
+            title="System Design",
+            total_word_budget=1200,
+            sections=[
+                SectionPlan(
+                    id="s1",
+                    title="Overview",
+                    level=2,
+                    word_budget=1200,
+                    assets=["asset-1"],
+                    must_cover=["context"],
+                    visuals=[
+                        VisualPlan(
+                            type="ai_image",
+                            description="System overview illustration",
+                            position="before_section",
+                        )
+                    ],
+                )
+            ],
+        )
+        patched_blueprint = confirmed_blueprint.model_copy(deep=True)
+        patched_blueprint.sections[0].must_cover.append("success metrics")
+        mock_blueprint.return_value = confirmed_blueprint
+        mock_registry.wait_for_response = AsyncMock(
+            side_effect=[
+                {"confirmed": True},
+                {"blueprint": patched_blueprint.model_dump()},
+                None,
+            ]
+        )
+        mock_registry.register = MagicMock()
+        mock_registry.cleanup = MagicMock()
+        drafts = [SectionDraft(section_id="s1", content="content", word_count=1200)]
+        mock_write.return_value = drafts
+        mock_consistency.return_value = []
+        mock_evaluate.return_value = ReviewReport(overall_score=90, issues=[])
+        mock_autofix.side_effect = lambda drafts, issues, levels: (drafts, 0)
+        mock_finalize.return_value = "final content"
+        mock_draft.save_draft = MagicMock()
+
+        result = await engine.run(request)
+
+    assert result == "final content"
+    snapshot = session_store.get_session(request.thread_id)
+    assert snapshot is not None
+    assert snapshot.blueprint is not None
+    assert snapshot.blueprint.sections[0].must_cover == ["context", "success metrics"]
+    assert len(snapshot.blueprint_change_audit) == 1
+    assert snapshot.blueprint_change_audit[0].decision == "auto_patch"
+    blueprint_events = [
+        call.args[1]
+        for call in mock_emit.await_args_list
+        if len(call.args) == 2 and call.args[1].get("type") == "await_input" and call.args[1].get("phase") == "blueprint"
+    ]
+    assert len(blueprint_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_level3_reopens_blueprint_when_patch_requires_reconfirmation():
+    session_store.clear()
+    engine = OrchestratorEngine()
+
+    request = OrchestratorRequest(
+        user_message="Write a system design document.",
+        thread_id="test-l3-blueprint-reconfirm",
+        workspace_id="ws-test",
+        intent_route="document_create",
+    )
+
+    with patch("app.orchestrator.engine.analyze_task_complexity") as mock_complexity, \
+         patch("app.orchestrator.tools.evidence.research_tool", new_callable=AsyncMock) as mock_research, \
+         patch("app.orchestrator.engine.generate_brief") as mock_brief, \
+         patch("app.orchestrator.engine.generate_blueprint") as mock_blueprint, \
+         patch("app.orchestrator.engine.interaction_registry") as mock_registry, \
+         patch("app.orchestrator.engine.write_all_sections") as mock_write, \
+         patch("app.orchestrator.engine.evaluate_quality") as mock_evaluate, \
+         patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
+         patch("app.orchestrator.engine.apply_auto_fixes") as mock_autofix, \
+         patch("app.orchestrator.engine.finalize_and_emit") as mock_finalize, \
+         patch("app.orchestrator.engine.emit") as mock_emit, \
+         patch("app.orchestrator.engine.draft_store") as mock_draft:
+
+        from app.models import CreationBrief, CreationBlueprint, SectionDraft
+        from app.models.blueprint import SectionPlan
+
+        mock_complexity.return_value = {"level": 3, "reasoning": "creation keyword"}
+        mock_research.return_value = []
+        mock_brief.return_value = CreationBrief(audience="developers", goal="design doc", target_length=1200)
+        confirmed_blueprint = CreationBlueprint(
+            title="System Design",
+            total_word_budget=1200,
+            sections=[SectionPlan(id="s1", title="Overview", level=2, word_budget=1200)],
+        )
+        patched_blueprint = confirmed_blueprint.model_copy(deep=True)
+        patched_blueprint.title = "Renamed System Design"
+        mock_blueprint.return_value = confirmed_blueprint
+        mock_registry.wait_for_response = AsyncMock(
+            side_effect=[
+                {"confirmed": True},
+                {"blueprint": patched_blueprint.model_dump()},
+                {"confirmed": True},
+                None,
+            ]
+        )
+        mock_registry.register = MagicMock()
+        mock_registry.cleanup = MagicMock()
+        drafts = [SectionDraft(section_id="s1", content="content", word_count=1200)]
+        mock_write.return_value = drafts
+        mock_consistency.return_value = []
+        mock_evaluate.return_value = ReviewReport(overall_score=90, issues=[])
+        mock_autofix.side_effect = lambda drafts, issues, levels: (drafts, 0)
+        mock_finalize.return_value = "final content"
+        mock_draft.save_draft = MagicMock()
+
+        result = await engine.run(request)
+
+    assert result == "final content"
+    snapshot = session_store.get_session(request.thread_id)
+    assert snapshot is not None
+    assert snapshot.blueprint is not None
+    assert snapshot.blueprint.title == "Renamed System Design"
+    assert snapshot.pending_blueprint_patch is None
+    blueprint_events = [
+        call.args[1]
+        for call in mock_emit.await_args_list
+        if len(call.args) == 2 and call.args[1].get("type") == "await_input" and call.args[1].get("phase") == "blueprint"
+    ]
+    assert len(blueprint_events) == 2
+    assert blueprint_events[1]["data"]["blueprint"]["title"] == "Renamed System Design"

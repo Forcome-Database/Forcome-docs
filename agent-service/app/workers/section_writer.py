@@ -5,8 +5,10 @@ Enforces word budget with a retry mechanism.
 """
 from __future__ import annotations
 import asyncio
+import re
 from app.models.blueprint import SectionPlan, CreationBlueprint
 from app.models.draft import SectionDraft
+from app.models.document_tree import build_section_node_id
 from app.models.asset_map import AssetMap, AssetItem
 from app.models.brief import CreationBrief
 from app.utils.text import count_words
@@ -307,6 +309,7 @@ async def write_section(
 
     return SectionDraft(
         section_id=section.id,
+        node_id=build_section_node_id(section.id),
         content=full_text,
         word_count=wc,
         budget_compliance=compliance,

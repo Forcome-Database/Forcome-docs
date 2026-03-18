@@ -11,9 +11,29 @@ import re
 from typing import Union
 
 from app.agent.events import emit
+from app.models.document_tree import DocumentTree
 from app.utils.text import count_words
 
 ASSET_MARKER_RE = re.compile(r"\s*<!--asset:[a-zA-Z0-9_-]+-->\s*")
+
+
+def document_tree_to_sections(document_tree: DocumentTree) -> list[dict]:
+    sections: list[dict] = [
+        {
+            "title": document_tree.root.title,
+            "level": document_tree.root.level,
+            "content": document_tree.root.content,
+        }
+    ]
+    sections.extend(
+        {
+            "title": node.title,
+            "level": node.level,
+            "content": node.content,
+        }
+        for node in document_tree.sections
+    )
+    return sections
 
 
 def merge_sections(sections: list[Union[str, dict]]) -> str:
