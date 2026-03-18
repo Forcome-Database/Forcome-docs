@@ -2,7 +2,17 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from app.main import app
 from app.config import settings
-from app.orchestrator.session_store import session_store
+from app.orchestrator.persistence.postgres_session_store import PostgresSessionStore
+from app.orchestrator.session_store import InMemoryRuntimeStore, SessionStore, session_store
+
+
+@pytest.fixture(autouse=True)
+def use_explicit_memory_session_backend():
+    session_store.use_memory_backend()
+    session_store.clear()
+    yield
+    session_store.use_memory_backend()
+    session_store.clear()
 
 @pytest.mark.asyncio
 async def test_health():
@@ -120,9 +130,12 @@ async def test_get_session_snapshot_returns_current_creation_session():
             "blocked": None,
             "brief": None,
             "blueprint": None,
+            "pending_blueprint_patch": None,
+            "blueprint_change_audit": [],
             "review_report": None,
             "draft_markdown": "# Draft",
             "draft_sections": [],
+            "document_tree": None,
             "final_content": "",
             "last_error": None,
             "evidence_summary": {
@@ -144,3 +157,71 @@ async def test_get_session_snapshot_returns_current_creation_session():
             "block_resolution_choices": ["retry", "remove_source"],
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_get_session_snapshot_survives_store_reconfiguration(tmp_path):
+    database_url = f"sqlite:///{tmp_path / 'sessions.db'}"
+    persistent_snapshot_store = PostgresSessionStore(database_url=database_url)
+    persistent_session_store = SessionStore(
+        snapshot_repository=persistent_snapshot_store,
+        runtime_store=InMemoryRuntimeStore(),
+        backend="postgres_redis",
+    )
+    persistent_session_store.upsert_session(
+        session_id="session-persisted",
+        thread_id="thread-persisted",
+        run_state="awaiting_input",
+        phase="review",
+        pending_decision={
+            "phase": "review",
+            "data": {
+                "type": "review",
+                "report": {
+                    "overall_score": 88,
+                    "issues": [],
+                },
+            },
+        },
+        blueprint={
+            "title": "Doc",
+            "sections": [{"id": "s1", "title": "Intro", "level": 2, "word_budget": 400}],
+            "total_word_budget": 400,
+        },
+        document_tree={
+            "root": {
+                "node_id": "document:title",
+                "title": "Doc",
+                "level": 1,
+                "content": "",
+            },
+            "sections": [
+                {
+                    "node_id": "section:s1",
+                    "section_id": "s1",
+                    "title": "Intro",
+                    "level": 2,
+                    "content": "Hello",
+                }
+            ],
+        },
+    )
+
+    session_store.configure(
+        snapshot_repository=PostgresSessionStore(database_url=database_url),
+        runtime_store=InMemoryRuntimeStore(),
+        backend="postgres_redis",
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get(
+            "/agent/session/session-persisted",
+            headers={"X-Internal-Secret": settings.agent_internal_secret},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["status"] == "ok"
+    assert payload["session"]["phase"] == "review"
+    assert payload["session"]["pending_decision"]["phase"] == "review"
+    assert payload["session"]["document_tree"]["sections"][0]["node_id"] == "section:s1"

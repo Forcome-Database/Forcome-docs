@@ -38,7 +38,7 @@ from app.workers.consistency_checker import run_consistency_checks
 from app.orchestrator.draft_manager import draft_store
 from app.orchestrator.session_store import session_store
 from app.models.brief import CreationBrief
-from app.models.blueprint import BlueprintChangeAuditEntry, CreationBlueprint
+from app.models.blueprint import CreationBlueprint
 from app.models.document_tree import DocumentTree
 from app.models.review import ReviewIssue
 from app.models.session import SessionDraftSection
@@ -76,18 +76,11 @@ def _append_blueprint_audit_entry(
     decision: Literal["auto_patch", "reconfirm_blueprint"],
     changes: list[str],
 ) -> None:
-    session = session_store.get_session(thread_id)
-    current_audit = list(session.blueprint_change_audit) if session else []
-    current_audit.append(
-        BlueprintChangeAuditEntry(
-            decision=decision,
-            changes=changes,
-        )
-    )
-    session_store.upsert_session(
+    session_store.append_blueprint_audit(
         session_id=thread_id,
         thread_id=thread_id,
-        blueprint_change_audit=current_audit,
+        decision=decision,
+        changes=changes,
     )
 
 

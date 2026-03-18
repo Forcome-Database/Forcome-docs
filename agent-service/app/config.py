@@ -39,6 +39,8 @@ class Settings(BaseSettings):
 
     # PostgreSQL connection string for LangGraph checkpointer
     database_url: str = ""
+    redis_url: str = ""
+    session_backend: str = "postgres_redis"
 
     @property
     def llm_provider(self) -> str:

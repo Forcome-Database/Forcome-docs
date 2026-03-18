@@ -10,9 +10,9 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.agent.cancellation import (
     AgentCancelledError,
-    cancel_task,
-    register_task,
-    unregister_task,
+    cancel_task as cancel_in_memory_task,
+    register_task as register_in_memory_task,
+    unregister_task as unregister_in_memory_task,
 )
 from app.agent.events import create_queue, emit, emit_done, remove_queue
 from app.config import settings
@@ -149,7 +149,8 @@ async def _run_orchestrator_with_stream(
         await emit(thread_id, {"type": "error", "message": str(exc)[:500]})
     finally:
         await emit_done(thread_id)
-        unregister_task(task_id, thread_id)
+        unregister_in_memory_task(task_id, thread_id)
+        session_store.unregister_run(task_id=task_id, thread_id=thread_id)
         interaction_registry.cleanup(thread_id)
 
 
@@ -170,7 +171,8 @@ async def run_agent(request: dict):
         block_resolution_choices=[],
     )
 
-    register_task(task_id, thread_id)
+    register_in_memory_task(task_id, thread_id)
+    session_store.register_run(task_id=task_id, thread_id=thread_id)
     queue = create_queue(thread_id)
 
     orch_request = OrchestratorRequest(
@@ -242,7 +244,9 @@ async def get_agent_session(session_id: str):
 
 @app.post("/agent/stop", dependencies=[Depends(verify_internal_secret)])
 async def stop_agent(request: AgentStopRequest):
-    if cancel_task(request.task_id):
+    in_memory_cancelled = cancel_in_memory_task(request.task_id)
+    runtime_cancelled = session_store.cancel_task(request.task_id)
+    if in_memory_cancelled or runtime_cancelled:
         return {"status": "stopping"}
     return {"status": "not_found"}
 

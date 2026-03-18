@@ -1,5 +1,15 @@
 import pytest
 from app.config import Settings
+from app.orchestrator.session_store import session_store
+
+
+@pytest.fixture(autouse=True)
+def use_explicit_memory_session_backend():
+    session_store.use_memory_backend()
+    session_store.clear()
+    yield
+    session_store.use_memory_backend()
+    session_store.clear()
 
 @pytest.fixture
 def test_settings():
