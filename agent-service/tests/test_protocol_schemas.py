@@ -23,6 +23,42 @@ def test_agent_resume_request_accepts_clarify_and_outline_payloads():
     assert outline.resume_value.action == "confirm"
 
 
+def test_agent_resume_request_accepts_brief_blueprint_and_review_payloads():
+    brief = AgentResumeRequest.model_validate(
+        {
+            "thread_id": "thread-1",
+            "resume_value": {
+                "type": "brief",
+                "brief": {"audience": "engineers"},
+            },
+        }
+    )
+    blueprint = AgentResumeRequest.model_validate(
+        {
+            "thread_id": "thread-1",
+            "resume_value": {
+                "type": "blueprint",
+                "blueprint": {"title": "Doc", "sections": []},
+            },
+        }
+    )
+    review = AgentResumeRequest.model_validate(
+        {
+            "thread_id": "thread-1",
+            "resume_value": {
+                "type": "review",
+                "selected_issue_ids": ["issue-1"],
+                "feedback": "Tighten this section",
+            },
+        }
+    )
+
+    assert brief.resume_value.type == "brief"
+    assert blueprint.resume_value.type == "blueprint"
+    assert review.resume_value.type == "review"
+    assert review.resume_value.selected_issue_ids == ["issue-1"]
+
+
 def test_await_input_event_requires_typed_phase_payload_match():
     event = AwaitInputEvent.model_validate(
         {
@@ -41,6 +77,30 @@ def test_await_input_event_requires_typed_phase_payload_match():
     assert event.phase == "propose"
     assert event.data.type == "propose"
     assert event.data.proposals[1].title == "Option B"
+
+
+def test_review_await_input_event_accepts_typed_report_payload():
+    event = AwaitInputEvent.model_validate(
+        {
+            "type": "await_input",
+            "phase": "review",
+            "data": {
+                "type": "review",
+                "report": {
+                    "overall_score": 82,
+                    "length_compliance": 0.96,
+                    "asset_reuse_rate": 0.5,
+                    "issues": [],
+                    "auto_fixed_count": 1,
+                    "user_decision_needed": [],
+                },
+            },
+        }
+    )
+
+    assert event.phase == "review"
+    assert event.data.type == "review"
+    assert event.data.report.overall_score == 82
 
 
 def test_outline_await_input_event_accepts_structured_artifact_plan():

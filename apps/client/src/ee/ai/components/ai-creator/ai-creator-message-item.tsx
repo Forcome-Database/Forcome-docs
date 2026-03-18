@@ -12,6 +12,7 @@ import { aiCreatorSelectionRangeAtom } from "./ai-creator-atoms";
 import { notifications } from "@mantine/notifications";
 import { AiCreatorMessage } from "./ai-creator.types";
 import type {
+  AgentAssetSummary,
   AgentResumeValue,
   AgentStepInfo,
 } from "@/ee/ai/types/agent.types";
@@ -102,9 +103,11 @@ import { extractTitle, stripTimestamp, preprocessImagesForEditor } from './ai-cr
 
 function BriefMessageItem({
   briefData,
+  briefAssetSummary,
   onResume,
 }: {
   briefData: Record<string, unknown>;
+  briefAssetSummary?: AgentAssetSummary;
   onResume?: (value: AgentResumeValue) => void;
 }) {
   return (
@@ -116,6 +119,7 @@ function BriefMessageItem({
         <div className={classes.messageAiBubbleWrap}>
           <SmartBriefCard
             brief={briefData as unknown as CreationBrief}
+            assetSummary={briefAssetSummary}
             onConfirm={(brief) => onResume?.({ type: 'brief', brief: brief as unknown as Record<string, unknown> })}
           />
         </div>
@@ -310,7 +314,13 @@ export function AiCreatorMessageItem({
 
   // V2 interactive roles — delegate to sub-components
   if (message.role === 'brief' && message.briefData) {
-    return <BriefMessageItem briefData={message.briefData} onResume={_onResume} />;
+    return (
+      <BriefMessageItem
+        briefData={message.briefData}
+        briefAssetSummary={message.briefAssetSummary}
+        onResume={_onResume}
+      />
+    );
   }
 
   if (message.role === 'blueprint' && message.blueprintData) {

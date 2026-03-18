@@ -555,3 +555,39 @@ class TestGenerateBlueprint:
 
         assert result.title != ""
         assert "Write" in result.title
+
+    @pytest.mark.asyncio
+    async def test_generate_new_image_strategy_adds_ai_image_fallback(self):
+        llm_data = _make_llm_response(
+            [
+                {
+                    "id": "s1",
+                    "title": "Overview",
+                    "level": 2,
+                    "word_budget": 500,
+                    "description": "Architecture overview",
+                    "assets": [],
+                    "visuals": [],
+                    "must_cover": ["system layout"],
+                }
+            ],
+            title="Doc",
+            total_budget=500,
+        )
+
+        with (
+            patch(
+                "app.orchestrator.tools.create_blueprint._call_llm_for_blueprint",
+                new_callable=AsyncMock,
+                return_value=llm_data,
+            ),
+            patch("app.orchestrator.tools.create_blueprint.emit", new_callable=AsyncMock),
+        ):
+            result = await generate_blueprint(
+                user_message="Write a system overview with visuals",
+                brief=_make_brief(image_strategy="generate_new", target_length=500),
+                asset_map=None,
+                thread_id="t1",
+            )
+
+        assert any(v.type == "ai_image" for v in result.sections[0].visuals)

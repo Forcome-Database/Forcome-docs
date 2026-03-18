@@ -1,6 +1,7 @@
 import type { AgentResumeValue, AgentSSEEvent } from '../types/agent.types';
 
 export interface AgentGenerateParams {
+  files?: File[];
   prompt: string;
   pageId: string;
   templateId?: string;
@@ -26,24 +27,27 @@ export function agentGenerate(
   onTaskId?: (taskId: string) => void,
 ): AbortController {
   const controller = new AbortController();
-
-  const body = JSON.stringify({
-    prompt: params.prompt,
-    pageId: params.pageId,
-    templateId: params.templateId,
-    insertMode: params.insertMode,
-    pageTitle: params.pageTitle,
-    pageContent: params.pageContent,
-    selectedText: params.selectedText,
-    conversationHistory: params.conversationHistory ?? params.history ?? [],
-    intentRoute: params.intentRoute,
-    threadId: params.threadId,
-  });
+  const formData = new FormData();
+  for (const file of params.files ?? []) {
+    formData.append('files', file);
+  }
+  formData.append('prompt', params.prompt);
+  formData.append('pageId', params.pageId);
+  if (params.templateId) formData.append('templateId', params.templateId);
+  if (params.insertMode) formData.append('insertMode', params.insertMode);
+  if (params.pageTitle) formData.append('pageTitle', params.pageTitle);
+  if (params.pageContent) formData.append('pageContent', params.pageContent);
+  if (params.selectedText) formData.append('selectedText', params.selectedText);
+  if (params.intentRoute) formData.append('intentRoute', params.intentRoute);
+  if (params.threadId) formData.append('threadId', params.threadId);
+  const history = params.conversationHistory ?? params.history ?? [];
+  if (history.length > 0) {
+    formData.append('conversationHistory', JSON.stringify(history));
+  }
 
   fetch('/api/agent/run', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body,
+    body: formData,
     signal: controller.signal,
   })
     .then(async (resp) => {

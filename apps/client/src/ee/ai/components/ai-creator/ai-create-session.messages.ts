@@ -41,21 +41,26 @@ export function createInteractiveMessage(
   if (phase === "brief") {
     return {
       ...baseMessage,
-      briefData: data as unknown as Record<string, unknown>,
+      briefData:
+        "brief" in data ? (data.brief as unknown as Record<string, unknown>) : undefined,
+      briefAssetSummary:
+        "asset_summary" in data ? data.asset_summary : undefined,
     };
   }
 
   if (phase === "blueprint") {
     return {
       ...baseMessage,
-      blueprintData: data as unknown as Record<string, unknown>,
+      blueprintData:
+        "blueprint" in data ? (data.blueprint as unknown as Record<string, unknown>) : undefined,
     };
   }
 
   if (phase === "review") {
     return {
       ...baseMessage,
-      reviewData: data as unknown as Record<string, unknown>,
+      reviewData:
+        "report" in data ? (data.report as unknown as Record<string, unknown>) : undefined,
     };
   }
 

@@ -158,6 +158,9 @@ function normalizeAwaitInputData(
     if (!data || typeof data !== "object") {
       return null;
     }
+    if ((data as { type?: unknown }).type !== phase) {
+      return null;
+    }
     return data as AgentAwaitInputData;
   }
 
@@ -270,6 +273,12 @@ export function normalizeAgentRunEvent(event: AgentSSEEvent): AiCreateRunEvent |
       return {
         type: "content_delta",
         chunk: `\n![${event.alt}](${event.url})\n`,
+      };
+    case "fix_applied":
+      return {
+        type: "step_done",
+        step: `fix_issue_${event.issue_id}`,
+        resultSummary: event.success ? "Issue fixed" : "Issue fix failed",
       };
     case "await_input": {
       const normalizedPhase = toAwaitInputPhase(event.phase);

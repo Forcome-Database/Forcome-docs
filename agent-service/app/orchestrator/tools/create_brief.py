@@ -90,7 +90,7 @@ def build_brief_prompt(
 {
   "audience": "<target audience>",
   "goal": "<document goal>",
-  "target_length": <integer word count, 0 if unknown>,
+  "target_length": <integer, 0 if unknown>,
   "style": "<writing style>",
   "tone": "<tone>",
   "structure_strategy": "<copy_source|ai_recommend|user_defined>",
@@ -99,12 +99,13 @@ def build_brief_prompt(
 }
 
 Rules:
+- target_length counting: for Chinese text, each Chinese character (字) counts as 1; for English text, each word counts as 1. For example, "用户登录系统" = 6, "user login system" = 3.
 - structure_strategy = "copy_source" when the user wants to reproduce or adapt an existing document.
 - structure_strategy = "user_defined" when the user explicitly described the structure.
 - Otherwise use "ai_recommend".
 - image_strategy = "reuse_source" when source material has images and user wants them kept.
 - image_strategy = "none" when no images are requested.
-- target_length: estimate based on the request. If reproducing a source document, use its word count.
+- target_length: estimate based on the request. If reproducing a source document, use its character/word count.
 - Respond with ONLY the JSON object, no explanation."""
     )
 

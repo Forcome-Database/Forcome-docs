@@ -68,8 +68,14 @@ async def _event_generator(thread_id: str, queue: asyncio.Queue):
                 break
 
             yield {"data": json.dumps(event, ensure_ascii=False)}
+            if event.get("type") == "await_input":
+                break
     finally:
         remove_queue(thread_id)
+
+
+async def _single_event_stream(event: dict):
+    yield {"data": json.dumps(event, ensure_ascii=False)}
 
 
 async def _run_orchestrator_with_stream(
@@ -98,7 +104,6 @@ async def run_agent(request: dict):
     thread_id = request.get("thread_id") or str(uuid4())
 
     register_task(task_id, thread_id)
-    interaction_registry.register(thread_id)
     queue = create_queue(thread_id)
 
     orch_request = OrchestratorRequest(
@@ -137,10 +142,19 @@ async def resume_agent(request: dict):
     thread_id = request.get("thread_id", "")
     resume_value = request.get("resume_value", {})
 
+    queue = create_queue(thread_id)
     ok = interaction_registry.submit_response(thread_id, resume_value)
     if not ok:
-        return {"status": "not_found", "message": f"No pending interaction for thread {thread_id}"}
-    return {"status": "resumed"}
+        remove_queue(thread_id)
+        return EventSourceResponse(
+            _single_event_stream(
+                {
+                    "type": "error",
+                    "message": f"No pending interaction for thread {thread_id}",
+                }
+            )
+        )
+    return EventSourceResponse(_event_generator(thread_id, queue))
 
 
 @app.post("/agent/stop", dependencies=[Depends(verify_internal_secret)])

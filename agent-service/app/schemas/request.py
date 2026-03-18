@@ -70,11 +70,31 @@ class OutlineRegenerateResumeValue(BaseModel):
     feedback: str | None = None
 
 
+class BriefResumeValue(BaseModel):
+    type: Literal["brief"] = "brief"
+    brief: dict
+
+
+class BlueprintResumeValue(BaseModel):
+    type: Literal["blueprint"] = "blueprint"
+    blueprint: dict | None = None
+
+
+class ReviewResumeValue(BaseModel):
+    type: Literal["review"] = "review"
+    selected_issue_ids: list[str] = Field(default_factory=list)
+    feedback: str | None = None
+    skip: bool = False
+
+
 AgentResumeValue = (
     ClarifyResumeValue
     | ProposeResumeValue
     | OutlineConfirmResumeValue
     | OutlineRegenerateResumeValue
+    | BriefResumeValue
+    | BlueprintResumeValue
+    | ReviewResumeValue
 )
 
 

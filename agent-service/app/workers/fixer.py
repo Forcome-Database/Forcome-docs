@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from app.models.draft import SectionDraft
 from app.models.review import ReviewIssue
+from app.utils.text import count_words
 
 
 # ── deterministic auto-fixers ─────────────────────────────────────────────────
@@ -91,6 +92,7 @@ def apply_auto_fixes(
                 original = content  # update baseline for next issue
 
         draft.content = content
+        draft.word_count = count_words(content)
 
     return drafts, fix_count
 
@@ -111,6 +113,7 @@ async def fix_targeted(
     section_content: str,
     issue: ReviewIssue,
     thread_id: str = "",
+    feedback: str | None = None,
 ) -> str:
     """Fix a specific issue in a section using LLM.
 
@@ -127,6 +130,7 @@ async def fix_targeted(
 
 Issue: {issue.description}
 Suggestion: {issue.suggestion}
+User feedback: {feedback or "(none)"}
 
 Section content:
 {section_content}

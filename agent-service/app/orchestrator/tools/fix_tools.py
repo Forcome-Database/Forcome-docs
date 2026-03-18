@@ -1,4 +1,4 @@
-"""Fix issues orchestrator tool — selective issue repair."""
+"""Selective issue repair helpers."""
 from __future__ import annotations
 
 from app.agent.events import emit
@@ -15,35 +15,57 @@ async def fix_selected_issues(
     selected_issue_ids: list[str],
     blueprint: CreationBlueprint,
     thread_id: str = "",
+    feedback: str | None = None,
 ) -> list[SectionDraft]:
-    """Fix only the user-selected issues.
+    """Fix only the user-selected issues."""
 
-    Two-phase repair:
-    1. Auto-fix all auto_fixable issues first (deterministic)
-    2. LLM-based targeted fix for selected non-auto issues
-    """
-
-    # 1. Auto-fix all auto_fixable issues first
-    section_levels = {s.id: s.level for s in blueprint.sections}
-    auto_fixable = [i for i in issues if i.auto_fixable and not i.fixed]
-    if auto_fixable:
-        drafts, auto_count = apply_auto_fixes(drafts, issues, section_levels)
-        await emit(thread_id, {
-            "type": "step_done",
-            "step": "auto_fix",
-            "result_summary": f"自动修复 {auto_count} 项",
-        })
-
-    # 2. LLM fix for selected non-auto issues
-    selected = [
-        i for i in issues
-        if i.id in selected_issue_ids and not i.auto_fixable and not i.fixed
+    section_levels = {section.id: section.level for section in blueprint.sections}
+    auto_fixable_issues = [
+        issue
+        for issue in issues
+        if issue.auto_fixable and not issue.fixed
     ]
+    if auto_fixable_issues:
+        drafts, auto_count = apply_auto_fixes(drafts, auto_fixable_issues, section_levels)
+        for issue in auto_fixable_issues:
+            if not issue.fixed:
+                continue
+            await emit(
+                thread_id,
+                {
+                    "type": "fix_applied",
+                    "issue_id": issue.id,
+                    "section_id": issue.section_id,
+                    "success": True,
+                },
+            )
+            await emit(
+                thread_id,
+                {
+                    "type": "step_done",
+                    "step": "fix_issue",
+                    "result_summary": f"Fixed: {issue.description[:60]}",
+                },
+            )
 
-    for issue in selected:
+        await emit(
+            thread_id,
+            {
+                "type": "step_done",
+                "step": "auto_fix",
+                "result_summary": f"Auto-fixed {auto_count} issues",
+            },
+        )
+
+    selected_manual = [
+        issue
+        for issue in issues
+        if issue.id in selected_issue_ids and not issue.auto_fixable and not issue.fixed
+    ]
+    for issue in selected_manual:
         if not issue.section_id:
             continue
-        draft = next((d for d in drafts if d.section_id == issue.section_id), None)
+        draft = next((item for item in drafts if item.section_id == issue.section_id), None)
         if not draft:
             continue
 
@@ -51,9 +73,28 @@ async def fix_selected_issues(
             section_content=draft.content,
             issue=issue,
             thread_id=thread_id,
+            feedback=feedback,
         )
         draft.content = fixed_content
         draft.word_count = count_words(fixed_content)
         issue.fixed = True
+
+        await emit(
+            thread_id,
+            {
+                "type": "fix_applied",
+                "issue_id": issue.id,
+                "section_id": issue.section_id,
+                "success": True,
+            },
+        )
+        await emit(
+            thread_id,
+            {
+                "type": "step_done",
+                "step": "fix_issue",
+                "result_summary": f"Fixed: {issue.description[:60]}",
+            },
+        )
 
     return drafts

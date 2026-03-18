@@ -1,15 +1,16 @@
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from app.models.review import ReviewIssue, ReviewReport
 from app.orchestrator.engine import OrchestratorEngine, OrchestratorRequest
 
 
 @pytest.mark.asyncio
 async def test_level3_full_pipeline():
-    """Level 3 should: parse → brief → blueprint → write_all → consistency → finalize."""
     engine = OrchestratorEngine()
 
     request = OrchestratorRequest(
-        user_message="写一篇关于微服务架构的技术博客",
+        user_message="Write a document about microservice architecture.",
         thread_id="test-l3-thread",
         workspace_id="ws-test",
         intent_route="document_create",
@@ -21,40 +22,42 @@ async def test_level3_full_pipeline():
          patch("app.orchestrator.engine.generate_blueprint") as mock_blueprint, \
          patch("app.orchestrator.engine.interaction_registry") as mock_registry, \
          patch("app.orchestrator.engine.write_all_sections") as mock_write, \
-         patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
          patch("app.orchestrator.engine.evaluate_quality") as mock_evaluate, \
-         patch("app.workers.fixer.apply_auto_fixes") as mock_autofix, \
+         patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
+         patch("app.orchestrator.engine.apply_auto_fixes") as mock_autofix, \
          patch("app.orchestrator.engine.finalize_and_emit") as mock_finalize, \
          patch("app.orchestrator.engine.emit") as mock_emit, \
          patch("app.orchestrator.engine.draft_store") as mock_draft:
 
         from app.models import CreationBrief, CreationBlueprint, SectionDraft
         from app.models.blueprint import SectionPlan
-        from app.models.review import ReviewReport
 
         mock_complexity.return_value = {"level": 3, "reasoning": "creation keyword"}
         mock_brief.return_value = CreationBrief(
-            audience="技术团队", goal="技术博客", target_length=3000,
-            style="专业", tone="友好",
+            audience="engineering team",
+            goal="technical blog post",
+            target_length=3000,
+            style="professional",
+            tone="friendly",
         )
         mock_blueprint.return_value = CreationBlueprint(
-            title="微服务架构", total_word_budget=3000,
+            title="Microservice Architecture",
+            total_word_budget=3000,
             sections=[
-                SectionPlan(id="s1", title="简介", level=2, word_budget=500),
-                SectionPlan(id="s2", title="核心概念", level=2, word_budget=1000),
-                SectionPlan(id="s3", title="实践建议", level=2, word_budget=1000),
-                SectionPlan(id="s4", title="总结", level=2, word_budget=500),
+                SectionPlan(id="s1", title="Introduction", level=2, word_budget=500),
+                SectionPlan(id="s2", title="Core Concepts", level=2, word_budget=1000),
+                SectionPlan(id="s3", title="Practical Guidance", level=2, word_budget=1000),
+                SectionPlan(id="s4", title="Conclusion", level=2, word_budget=500),
             ],
         )
         mock_registry.wait_for_response = AsyncMock(return_value={"confirmed": True})
         mock_registry.register = MagicMock()
         mock_registry.cleanup = MagicMock()
-
         mock_write.return_value = [
-            SectionDraft(section_id="s1", content="简介内容", word_count=500),
-            SectionDraft(section_id="s2", content="核心概念内容", word_count=1000),
-            SectionDraft(section_id="s3", content="实践建议内容", word_count=1000),
-            SectionDraft(section_id="s4", content="总结内容", word_count=500),
+            SectionDraft(section_id="s1", content="intro", word_count=500),
+            SectionDraft(section_id="s2", content="concepts", word_count=1000),
+            SectionDraft(section_id="s3", content="guidance", word_count=1000),
+            SectionDraft(section_id="s4", content="summary", word_count=500),
         ]
         mock_consistency.return_value = []
         mock_evaluate.return_value = ReviewReport(overall_score=85, issues=[])
@@ -62,7 +65,7 @@ async def test_level3_full_pipeline():
         mock_finalize.return_value = "Full document content"
         mock_draft.save_draft = MagicMock()
 
-        result = await engine.run(request)
+        await engine.run(request)
 
     mock_complexity.assert_called_once()
     mock_brief.assert_called_once()
@@ -73,11 +76,10 @@ async def test_level3_full_pipeline():
 
 @pytest.mark.asyncio
 async def test_level3_with_files():
-    """Level 3 with files should call parse_assets first."""
     engine = OrchestratorEngine()
 
     request = OrchestratorRequest(
-        user_message="基于这些资料写一份报告",
+        user_message="Write a report from these source files.",
         thread_id="test-l3-files",
         workspace_id="ws-test",
         intent_route="document_create",
@@ -93,20 +95,24 @@ async def test_level3_with_files():
          patch("app.orchestrator.engine.generate_blueprint") as mock_blueprint, \
          patch("app.orchestrator.engine.interaction_registry") as mock_registry, \
          patch("app.orchestrator.engine.write_all_sections") as mock_write, \
-         patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
          patch("app.orchestrator.engine.evaluate_quality") as mock_evaluate, \
-         patch("app.workers.fixer.apply_auto_fixes") as mock_autofix, \
+         patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
+         patch("app.orchestrator.engine.apply_auto_fixes") as mock_autofix, \
          patch("app.orchestrator.engine.finalize_and_emit") as mock_finalize, \
          patch("app.orchestrator.engine.emit") as mock_emit, \
          patch("app.orchestrator.engine.draft_store") as mock_draft:
 
         from app.models import AssetMap, CreationBrief, CreationBlueprint, SectionDraft
-        from app.models.review import ReviewReport
+        from app.models.blueprint import SectionPlan
 
         mock_complexity.return_value = {"level": 3, "reasoning": "multi file"}
         mock_parse.return_value = AssetMap(source_word_count=5000)
-        mock_brief.return_value = CreationBrief(audience="通用", goal="报告", target_length=5000)
-        mock_blueprint.return_value = CreationBlueprint(title="Report", total_word_budget=5000)
+        mock_brief.return_value = CreationBrief(audience="general", goal="report", target_length=5000)
+        mock_blueprint.return_value = CreationBlueprint(
+            title="Report",
+            total_word_budget=5000,
+            sections=[SectionPlan(id="s1", title="Summary", level=2, word_budget=5000)],
+        )
         mock_registry.wait_for_response = AsyncMock(return_value={"confirmed": True})
         mock_registry.register = MagicMock()
         mock_registry.cleanup = MagicMock()
@@ -120,3 +126,160 @@ async def test_level3_with_files():
         await engine.run(request)
 
     mock_parse.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_level3_reopens_review_after_selected_fix_until_user_skips():
+    engine = OrchestratorEngine()
+
+    request = OrchestratorRequest(
+        user_message="Write a system design document.",
+        thread_id="test-l3-review-loop",
+        workspace_id="ws-test",
+        intent_route="document_create",
+    )
+
+    with patch("app.orchestrator.engine.analyze_task_complexity") as mock_complexity, \
+         patch("app.orchestrator.engine.generate_brief") as mock_brief, \
+         patch("app.orchestrator.engine.generate_blueprint") as mock_blueprint, \
+         patch("app.orchestrator.engine.interaction_registry") as mock_registry, \
+         patch("app.orchestrator.engine.write_all_sections") as mock_write, \
+         patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
+         patch("app.orchestrator.engine.evaluate_quality") as mock_evaluate, \
+         patch("app.orchestrator.engine.apply_auto_fixes") as mock_autofix, \
+         patch("app.orchestrator.engine.fix_selected_issues") as mock_fix_selected, \
+         patch("app.orchestrator.engine.finalize_and_emit") as mock_finalize, \
+         patch("app.orchestrator.engine.emit") as mock_emit, \
+         patch("app.orchestrator.engine.draft_store") as mock_draft:
+
+        from app.models import CreationBrief, CreationBlueprint, SectionDraft
+        from app.models.blueprint import SectionPlan
+
+        mock_complexity.return_value = {"level": 3, "reasoning": "creation keyword"}
+        mock_brief.return_value = CreationBrief(audience="developers", goal="design doc", target_length=1200)
+        mock_blueprint.return_value = CreationBlueprint(
+            title="System Design",
+            total_word_budget=1200,
+            sections=[SectionPlan(id="s1", title="Overview", level=2, word_budget=1200)],
+        )
+        mock_registry.wait_for_response = AsyncMock(
+            side_effect=[
+                {"confirmed": True},
+                {"confirmed": True},
+                {"type": "review", "selected_issue_ids": ["issue-1"]},
+                {"type": "review", "selected_issue_ids": [], "skip": True},
+            ]
+        )
+        mock_registry.register = MagicMock()
+        mock_registry.cleanup = MagicMock()
+        drafts = [SectionDraft(section_id="s1", content="content", word_count=1200)]
+        mock_write.return_value = drafts
+        mock_consistency.return_value = []
+        mock_evaluate.side_effect = [
+            ReviewReport(
+                overall_score=80,
+                issues=[
+                    ReviewIssue(
+                        id="issue-1",
+                        section_id="s1",
+                        severity="warning",
+                        category="content",
+                        description="Add a concrete example",
+                        suggestion="Include a worked example",
+                        auto_fixable=False,
+                    )
+                ],
+                user_decision_needed=["issue-1"],
+            ),
+            ReviewReport(
+                overall_score=82,
+                issues=[
+                    ReviewIssue(
+                        id="issue-2",
+                        section_id="s1",
+                        severity="warning",
+                        category="content",
+                        description="Transition is still weak",
+                        suggestion="Improve the transition",
+                        auto_fixable=False,
+                    )
+                ],
+                user_decision_needed=["issue-2"],
+            ),
+        ]
+        mock_autofix.side_effect = lambda drafts, issues, levels: (drafts, 0)
+        mock_fix_selected.return_value = drafts
+        mock_finalize.return_value = "final content"
+        mock_draft.save_draft = MagicMock()
+
+        await engine.run(request)
+
+    assert mock_evaluate.await_count == 2
+    mock_fix_selected.assert_awaited_once()
+    review_events = [
+        call.args[1]
+        for call in mock_emit.await_args_list
+        if len(call.args) == 2 and call.args[1].get("type") == "await_input" and call.args[1].get("phase") == "review"
+    ]
+    assert len(review_events) == 2
+    assert any(
+        len(call.args) == 2 and call.args[1].get("type") == "content_clear"
+        for call in mock_emit.await_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_level3_blocks_finalize_when_section_alignment_is_broken():
+    engine = OrchestratorEngine()
+
+    request = OrchestratorRequest(
+        user_message="Write a system design document.",
+        thread_id="test-l3-alignment",
+        workspace_id="ws-test",
+        intent_route="document_create",
+    )
+
+    with patch("app.orchestrator.engine.analyze_task_complexity") as mock_complexity, \
+         patch("app.orchestrator.engine.generate_brief") as mock_brief, \
+         patch("app.orchestrator.engine.generate_blueprint") as mock_blueprint, \
+         patch("app.orchestrator.engine.interaction_registry") as mock_registry, \
+         patch("app.orchestrator.engine.write_all_sections") as mock_write, \
+         patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
+         patch("app.orchestrator.engine.evaluate_quality") as mock_evaluate, \
+         patch("app.orchestrator.engine.apply_auto_fixes") as mock_autofix, \
+         patch("app.orchestrator.engine.finalize_and_emit") as mock_finalize, \
+         patch("app.orchestrator.engine.emit") as mock_emit, \
+         patch("app.orchestrator.engine.draft_store") as mock_draft:
+
+        from app.models import CreationBrief, CreationBlueprint, SectionDraft
+        from app.models.blueprint import SectionPlan
+
+        mock_complexity.return_value = {"level": 3, "reasoning": "creation keyword"}
+        mock_brief.return_value = CreationBrief(audience="developers", goal="design doc", target_length=1200)
+        mock_blueprint.return_value = CreationBlueprint(
+            title="System Design",
+            total_word_budget=1200,
+            sections=[
+                SectionPlan(id="s1", title="Overview", level=2, word_budget=600),
+                SectionPlan(id="s2", title="Approach", level=2, word_budget=600),
+            ],
+        )
+        mock_registry.wait_for_response = AsyncMock(
+            side_effect=[
+                {"confirmed": True},
+                {"confirmed": True},
+                None,
+            ]
+        )
+        mock_registry.register = MagicMock()
+        mock_registry.cleanup = MagicMock()
+        mock_write.return_value = [SectionDraft(section_id="s1", content="only one section", word_count=600)]
+        mock_consistency.return_value = []
+        mock_evaluate.return_value = ReviewReport(overall_score=90, issues=[])
+        mock_autofix.side_effect = lambda drafts, issues, levels: (drafts, 0)
+        mock_draft.save_draft = MagicMock()
+
+        with pytest.raises(RuntimeError):
+            await engine.run(request)
+
+    mock_finalize.assert_not_called()

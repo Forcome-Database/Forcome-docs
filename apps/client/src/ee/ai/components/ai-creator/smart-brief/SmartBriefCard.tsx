@@ -1,16 +1,16 @@
 import { Card, Text, Stack, Select, NumberInput, Button, Group, Badge, Divider } from '@mantine/core';
 import { useState } from 'react';
 import type { CreationBrief } from '../../../types/brief.types';
-import type { AssetMap } from '../../../types/blueprint.types';
+import type { AgentAssetSummary } from '../../../types/agent.types';
 
 interface SmartBriefCardProps {
   brief: CreationBrief;
-  assetMap?: AssetMap | null;
+  assetSummary?: AgentAssetSummary;
   onConfirm: (brief: CreationBrief) => void;
   onEdit?: () => void;
 }
 
-export function SmartBriefCard({ brief, assetMap, onConfirm, onEdit }: SmartBriefCardProps) {
+export function SmartBriefCard({ brief, assetSummary, onConfirm, onEdit }: SmartBriefCardProps) {
   const [localBrief, setLocalBrief] = useState<CreationBrief>(brief);
 
   // Mantine v8 Select does not support creatable — use a fixed list that includes
@@ -50,15 +50,6 @@ export function SmartBriefCard({ brief, assetMap, onConfirm, onEdit }: SmartBrie
   ];
 
   const handleConfirm = () => onConfirm(localBrief);
-
-  const assetSummary = assetMap
-    ? {
-        images: assetMap.items.filter((i) => i.type === 'image').length,
-        tables: assetMap.items.filter((i) => i.type === 'table').length,
-        code: assetMap.items.filter((i) => i.type === 'code').length,
-        text: assetMap.items.filter((i) => i.type === 'text').length,
-      }
-    : null;
 
   return (
     <Card withBorder p="md" radius="md">

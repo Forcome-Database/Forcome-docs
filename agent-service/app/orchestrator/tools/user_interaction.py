@@ -53,24 +53,27 @@ class InteractionRegistry:
         # Clear any stale response
         self._responses.pop(thread_id, None)
 
-    async def wait_for_response(self, thread_id: str) -> Any:
+    async def wait_for_response(self, thread_id: str, timeout: float = 600) -> Any:
         """Block until a response is submitted for this thread.
 
         Must be called *after* :meth:`register`.
 
         Args:
             thread_id: The thread to wait for.
+            timeout: Maximum seconds to wait before raising TimeoutError.
+                Defaults to 600 (10 minutes).
 
         Returns:
             The data submitted via :meth:`submit_response`.
 
         Raises:
             KeyError: If ``thread_id`` is not registered.
+            asyncio.TimeoutError: If no response within *timeout* seconds.
         """
         event = self._events.get(thread_id)
         if event is None:
             raise KeyError(f"Thread '{thread_id}' is not registered for interaction")
-        await event.wait()
+        await asyncio.wait_for(event.wait(), timeout=timeout)
         return self._responses.get(thread_id)
 
     def submit_response(self, thread_id: str, data: Any) -> bool:

@@ -10,13 +10,15 @@ Level 3 falls back to Level 1 pending Phase 3.
 """
 from __future__ import annotations
 
+import asyncio
+import uuid
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.agent.events import emit
 from app.orchestrator.tools.complexity import analyze_task_complexity
-from app.orchestrator.tools.finalize import finalize_and_emit
+from app.orchestrator.tools.finalize import finalize_and_emit, merge_sections
 from app.orchestrator.tools.simple_edit import SimpleEditRequest, execute_simple_edit
 
 # Phase 2 tools
@@ -32,10 +34,128 @@ from app.workers.consistency_checker import run_consistency_checks
 from app.orchestrator.draft_manager import draft_store
 from app.models.brief import CreationBrief
 from app.models.blueprint import CreationBlueprint
+from app.models.review import ReviewIssue
 
 # Phase 4 tools
 from app.orchestrator.tools.evaluate import evaluate_quality
 from app.orchestrator.tools.fix_tools import fix_selected_issues
+from app.workers.fixer import apply_auto_fixes
+
+
+def _build_asset_summary(asset_map: object) -> dict:
+    if not asset_map:
+        return {
+            "images": 0,
+            "tables": 0,
+            "code": 0,
+            "text": 0,
+            "source_word_count": 0,
+            "source_section_counts": {},
+        }
+
+    return {
+        "images": len(asset_map.items_by_type("image")),
+        "tables": len(asset_map.items_by_type("table")),
+        "code": len(asset_map.items_by_type("code")),
+        "text": len(asset_map.items_by_type("text")),
+        "source_word_count": asset_map.source_word_count,
+        "source_section_counts": asset_map.source_section_counts,
+    }
+
+
+def _extract_first_url(text: str) -> str | None:
+    import re
+
+    match = re.search(r"https?://[^\s)>\]]+", text)
+    return match.group(0) if match else None
+
+
+def _build_consistency_review_issues(consistency_issues: list[object]) -> list[ReviewIssue]:
+    return [
+        ReviewIssue(
+            id=f"consistency-{uuid.uuid4().hex[:8]}",
+            section_id=ci.section_id,
+            severity="warning",
+            category="structure" if ci.category in ("heading_level", "cross_reference") else "style",
+            description=ci.description,
+            suggestion="",
+            auto_fixable=(ci.category == "heading_level"),
+        )
+        for ci in consistency_issues
+    ]
+
+
+def _build_section_alignment_issues(
+    drafts: list[object],
+    blueprint: CreationBlueprint,
+) -> list[ReviewIssue]:
+    expected_ids = [section.id for section in blueprint.sections]
+    actual_ids = [draft.section_id for draft in drafts]
+    issues: list[ReviewIssue] = []
+
+    if actual_ids == expected_ids:
+        return issues
+
+    missing_ids = [section.id for section in blueprint.sections if section.id not in actual_ids]
+    unexpected_ids = [section_id for section_id in actual_ids if section_id not in expected_ids]
+
+    if missing_ids:
+        missing_titles = [
+            section.title for section in blueprint.sections if section.id in missing_ids
+        ]
+        issues.append(
+            ReviewIssue(
+                id=f"alignment-{uuid.uuid4().hex[:8]}",
+                severity="error",
+                category="structure",
+                description=f"最终草稿缺少章节: {', '.join(missing_titles)}",
+                suggestion="必须补齐 blueprint 中的所有章节后才能完成",
+                auto_fixable=False,
+            )
+        )
+
+    if unexpected_ids:
+        issues.append(
+            ReviewIssue(
+                id=f"alignment-{uuid.uuid4().hex[:8]}",
+                severity="error",
+                category="structure",
+                description=f"最终草稿出现 blueprint 之外的章节: {', '.join(unexpected_ids)}",
+                suggestion="移除额外章节，并确保章节集合与 blueprint 完全一致",
+                auto_fixable=False,
+            )
+        )
+
+    if not missing_ids and not unexpected_ids and actual_ids != expected_ids:
+        issues.append(
+            ReviewIssue(
+                id=f"alignment-{uuid.uuid4().hex[:8]}",
+                severity="error",
+                category="structure",
+                description="最终草稿章节顺序与 blueprint 不一致",
+                suggestion="按 blueprint.sections 的顺序重新排列并重写受影响章节",
+                auto_fixable=False,
+            )
+        )
+
+    return issues
+
+
+def _has_blocking_review_issues(
+    report: object,
+    *,
+    allow_visual_skip: bool = False,
+) -> bool:
+    blocking_categories = {"length", "structure", "asset", "format", "visual"}
+    for issue in report.issues:
+        if issue.fixed or issue.auto_fixable:
+            continue
+        if issue.category not in blocking_categories:
+            continue
+        if allow_visual_skip and issue.category == "visual":
+            continue
+        return True
+    return False
 
 
 class OrchestratorRequest(BaseModel):
@@ -52,6 +172,14 @@ class OrchestratorRequest(BaseModel):
     system_prompt: str = ""
     template_prompt: str = ""
     conversation_history: list[dict] = Field(default_factory=list)
+
+    @field_validator(
+        "page_content", "selected_text", "system_prompt", "template_prompt",
+        mode="before",
+    )
+    @classmethod
+    def coerce_none_to_empty(cls, v: object) -> str:
+        return v if v is not None else ""
 
     # Files as minimal metadata dicts ({"name": str, "type": str})
     files: list[dict] = Field(default_factory=list)
@@ -136,6 +264,97 @@ class OrchestratorEngine:
             # Default to Level 1 for unknown complexity levels
             return await self._execute_level1(request)
 
+    async def _await_user_input(
+        self,
+        *,
+        thread_id: str,
+        phase: Literal["brief", "blueprint", "review"],
+        data: dict,
+        timeout_message: str,
+        raise_on_timeout: bool = True,
+    ) -> dict | None:
+        interaction_registry.register(thread_id)
+        await emit(
+            thread_id,
+            {
+                "type": "await_input",
+                "phase": phase,
+                "data": data,
+            },
+        )
+        try:
+            response = await interaction_registry.wait_for_response(thread_id)
+        except asyncio.TimeoutError:
+            await emit(thread_id, {"type": "error", "message": timeout_message})
+            interaction_registry.cleanup(thread_id)
+            if raise_on_timeout:
+                raise
+            return None
+
+        return response if isinstance(response, dict) else None
+
+    async def _emit_draft_preview(
+        self,
+        *,
+        thread_id: str,
+        blueprint: CreationBlueprint,
+        section_drafts: list,
+    ) -> None:
+        merged_sections = [
+            {"title": blueprint.title, "level": 1, "content": ""},
+        ] + [
+            {"title": section.title, "level": section.level, "content": draft.content}
+            for section, draft in zip(blueprint.sections, section_drafts)
+        ]
+        preview = merge_sections(merged_sections)
+
+        await emit(thread_id, {"type": "content_clear"})
+        for index in range(0, len(preview), 1200):
+            await emit(thread_id, {"type": "content", "chunk": preview[index:index + 1200]})
+
+    async def _build_review_report(
+        self,
+        *,
+        section_drafts: list,
+        blueprint: CreationBlueprint,
+        brief: CreationBrief,
+        asset_map: object,
+        thread_id: str,
+    ):
+        consistency_review_issues = _build_consistency_review_issues(
+            run_consistency_checks(section_drafts, blueprint)
+        )
+        alignment_issues = _build_section_alignment_issues(section_drafts, blueprint)
+
+        review_report = await evaluate_quality(
+            drafts=section_drafts,
+            blueprint=blueprint,
+            brief=brief,
+            asset_map=asset_map,
+            thread_id=thread_id,
+        )
+
+        if consistency_review_issues:
+            review_report.issues.extend(consistency_review_issues)
+        if alignment_issues:
+            review_report.issues.extend(alignment_issues)
+
+        section_levels = {section.id: section.level for section in blueprint.sections}
+        auto_fixable = [issue for issue in review_report.issues if issue.auto_fixable and not issue.fixed]
+        auto_count = 0
+        if auto_fixable:
+            section_drafts, auto_count = apply_auto_fixes(
+                section_drafts,
+                review_report.issues,
+                section_levels,
+            )
+
+        review_report.auto_fixed_count = auto_count
+        review_report.user_decision_needed = [
+            issue.id for issue in review_report.issues if not issue.auto_fixable and not issue.fixed
+        ]
+        return review_report, section_drafts
+
     async def _execute_level1(self, request: OrchestratorRequest) -> str:
         """Execute a Level 1 (simple edit) task.
 
@@ -169,16 +388,14 @@ class OrchestratorEngine:
         return final_content
 
     async def _execute_level2(self, request: OrchestratorRequest) -> str:
-        """Execute a Level 2 (structured creation) task.
+        """Execute a Level 2 (structured creation with brief, no blueprint) task.
 
-        Phase 2 pipeline:
+        L2 pipeline (design doc aligned):
         1. parse_assets — parse uploaded files into AssetMap (if files present).
         2. generate_brief — LLM analysis → Smart Brief.
-        3. ask_user(phase="brief") — emit brief for user confirmation.
-        4. generate_blueprint — LLM planning → CreationBlueprint.
-        5. ask_user(phase="blueprint") — emit blueprint for user confirmation.
-        6. simple_edit — placeholder writer (Phase 3 will add section writer).
-        7. finalize — merge + done event.
+        3. ask_user(phase="brief") — emit brief for user confirmation, wait.
+        4. simple_edit — single-pass writing with asset context + brief guidance.
+        5. finalize — merge + done event.
 
         Args:
             request: The orchestrator request.
@@ -202,36 +419,39 @@ class OrchestratorEngine:
             thread_id=request.thread_id,
         )
 
-        # Step 3: Emit ask_user event for brief confirmation
-        await emit(
-            request.thread_id,
-            {
-                "type": "ask_user",
-                "phase": "brief",
-                "brief": brief.model_dump(),
-            },
-        )
-
-        # Step 4: Generate Blueprint
-        blueprint = await generate_blueprint(
-            user_message=request.user_message,
-            brief=brief,
-            asset_map=asset_map,
+        # Step 3: Emit brief for user confirmation and wait
+        brief_response = await self._await_user_input(
             thread_id=request.thread_id,
-        )
-
-        # Step 5: Emit ask_user event for blueprint confirmation
-        await emit(
-            request.thread_id,
-            {
-                "type": "ask_user",
-                "phase": "blueprint",
-                "blueprint": blueprint.model_dump(),
+            phase="brief",
+            data={
+                "type": "brief",
+                "brief": brief.model_dump(),
+                "asset_summary": _build_asset_summary(asset_map),
             },
+            timeout_message="等待 Brief 确认超时（10分钟），任务已取消",
+        )
+        if isinstance(brief_response, dict) and brief_response.get("brief"):
+            brief = CreationBrief.model_validate(brief_response["brief"])
+
+        # Step 4: Build asset context for simple_edit
+        asset_context = ""
+        if asset_map:
+            text_items = [item for item in asset_map.items if item.type == "text"]
+            if text_items:
+                parts = []
+                for item in text_items:
+                    parts.append(f"--- Source: {item.source or item.id} ---\n{item.content}")
+                asset_context = "\n\n".join(parts)
+
+        brief_summary = (
+            f"[Smart Brief]\n"
+            f"Goal: {brief.goal}\n"
+            f"Audience: {brief.audience}\n"
+            f"Style: {brief.style}\n"
+            f"Target length: {brief.target_length} 字/words\n"
+            f"Image strategy: {brief.image_strategy}"
         )
 
-        # Step 6: Placeholder writer — use simple_edit for now
-        # Phase 3 will replace this with per-section SectionWriter calls
         edit_request = SimpleEditRequest(
             thread_id=request.thread_id,
             user_message=request.user_message,
@@ -240,11 +460,13 @@ class OrchestratorEngine:
             system_prompt=request.system_prompt,
             template_prompt=request.template_prompt,
             conversation_history=request.conversation_history,
+            intent_route=request.intent_route,
+            asset_context=f"{asset_context}\n\n{brief_summary}" if asset_context else brief_summary,
         )
 
         edited_content = await execute_simple_edit(edit_request)
 
-        # Step 7: Finalize
+        # Step 5: Finalize
         final_content = await finalize_and_emit(
             thread_id=request.thread_id,
             sections=[edited_content],
@@ -281,6 +503,82 @@ class OrchestratorEngine:
                 page_id=request.page_id,
             )
 
+        # 1b. Research step — if no uploaded files, gather web research
+        has_text_assets = (
+            asset_map is not None
+            and any(item.type == "text" for item in asset_map.items)
+        )
+        has_sufficient_evidence = has_text_assets and (asset_map.source_word_count >= 500)
+        if not has_sufficient_evidence:
+            await emit(request.thread_id, {
+                "type": "step_start",
+                "step": "research",
+                "description": "Researching topic…",
+            })
+            try:
+                research_results: list[dict] = []
+                web_url = _extract_first_url(request.user_message)
+
+                research_results.extend(await research_tool(
+                    query=request.user_message,
+                    sources=["web_search"],
+                    thread_id=request.thread_id,
+                    workspace_id=request.workspace_id,
+                ))
+
+                if request.workspace_id:
+                    research_results.extend(await research_tool(
+                        query=request.user_message,
+                        sources=["knowledge_base"],
+                        thread_id=request.thread_id,
+                        workspace_id=request.workspace_id,
+                    ))
+
+                if request.page_id:
+                    research_results.extend(await research_tool(
+                        query=request.page_id,
+                        sources=["page_read"],
+                        thread_id=request.thread_id,
+                        workspace_id=request.workspace_id,
+                    ))
+
+                if web_url:
+                    research_results.extend(await research_tool(
+                        query=web_url,
+                        sources=["web_crawl"],
+                        thread_id=request.thread_id,
+                        workspace_id=request.workspace_id,
+                    ))
+
+                if research_results:
+                    from app.models.asset_map import AssetItem
+                    if asset_map is None:
+                        from app.models.asset_map import AssetMap
+                        asset_map = AssetMap()
+                    for i, r in enumerate(research_results):
+                        content = (r.get("content") or "").strip()
+                        if not content:
+                            continue
+                        asset_map.items.append(AssetItem(
+                            id=f"research_{i}",
+                            type="text",
+                            source=r.get("source", "research"),
+                            content=content[:3000],
+                            summary=(r.get("url") or r.get("source") or "research result")[:200],
+                        ))
+                        asset_map.source_word_count += len(content[:3000])
+                await emit(request.thread_id, {
+                    "type": "step_done",
+                    "step": "research",
+                    "result_summary": f"Found {len(research_results)} results",
+                })
+            except Exception as e:
+                await emit(request.thread_id, {
+                    "type": "step_done",
+                    "step": "research",
+                    "result_summary": f"Research skipped: {str(e)[:80]}",
+                })
+
         # 2. Generate brief
         brief = await generate_brief(
             user_message=request.user_message,
@@ -291,11 +589,16 @@ class OrchestratorEngine:
         )
 
         # 3. Ask user to confirm brief
-        await emit(request.thread_id, {
-            "type": "await_input", "phase": "brief",
-            "data": brief.model_dump(),
-        })
-        brief_response = await interaction_registry.wait_for_response(request.thread_id)
+        brief_response = await self._await_user_input(
+            thread_id=request.thread_id,
+            phase="brief",
+            data={
+                "type": "brief",
+                "brief": brief.model_dump(),
+                "asset_summary": _build_asset_summary(asset_map),
+            },
+            timeout_message="等待 Brief 确认超时（10分钟），任务已取消",
+        )
         # User may have modified the brief
         if isinstance(brief_response, dict) and brief_response.get("brief"):
             brief = CreationBrief.model_validate(brief_response["brief"])
@@ -309,11 +612,15 @@ class OrchestratorEngine:
         )
 
         # 5. Ask user to confirm blueprint
-        await emit(request.thread_id, {
-            "type": "await_input", "phase": "blueprint",
-            "data": blueprint.model_dump(),
-        })
-        blueprint_response = await interaction_registry.wait_for_response(request.thread_id)
+        blueprint_response = await self._await_user_input(
+            thread_id=request.thread_id,
+            phase="blueprint",
+            data={
+                "type": "blueprint",
+                "blueprint": blueprint.model_dump(),
+            },
+            timeout_message="等待 Blueprint 确认超时（10分钟），任务已取消",
+        )
         if isinstance(blueprint_response, dict) and blueprint_response.get("blueprint"):
             blueprint = CreationBlueprint.model_validate(blueprint_response["blueprint"])
 
@@ -324,6 +631,10 @@ class OrchestratorEngine:
             asset_map=asset_map,
             thread_id=request.thread_id,
             page_id=request.page_id,
+            user_message=request.user_message,
+            system_prompt=request.system_prompt,
+            template_prompt=request.template_prompt,
+            intent_route=request.intent_route,
         )
 
         # 7. Save draft
@@ -335,50 +646,89 @@ class OrchestratorEngine:
             blueprint_ref=blueprint.title,
         )
 
-        # 8. Run consistency checks
-        consistency_issues = run_consistency_checks(section_drafts, blueprint)
-
-        # 8b. Evaluate quality
-        review_report = await evaluate_quality(
-            drafts=section_drafts,
+        review_report, section_drafts = await self._build_review_report(
+            section_drafts=section_drafts,
             blueprint=blueprint,
             brief=brief,
             asset_map=asset_map,
             thread_id=request.thread_id,
         )
 
-        # 8c. Auto-fix format issues
-        from app.workers.fixer import apply_auto_fixes
-        section_levels = {s.id: s.level for s in blueprint.sections}
-        auto_fixable = [i for i in review_report.issues if i.auto_fixable]
-        if auto_fixable:
-            section_drafts, auto_count = apply_auto_fixes(section_drafts, review_report.issues, section_levels)
-            review_report.auto_fixed_count = auto_count
+        while review_report.user_decision_needed:
+            review_response = await self._await_user_input(
+                thread_id=request.thread_id,
+                phase="review",
+                data={
+                    "type": "review",
+                    "report": review_report.model_dump(),
+                },
+                timeout_message="等待评审确认超时（10分钟），当前内容仍未达标",
+                raise_on_timeout=False,
+            )
 
-        # 8d. If there are user-decision issues, show Review Card
-        user_issues = [i for i in review_report.issues if not i.auto_fixable and not i.fixed]
-        if user_issues:
-            await emit(request.thread_id, {
-                "type": "await_input",
-                "phase": "review",
-                "data": review_report.model_dump(),
-            })
-            review_response = await interaction_registry.wait_for_response(request.thread_id)
+            if not isinstance(review_response, dict):
+                if _has_blocking_review_issues(review_report):
+                    raise RuntimeError("评审超时，仍存在未解决的阻塞问题，无法完成")
+                break
 
-            if isinstance(review_response, dict):
-                selected_ids = review_response.get("selected_issue_ids", [])
-                if selected_ids:
-                    section_drafts = await fix_selected_issues(
-                        drafts=section_drafts,
-                        issues=review_report.issues,
-                        selected_issue_ids=selected_ids,
-                        blueprint=blueprint,
-                        thread_id=request.thread_id,
+            skip_requested = bool(review_response.get("skip"))
+            selected_ids = [
+                issue_id for issue_id in review_response.get("selected_issue_ids", [])
+                if isinstance(issue_id, str)
+            ]
+            feedback = review_response.get("feedback")
+
+            if skip_requested:
+                if _has_blocking_review_issues(review_report, allow_visual_skip=True):
+                    await emit(
+                        request.thread_id,
+                        {
+                            "type": "blocked",
+                            "message": "仍存在必须修复的结构、长度或素材问题，无法直接跳过完成",
+                        },
                     )
+                    continue
+                break
 
-        # 9. Merge and finalize
+            if not selected_ids:
+                await emit(
+                    request.thread_id,
+                    {
+                        "type": "blocked",
+                        "message": "请选择要修复的问题；只有视觉问题才允许跳过完成",
+                    },
+                )
+                continue
+
+            section_drafts = await fix_selected_issues(
+                drafts=section_drafts,
+                issues=review_report.issues,
+                selected_issue_ids=selected_ids,
+                blueprint=blueprint,
+                thread_id=request.thread_id,
+                feedback=feedback if isinstance(feedback, str) else None,
+            )
+            await self._emit_draft_preview(
+                thread_id=request.thread_id,
+                blueprint=blueprint,
+                section_drafts=section_drafts,
+            )
+            review_report, section_drafts = await self._build_review_report(
+                section_drafts=section_drafts,
+                blueprint=blueprint,
+                brief=brief,
+                asset_map=asset_map,
+                thread_id=request.thread_id,
+            )
+
+        if _build_section_alignment_issues(section_drafts, blueprint):
+            raise RuntimeError("章节集合与 blueprint 不一致，无法 finalize")
+
+        # 9. Merge and finalize — prepend document title as H1
         merged_sections = [
-            {"title": s.title, "content": d.content}
+            {"title": blueprint.title, "level": 1, "content": ""},
+        ] + [
+            {"title": s.title, "level": s.level, "content": d.content}
             for s, d in zip(blueprint.sections, section_drafts)
         ]
 

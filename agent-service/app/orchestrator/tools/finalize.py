@@ -7,27 +7,53 @@ Handles the last step of the orchestrator pipeline:
 """
 from __future__ import annotations
 
+import re
+from typing import Union
+
 from app.agent.events import emit
 from app.utils.text import count_words
 
+ASSET_MARKER_RE = re.compile(r"\s*<!--asset:[a-zA-Z0-9_-]+-->\s*")
 
-def merge_sections(sections: list[str]) -> str:
+
+def merge_sections(sections: list[Union[str, dict]]) -> str:
     """Merge a list of content sections into a single markdown document.
 
-    Each non-empty section is separated from the next by a blank line.
-    Plain-text sections are included as-is.  If a section already starts with
-    a markdown heading it is preserved unchanged; otherwise no heading is
-    added automatically.
+    Supports two input formats:
+    - ``list[str]``: plain content strings (L1/L2 path).
+    - ``list[dict]``: dicts with ``title``, ``level`` (optional, default 2),
+      and ``content`` keys (L3 path). Headings are prepended automatically.
 
     Args:
-        sections: Ordered list of markdown/plaintext string sections.
+        sections: Ordered list of string or dict sections.
 
     Returns:
-        A single string with sections joined by double newlines.
+        A single markdown string with sections joined by double newlines.
         Returns an empty string if all sections are empty/whitespace.
     """
-    non_empty = [s.strip() for s in sections if s and s.strip()]
-    return "\n\n".join(non_empty)
+    parts: list[str] = []
+
+    for section in sections:
+        if isinstance(section, dict):
+            title = section.get("title", "")
+            content = section.get("content", "")
+            level = section.get("level", 2)
+            heading = f"{'#' * level} {title}" if title else ""
+            # Allow heading-only sections (e.g. document title as H1)
+            if not content or not content.strip():
+                if heading:
+                    parts.append(heading)
+                continue
+            if heading:
+                parts.append(f"{heading}\n\n{content.strip()}")
+            else:
+                parts.append(content.strip())
+        else:
+            if section and section.strip():
+                parts.append(section.strip())
+
+    merged = "\n\n".join(parts)
+    return ASSET_MARKER_RE.sub("\n", merged).strip()
 
 
 def compute_word_count(content: str) -> int:
@@ -48,7 +74,7 @@ def compute_word_count(content: str) -> int:
 async def finalize_and_emit(
     *,
     thread_id: str,
-    sections: list[str],
+    sections: list[Union[str, dict]],
     insert_mode: str = "create",
 ) -> str:
     """Merge sections, compute stats, and emit the final ``done`` SSE event.
@@ -56,6 +82,7 @@ async def finalize_and_emit(
     Args:
         thread_id: SSE queue key to emit events to.
         sections: Ordered list of content sections to merge.
+            Can be plain strings or dicts with title/level/content.
         insert_mode: Editor insert mode ("create", "replace", "append").
             Passed through to the ``done`` event so the frontend knows
             how to handle the content.

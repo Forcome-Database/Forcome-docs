@@ -15,7 +15,7 @@ export default function WikiRenderFormatPref() {
     workspace?.settings?.wiki?.renderFormat || "html",
   );
 
-  const handleChange = async (newValue: string) => {
+  const handleChange = async (newValue: "html" | "markdown") => {
     const oldValue = value;
     setValue(newValue);
     try {

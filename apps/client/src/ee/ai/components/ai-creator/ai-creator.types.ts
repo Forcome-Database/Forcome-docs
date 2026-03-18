@@ -1,4 +1,5 @@
 import type { AgentOutlineArtifactPlanItem } from "../../types/agent.types";
+import type { AgentAssetSummary } from "../../types/agent.types";
 
 export interface AiCreatorMessage {
   id: string;
@@ -14,6 +15,7 @@ export interface AiCreatorMessage {
   threadId?: string;                                       // session tracking
   // V2 data fields
   briefData?: Record<string, unknown>;                     // for brief role
+  briefAssetSummary?: AgentAssetSummary;
   blueprintData?: Record<string, unknown>;                 // for blueprint role
   reviewData?: Record<string, unknown>;                    // for review role
 }

@@ -1,3 +1,7 @@
+import type { CreationBlueprint } from "./blueprint.types";
+import type { CreationBrief } from "./brief.types";
+import type { ReviewReport } from "./review.types";
+
 export interface AgentStepInfo {
   step: string;
   description: string;
@@ -40,57 +44,29 @@ export interface AgentOutlineAwaitInputData {
   artifactPlan?: AgentOutlineArtifactPlanItem[];
 }
 
+export interface AgentAssetSummary {
+  images: number;
+  tables: number;
+  code: number;
+  text: number;
+  source_word_count: number;
+  source_section_counts: Record<string, number>;
+}
+
 export interface AgentBriefAwaitInputData {
   type: "brief";
-  audience: string;
-  goal: string;
-  target_length: number;
-  length_tolerance: number;
-  style: string;
-  tone: string;
-  structure_strategy: string;
-  image_strategy: string;
-  constraints: string[];
-  [key: string]: unknown;
+  brief: CreationBrief;
+  asset_summary?: AgentAssetSummary;
 }
 
 export interface AgentBlueprintAwaitInputData {
   type: "blueprint";
-  title: string;
-  sections: Array<{
-    id: string;
-    title: string;
-    level: number;
-    word_budget: number;
-    description: string;
-    assets: string[];
-    visuals: Array<{ type: string; description: string; source_asset_id?: string | null; position: string }>;
-    must_cover: string[];
-  }>;
-  total_word_budget: number;
-  style_guide: string;
-  visual_plan_summary: string;
-  [key: string]: unknown;
+  blueprint: CreationBlueprint;
 }
 
 export interface AgentReviewAwaitInputData {
   type: "review";
-  overall_score: number;
-  length_compliance: number;
-  asset_reuse_rate: number;
-  issues: Array<{
-    id: string;
-    section_id: string | null;
-    severity: string;
-    category: string;
-    description: string;
-    suggestion: string;
-    auto_fixable: boolean;
-    fixed: boolean;
-  }>;
-  auto_fixed_count: number;
-  user_decision_needed: string[];
-  [key: string]: unknown;
+  report: ReviewReport;
 }
 
 export type AgentAwaitInputData =
@@ -156,6 +132,12 @@ export type AgentSSEEvent =
       args?: Record<string, unknown>;
     }
   | {
+      type: 'fix_applied';
+      issue_id: string;
+      section_id?: string | null;
+      success: boolean;
+    }
+  | {
       type: 'error';
       message: string;
     }
@@ -170,7 +152,7 @@ export type AgentSSEEvent =
     }
   | {
       type: 'await_input';
-      phase: 'clarify' | 'propose' | 'outline' | string;
+      phase: 'clarify' | 'propose' | 'outline' | 'brief' | 'blueprint' | 'review' | string;
       data: AgentAwaitInputData | Record<string, unknown>;
     }
   | {

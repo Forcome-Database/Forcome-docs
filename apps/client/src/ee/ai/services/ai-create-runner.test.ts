@@ -143,3 +143,59 @@ test("normalizeAgentRunEvent preserves blocked payloads", () => {
     message: "fetch failed",
   });
 });
+
+test("normalizeAgentRunEvent preserves typed brief payloads", () => {
+  const event = normalizeAgentRunEvent({
+    type: "await_input",
+    phase: "brief",
+    data: {
+      type: "brief",
+      brief: {
+        audience: "engineers",
+        goal: "explain the system",
+        target_length: 1200,
+        length_tolerance: 0.1,
+        style: "technical",
+        tone: "professional",
+        structure_strategy: "ai_recommend",
+        image_strategy: "mixed",
+        constraints: [],
+      },
+      asset_summary: {
+        images: 1,
+        tables: 0,
+        code: 2,
+        text: 3,
+        source_word_count: 900,
+        source_section_counts: { h1: 1, h2: 3 },
+      },
+    },
+  });
+
+  assert.deepEqual(event, {
+    type: "await_input",
+    phase: "brief",
+    data: {
+      type: "brief",
+      brief: {
+        audience: "engineers",
+        goal: "explain the system",
+        target_length: 1200,
+        length_tolerance: 0.1,
+        style: "technical",
+        tone: "professional",
+        structure_strategy: "ai_recommend",
+        image_strategy: "mixed",
+        constraints: [],
+      },
+      asset_summary: {
+        images: 1,
+        tables: 0,
+        code: 2,
+        text: 3,
+        source_word_count: 900,
+        source_section_counts: { h1: 1, h2: 3 },
+      },
+    },
+  });
+});

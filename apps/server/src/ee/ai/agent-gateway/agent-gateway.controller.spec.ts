@@ -3,7 +3,7 @@ import * as http from 'http';
 import { AgentGatewayController } from './agent-gateway.controller';
 
 describe('AgentGatewayController', () => {
-  it('forwards server-derived evidence items to the agent runtime', async () => {
+  it('forwards multipart fields and files to the agent runtime', async () => {
     const agentGatewayService = {
       stopAgent: jest.fn(),
       getTools: jest.fn(),
@@ -24,10 +24,16 @@ describe('AgentGatewayController', () => {
     );
 
     const fieldParts = [
-      { type: 'field', fieldname: 'prompt', value: 'Use https://example.com/spec to rewrite this page.' },
+      { type: 'field', fieldname: 'prompt', value: 'Use the uploaded file to rewrite this page.' },
       { type: 'field', fieldname: 'pageId', value: 'page-123' },
       { type: 'field', fieldname: 'pageTitle', value: 'Draft page' },
       { type: 'field', fieldname: 'pageContent', value: 'Existing content' },
+      {
+        type: 'file',
+        filename: 'notes.md',
+        mimetype: 'text/markdown',
+        toBuffer: jest.fn(async () => Buffer.from('# Notes')),
+      },
     ];
 
     const req = {
@@ -39,12 +45,14 @@ describe('AgentGatewayController', () => {
     };
 
     const writeHead = jest.fn();
+    const setHeader = jest.fn();
     const write = jest.fn();
     const end = jest.fn();
     const res = {
       raw: {
         headersSent: false,
         writeHead,
+        setHeader,
         write,
         end,
       },
@@ -75,26 +83,24 @@ describe('AgentGatewayController', () => {
     });
 
     await controller.runAgent(
-      { id: 'user-1' },
-      { id: 'workspace-1' },
       req as any,
       res as any,
+      { id: 'user-1' },
+      { id: 'workspace-1', settings: { ai: {} } },
     );
 
     const agentBody = JSON.parse(capturedBody);
 
     expect(agentBody).toMatchObject({
-      user_message: 'Use https://example.com/spec to rewrite this page.',
-      evidence_items: [
+      user_message: 'Use the uploaded file to rewrite this page.',
+      page_id: 'page-123',
+      page_title: 'Draft page',
+      page_content: 'Existing content',
+      files: [
         {
-          type: 'reference_url',
-          required: true,
-          url: 'https://example.com/spec',
-        },
-        {
-          type: 'page_context',
-          required: true,
-          pageId: 'page-123',
+          filename: 'notes.md',
+          mimetype: 'text/markdown',
+          content_b64: Buffer.from('# Notes').toString('base64'),
         },
       ],
     });

@@ -1,7 +1,10 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models.blueprint import CreationBlueprint
+from app.models.brief import CreationBrief
+from app.models.review import ReviewReport
 from app.schemas.document_contracts import DocumentArtifact
 
 
@@ -31,6 +34,32 @@ class OutlineAwaitInputData(BaseModel):
     outline: str
     artifact_plan: list[OutlineArtifactPlanItem] = Field(default_factory=list)
 
+
+class BriefAssetSummary(BaseModel):
+    images: int = 0
+    tables: int = 0
+    code: int = 0
+    text: int = 0
+    source_word_count: int = 0
+    source_section_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class BriefAwaitInputData(BaseModel):
+    type: Literal["brief"] = "brief"
+    brief: CreationBrief
+    asset_summary: BriefAssetSummary = Field(default_factory=BriefAssetSummary)
+
+
+class BlueprintAwaitInputData(BaseModel):
+    type: Literal["blueprint"] = "blueprint"
+    blueprint: CreationBlueprint
+
+
+class ReviewAwaitInputData(BaseModel):
+    type: Literal["review"] = "review"
+    report: ReviewReport
+
+
 class StepStartEvent(BaseModel):
     type: Literal["step_start"] = "step_start"
     step: str
@@ -44,6 +73,11 @@ class StepDoneEvent(BaseModel):
 class ContentEvent(BaseModel):
     type: Literal["content"] = "content"
     chunk: str
+
+
+class ContentClearEvent(BaseModel):
+    type: Literal["content_clear"] = "content_clear"
+
 
 class ImageEvent(BaseModel):
     type: Literal["image"] = "image"
@@ -70,16 +104,45 @@ class DoneEvent(BaseModel):
 
 class AwaitInputEvent(BaseModel):
     type: Literal["await_input"] = "await_input"
-    phase: Literal["clarify", "propose", "outline"]
-    data: ClarifyAwaitInputData | ProposeAwaitInputData | OutlineAwaitInputData
+    phase: Literal["clarify", "propose", "outline", "brief", "blueprint", "review"]
+    data: (
+        ClarifyAwaitInputData
+        | ProposeAwaitInputData
+        | OutlineAwaitInputData
+        | BriefAwaitInputData
+        | BlueprintAwaitInputData
+        | ReviewAwaitInputData
+        | dict[str, Any]
+    )
 
     @model_validator(mode="after")
     def validate_phase_data_match(self):
-        if self.phase != self.data.type:
-            raise ValueError(
-                f"await_input phase '{self.phase}' does not match data.type '{self.data.type}'"
-            )
+        if isinstance(self.data, BaseModel):
+            if self.phase != self.data.type:
+                raise ValueError(
+                    f"await_input phase '{self.phase}' does not match data.type '{self.data.type}'"
+                )
         return self
+
+class SectionProgressEvent(BaseModel):
+    type: Literal["section_progress"] = "section_progress"
+    current: int
+    total: int
+    section_title: str = ""
+
+
+class ComplexityAnalyzedEvent(BaseModel):
+    type: Literal["complexity_analyzed"] = "complexity_analyzed"
+    level: int
+    reasoning: str = ""
+
+
+class FixAppliedEvent(BaseModel):
+    type: Literal["fix_applied"] = "fix_applied"
+    issue_id: str
+    section_id: str | None = None
+    success: bool = True
+
 
 class SessionEvent(BaseModel):
     type: Literal["session"] = "session"
@@ -89,4 +152,4 @@ class SessionEvent(BaseModel):
 class CancelledEvent(BaseModel):
     type: Literal["cancelled"] = "cancelled"
 
-SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ImageEvent | ToolCallEvent | ErrorEvent | BlockedEvent | DoneEvent | AwaitInputEvent | SessionEvent | CancelledEvent
+SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ContentClearEvent | ImageEvent | ToolCallEvent | ErrorEvent | BlockedEvent | DoneEvent | AwaitInputEvent | SectionProgressEvent | ComplexityAnalyzedEvent | FixAppliedEvent | SessionEvent | CancelledEvent

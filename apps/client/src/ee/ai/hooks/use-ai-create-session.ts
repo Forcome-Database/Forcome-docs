@@ -502,6 +502,7 @@ export function useAiCreateSession({
       setSteps([]);
       controllerRef.current = runAgentAiCreate(
         {
+          files: params.files,
           prompt: fullPrompt,
           pageId,
           templateId: params.template || undefined,

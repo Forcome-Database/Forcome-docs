@@ -22,6 +22,10 @@ async def write_single_section(
     section_index: int = 0,
     thread_id: str = "",
     page_id: str | None = None,
+    user_message: str = "",
+    system_prompt: str = "",
+    template_prompt: str = "",
+    intent_route: str = "document_create",
 ) -> SectionDraft:
     """Write a single section with full context."""
     drafts = existing_drafts or []
@@ -52,6 +56,11 @@ async def write_single_section(
         section_index=section_index,
         total_sections=len(blueprint.sections),
         thread_id=thread_id,
+        user_message=user_message,
+        system_prompt=system_prompt,
+        template_prompt=template_prompt,
+        intent_route=intent_route,
+        generated_image_urls=generated_urls,
     )
 
     draft.visuals_generated = generated_urls
@@ -66,6 +75,10 @@ async def write_all_sections(
     thread_id: str = "",
     page_id: str | None = None,
     parallel: bool = False,
+    user_message: str = "",
+    system_prompt: str = "",
+    template_prompt: str = "",
+    intent_route: str = "document_create",
 ) -> list[SectionDraft]:
     """Write all sections sequentially (default) or with limited parallelism.
 
@@ -73,6 +86,13 @@ async def write_all_sections(
     tail for the sliding window context. Parallel writing groups non-adjacent sections.
     """
     drafts: list[SectionDraft] = []
+
+    ctx_kwargs = dict(
+        user_message=user_message,
+        system_prompt=system_prompt,
+        template_prompt=template_prompt,
+        intent_route=intent_route,
+    )
 
     if not parallel:
         # Sequential: each section uses previous section's tail
@@ -86,6 +106,7 @@ async def write_all_sections(
                 section_index=i,
                 thread_id=thread_id,
                 page_id=page_id,
+                **ctx_kwargs,
             )
             drafts.append(draft)
     else:
@@ -97,6 +118,7 @@ async def write_all_sections(
                 section=s, blueprint=blueprint, brief=brief,
                 asset_map=asset_map, existing_drafts=drafts,
                 section_index=i, thread_id=thread_id, page_id=page_id,
+                **ctx_kwargs,
             )
             for i, s in even_sections
         ]
@@ -114,6 +136,7 @@ async def write_all_sections(
                 section=s, blueprint=blueprint, brief=brief,
                 asset_map=asset_map, existing_drafts=drafts,
                 section_index=i, thread_id=thread_id, page_id=page_id,
+                **ctx_kwargs,
             )
             for i, s in odd_sections
         ]

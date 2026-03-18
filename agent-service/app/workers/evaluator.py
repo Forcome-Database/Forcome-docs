@@ -91,6 +91,64 @@ def check_asset_coverage(
     return issues
 
 
+def check_visual_coverage(
+    drafts: list[SectionDraft],
+    blueprint: CreationBlueprint,
+) -> list[ReviewIssue]:
+    """Check whether planned visuals were actually realized in the section output."""
+    issues: list[ReviewIssue] = []
+    for draft, section in zip(drafts, blueprint.sections):
+        if not section.visuals:
+            continue
+
+        has_image_markdown = bool(re.search(r'!\[[^\]]*\]\(([^)]+)\)', draft.content))
+        has_mermaid = "```mermaid" in draft.content
+        has_table = "|" in draft.content and "\n|" in draft.content
+
+        for visual in section.visuals:
+            if visual.type == "ai_image" and not draft.visuals_generated and not has_image_markdown:
+                issues.append(ReviewIssue(
+                    id=_make_issue_id(),
+                    section_id=draft.section_id,
+                    severity="error",
+                    category="visual",
+                    description=f"章节'{section.title}'计划生成图片，但正文中未落图",
+                    suggestion=f"为该章节生成并插入图片：{visual.description}",
+                    auto_fixable=False,
+                ))
+            elif visual.type == "reuse_image" and not has_image_markdown:
+                issues.append(ReviewIssue(
+                    id=_make_issue_id(),
+                    section_id=draft.section_id,
+                    severity="warning",
+                    category="visual",
+                    description=f"章节'{section.title}'计划复用图片，但正文中未插入图片",
+                    suggestion=f"插入计划图片：{visual.description}",
+                    auto_fixable=False,
+                ))
+            elif visual.type == "mermaid" and not has_mermaid:
+                issues.append(ReviewIssue(
+                    id=_make_issue_id(),
+                    section_id=draft.section_id,
+                    severity="warning",
+                    category="visual",
+                    description=f"章节'{section.title}'计划包含 Mermaid 图，但正文中未生成",
+                    suggestion=f"补充 Mermaid 图：{visual.description}",
+                    auto_fixable=False,
+                ))
+            elif visual.type == "table" and not has_table:
+                issues.append(ReviewIssue(
+                    id=_make_issue_id(),
+                    section_id=draft.section_id,
+                    severity="warning",
+                    category="visual",
+                    description=f"章节'{section.title}'计划包含表格，但正文中未生成",
+                    suggestion=f"补充表格：{visual.description}",
+                    auto_fixable=False,
+                ))
+    return issues
+
+
 def check_heading_levels(drafts: list[SectionDraft], blueprint: CreationBlueprint) -> list[ReviewIssue]:
     """Check heading level consistency within sections."""
     issues = []
@@ -203,6 +261,7 @@ def evaluate_deterministic(
     issues = []
     issues.extend(check_word_budgets(drafts, blueprint, brief.length_tolerance))
     issues.extend(check_asset_coverage(drafts, blueprint, asset_map))
+    issues.extend(check_visual_coverage(drafts, blueprint))
     issues.extend(check_heading_levels(drafts, blueprint))
     issues.extend(check_mermaid_syntax(drafts))
     issues.extend(check_image_urls(drafts))
@@ -255,13 +314,15 @@ async def evaluate_with_llm(
 Blueprint: {blueprint.title}
 Target audience: {brief.audience}
 Style: {brief.style}
-Target length: {brief.target_length} words
+Target length: {brief.target_length} 字/words (each Chinese character = 1, each English word = 1)
 
 Document:
 {draft_text[:8000]}
 
 Output JSON only:
-{{"overall_score": 0-100, "issues": [{{"section_title": "...", "severity": "warning|error|info", "category": "content|style|structure", "description": "...", "suggestion": "..."}}]}}"""
+{{"overall_score": 0-100, "issues": [{{"section_title": "exact section title from the outline above", "severity": "warning|error|info", "category": "content|style|structure", "description": "...", "suggestion": "..."}}]}}
+
+IMPORTANT: For each issue, set "section_title" to the EXACT title of the relevant section from the outline. If an issue is global (not specific to one section), set "section_title" to null."""
 
     await emit(thread_id, {"type": "step_start", "step": "llm_evaluation", "description": "AI 质量评估"})
 
@@ -280,10 +341,20 @@ Output JSON only:
 
     overall_score = parsed.get("overall_score", 70)
     llm_issues = []
+
+    # Build title → section_id lookup for mapping LLM results
+    title_to_id: dict[str, str] = {}
+    for section in blueprint.sections:
+        title_to_id[section.title.lower().strip()] = section.id
+
     for issue_data in parsed.get("issues", []):
+        # Map section_title to section_id
+        section_title = issue_data.get("section_title") or ""
+        section_id = title_to_id.get(section_title.lower().strip()) if section_title else None
+
         llm_issues.append(ReviewIssue(
             id=_make_issue_id(),
-            section_id=None,  # LLM doesn't know section IDs
+            section_id=section_id,
             severity=issue_data.get("severity", "warning"),
             category=issue_data.get("category", "content"),
             description=issue_data.get("description", ""),

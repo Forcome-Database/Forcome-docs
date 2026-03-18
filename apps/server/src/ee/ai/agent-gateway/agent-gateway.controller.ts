@@ -17,6 +17,32 @@ import { AgentStopDto } from './dto/agent-stop.dto';
 import { EnvironmentService } from '../../../integrations/environment/environment.service';
 import { AiTemplateService } from '../services/ai-template.service';
 
+type MultipartLikePart =
+  | {
+      type: 'file';
+      mimetype: string;
+      filename: string;
+      toBuffer: () => Promise<Buffer>;
+    }
+  | {
+      type: 'field';
+      fieldname: string;
+      value: unknown;
+    };
+
+type AgentRunFields = {
+  prompt?: string;
+  pageId?: string;
+  templateId?: string;
+  insertMode?: string;
+  pageTitle?: string;
+  pageContent?: string;
+  selectedText?: string;
+  intentRoute?: string;
+  threadId?: string;
+  conversationHistory?: unknown;
+};
+
 function writeSseHeaders(res: FastifyReply, taskId?: string) {
   if (res.raw.headersSent) {
     return;
@@ -41,6 +67,56 @@ export class AgentGatewayController {
     private aiTemplateService: AiTemplateService,
   ) {}
 
+  private async readRunRequest(req: FastifyRequest): Promise<{
+    fields: AgentRunFields;
+    files: Array<{ filename: string; mimetype: string; content_b64: string }>;
+  }> {
+    const multipartReq = req as FastifyRequest & {
+      parts?: () => AsyncIterable<MultipartLikePart>;
+    };
+
+    if (typeof multipartReq.parts === 'function') {
+      const fields: Record<string, unknown> = {};
+      const files: Array<{ filename: string; mimetype: string; content_b64: string }> = [];
+
+      for await (const part of multipartReq.parts()) {
+        if (part.type === 'file') {
+          const buffer = await part.toBuffer();
+          files.push({
+            filename: part.filename,
+            mimetype: part.mimetype,
+            content_b64: buffer.toString('base64'),
+          });
+          continue;
+        }
+
+        fields[part.fieldname] = part.value;
+      }
+
+      return {
+        fields: {
+          prompt: typeof fields.prompt === 'string' ? fields.prompt : undefined,
+          pageId: typeof fields.pageId === 'string' ? fields.pageId : undefined,
+          templateId: typeof fields.templateId === 'string' ? fields.templateId : undefined,
+          insertMode: typeof fields.insertMode === 'string' ? fields.insertMode : undefined,
+          pageTitle: typeof fields.pageTitle === 'string' ? fields.pageTitle : undefined,
+          pageContent: typeof fields.pageContent === 'string' ? fields.pageContent : undefined,
+          selectedText: typeof fields.selectedText === 'string' ? fields.selectedText : undefined,
+          intentRoute: typeof fields.intentRoute === 'string' ? fields.intentRoute : undefined,
+          threadId: typeof fields.threadId === 'string' ? fields.threadId : undefined,
+          conversationHistory:
+            typeof fields.conversationHistory === 'string'
+              ? JSON.parse(fields.conversationHistory)
+              : fields.conversationHistory,
+        },
+        files,
+      };
+    }
+
+    const body = (req.body as AgentRunFields | undefined) ?? {};
+    return { fields: body, files: [] };
+  }
+
   @Post('run')
   async runAgent(
     @Req() req: FastifyRequest,
@@ -48,7 +124,7 @@ export class AgentGatewayController {
     @AuthUser() user: any,
     @AuthWorkspace() workspace: any,
   ) {
-    const body = req.body as any;
+    const { fields, files } = await this.readRunRequest(req);
 
     const agentUrl = this.environmentService.getAgentServiceUrl();
     if (!agentUrl) {
@@ -58,9 +134,9 @@ export class AgentGatewayController {
 
     // Resolve template prompt if provided
     let templatePrompt: string | undefined;
-    if (body.templateId) {
+    if (fields.templateId) {
       const prompt = await this.aiTemplateService.getTemplatePrompt(
-        body.templateId,
+        fields.templateId,
         workspace.id,
         user.id,
       );
@@ -72,20 +148,22 @@ export class AgentGatewayController {
     const systemPrompt: string | undefined = wsSettings?.systemPrompt || undefined;
 
     const payload = JSON.stringify({
-      user_message: body.prompt || '',
-      thread_id: body.threadId || undefined,
+      user_message: fields.prompt || '',
+      thread_id: fields.threadId || undefined,
       workspace_id: workspace.id,
-      page_id: body.pageId || undefined,
-      page_title: body.pageTitle || undefined,
-      page_content: body.pageContent || undefined,
-      selected_text: body.selectedText || undefined,
-      intent_route: body.intentRoute || 'document_create',
-      insert_mode: body.insertMode || 'create',
-      files: [],
-      template_id: body.templateId || undefined,
+      page_id: fields.pageId || undefined,
+      page_title: fields.pageTitle || undefined,
+      page_content: fields.pageContent || undefined,
+      selected_text: fields.selectedText || undefined,
+      intent_route: fields.intentRoute || 'document_create',
+      insert_mode: fields.insertMode || 'create',
+      files,
+      template_id: fields.templateId || undefined,
       system_prompt: systemPrompt,
       template_prompt: templatePrompt,
-      conversation_history: body.conversationHistory || [],
+      conversation_history: Array.isArray(fields.conversationHistory)
+        ? fields.conversationHistory
+        : [],
     });
 
     const url = new URL('/agent/run', agentUrl);
@@ -159,21 +237,30 @@ export class AgentGatewayController {
       },
     };
 
+    writeSseHeaders(res);
+
     const proxyReq = http.request(options, (proxyRes) => {
-      let data = '';
-      proxyRes.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      const taskIdHeader = Array.isArray(proxyRes.headers['x-task-id'])
+        ? proxyRes.headers['x-task-id'][0]
+        : proxyRes.headers['x-task-id'];
+      if (taskIdHeader && !res.raw.headersSent) {
+        res.raw.setHeader('X-Task-Id', taskIdHeader);
+      }
+      proxyRes.on('data', (chunk: Buffer) => {
+        res.raw.write(chunk);
+      });
       proxyRes.on('end', () => {
-        try {
-          res.send(JSON.parse(data));
-        } catch {
-          res.send({ status: 'ok', raw: data });
-        }
+        res.raw.end();
       });
     });
 
     proxyReq.on('error', (err) => {
       this.logger.error(`Agent resume proxy error: ${err.message}`);
-      res.status(502).send({ error: 'Agent service unavailable' });
+      if (!res.raw.headersSent) {
+        res.status(502).send({ error: 'Agent service unavailable' });
+      } else {
+        res.raw.end();
+      }
     });
 
     proxyReq.write(payload);

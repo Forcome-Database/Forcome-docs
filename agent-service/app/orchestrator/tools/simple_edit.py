@@ -27,6 +27,8 @@ class SimpleEditRequest(BaseModel):
     system_prompt: str = ""
     template_prompt: str = ""
     conversation_history: list[dict] = []
+    intent_route: str = "document_create"
+    asset_context: str = ""
 
 
 def build_simple_edit_prompt(request: SimpleEditRequest) -> str:
@@ -60,8 +62,33 @@ def build_simple_edit_prompt(request: SimpleEditRequest) -> str:
             f"[Document Content]\n{request.page_content.strip()}"
         )
 
+    # Source document content (from asset_map, for L2 path)
+    if request.asset_context:
+        parts.append(f"[Source Document Content]\n{request.asset_context.strip()}")
+
+    # Source preservation mode for document_transform
+    if request.intent_route == "document_transform":
+        parts.append(
+            "[IMPORTANT: Source Preservation Mode]\n"
+            "This is a document transform task. The source material is your PRIMARY reference.\n"
+            "- Preserve ALL factual content, technical details, commands, and links from the source\n"
+            "- Only restructure/reformat, do NOT rewrite or omit content\n"
+            "- Output length should be at least 70% of the source content"
+        )
+
     # The actual user instruction
     parts.append(f"[User Request]\n{request.user_message.strip()}")
+
+    # Writing style rules
+    parts.append(
+        "[Writing Style]\n"
+        "- Default to Chinese output unless the user explicitly requests another language.\n"
+        "- NEVER use: '首先/其次/最后', '综上所述', '值得注意的是', '总而言之', '让我们'.\n"
+        "- Vary paragraph length and sentence patterns; avoid formulaic structures.\n"
+        "- Replace abstract descriptions with specific data, examples, and operational details.\n"
+        "- Write like an experienced professional — NOT like an AI listing bullet points.\n"
+        "- Avoid buzzwords: '赋能', '抓手', '落地', '闭环', '链路', '沉淀', '对齐'."
+    )
 
     # Final instruction
     parts.append(
