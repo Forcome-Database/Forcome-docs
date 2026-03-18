@@ -1,6 +1,9 @@
 import { v7 as uuid7 } from "uuid";
 import type { AgentAwaitInputData } from "../../types/agent.types";
-import type { AiCreateAwaitInputPhase } from "./ai-create-session.types";
+import type {
+  AiCreateAwaitInputPhase,
+  AiCreateAwaitInputState,
+} from "./ai-create-session.types";
 import type { AiCreatorMessage } from "./ai-creator.types";
 import type { SelectionRange } from "./ai-creator-atoms";
 
@@ -52,6 +55,31 @@ export function createAssistantPlaceholderMessage(): AiCreatorMessage {
     content: "",
     timestamp: Date.now(),
   };
+}
+
+export function createHydratedMessages({
+  draftMarkdown,
+  awaitInput,
+}: {
+  draftMarkdown: string;
+  awaitInput: AiCreateAwaitInputState | null;
+}): AiCreatorMessage[] {
+  const messages: AiCreatorMessage[] = [];
+
+  if (draftMarkdown.trim()) {
+    messages.push({
+      id: uuid7(),
+      role: "assistant",
+      content: draftMarkdown,
+      timestamp: Date.now(),
+    });
+  }
+
+  if (awaitInput) {
+    messages.push(createInteractiveMessage(awaitInput.phase, awaitInput.data));
+  }
+
+  return messages;
 }
 
 interface CreatePendingRunMessagesParams {

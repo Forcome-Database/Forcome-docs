@@ -89,6 +89,19 @@ export function aiCreateSessionReducer(
         block: action.block,
         error: null,
       };
+    case "hydrate":
+      return {
+        ...state,
+        status: action.status,
+        mode: "agent",
+        threadId: action.threadId,
+        taskId: action.taskId,
+        accumulatedContent: action.draftMarkdown,
+        mdBuffer: action.draftMarkdown,
+        awaitInput: action.awaitInput,
+        block: action.block,
+        error: null,
+      };
     case "done":
       return {
         ...state,

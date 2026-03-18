@@ -1,5 +1,9 @@
 import type { SelectionSnapshot } from "./ai-creator.types";
-import type { AgentAwaitInputData, AgentBlockState } from "../../types/agent.types";
+import type {
+  AgentAwaitInputData,
+  AgentBlockState,
+  AgentSessionRunState,
+} from "../../types/agent.types";
 
 export type AiCreateSessionMode = "standard" | "agent";
 export type AiCreateSessionStatus =
@@ -50,6 +54,15 @@ export type AiCreateSessionAction =
   | { type: "buffer_updated"; buffer: string }
   | { type: "await_input"; phase: AiCreateAwaitInputPhase; data: AgentAwaitInputData }
   | { type: "blocked"; block: AgentBlockState }
+  | {
+      type: "hydrate";
+      threadId: string;
+      taskId: string | null;
+      status: AgentSessionRunState;
+      awaitInput: AiCreateAwaitInputState | null;
+      block: AgentBlockState | null;
+      draftMarkdown: string;
+    }
   | { type: "done" }
   | { type: "error"; message: string }
   | { type: "cancelled" };

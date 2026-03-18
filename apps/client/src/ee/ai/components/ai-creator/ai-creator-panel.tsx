@@ -59,10 +59,6 @@ export default function AiCreatorPanel() {
     unlockEditor,
   });
 
-  useEffect(() => {
-    session.resetConversation();
-  }, [pageId, session.resetConversation]);
-
   // Listen to editor selection updates (as context only, no mode switching)
   useEffect(() => {
     if (!editor) return;

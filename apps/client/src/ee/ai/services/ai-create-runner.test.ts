@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getAgentSession } from "./agent-service";
 import {
   normalizeAgentRunEvent,
   toAwaitInputPhase,
@@ -212,5 +213,121 @@ test("normalizeAgentRunEvent preserves typed brief payloads", () => {
         source_section_counts: { h1: 1, h2: 3 },
       },
     },
+  });
+});
+
+test("getAgentSession normalizes awaiting_input snapshot state", async (t) => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = "";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input);
+    return {
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          session_id: "session-42",
+          thread_id: "thread-42",
+          run_state: "awaiting_input",
+          pending_decision: {
+            phase: "review",
+            data: {
+              type: "review",
+              report: {
+                overall_score: 84,
+                length_compliance: 0.97,
+                asset_reuse_rate: 0.52,
+                issues: [],
+                auto_fixed_count: 1,
+                user_decision_needed: [],
+              },
+            },
+          },
+          blocked: null,
+          draft_markdown: "# Draft",
+        },
+      }),
+    } as Response;
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const snapshot = await getAgentSession("session-42");
+
+  assert.equal(requestedUrl, "/api/agent/session/session-42");
+  assert.deepEqual(snapshot, {
+    sessionId: "session-42",
+    threadId: "thread-42",
+    status: "awaiting_input",
+    awaitInput: {
+      phase: "review",
+      data: {
+        type: "review",
+        report: {
+          overall_score: 84,
+          length_compliance: 0.97,
+          asset_reuse_rate: 0.52,
+          issues: [],
+          auto_fixed_count: 1,
+          user_decision_needed: [],
+        },
+      },
+    },
+    block: null,
+    draftMarkdown: "# Draft",
+  });
+});
+
+test("getAgentSession preserves blocked snapshots and drops unsupported pending phases", async (t) => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async () =>
+    ({
+      ok: true,
+      json: async () => ({
+        status: "ok",
+        session: {
+          session_id: "session-77",
+          thread_id: "thread-77",
+          run_state: "blocked",
+          pending_decision: {
+            phase: "outline",
+            data: {
+              type: "outline",
+              outline: "legacy outline",
+            },
+          },
+          blocked: {
+            kind: "evidence",
+            message: "Source fetch failed",
+            required_action: "Retry the fetch",
+            allowed_resolutions: ["retry", "remove_source"],
+          },
+          draft_markdown: "## Partial",
+        },
+      }),
+    }) as Response) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const snapshot = await getAgentSession("session-77");
+
+  assert.deepEqual(snapshot, {
+    sessionId: "session-77",
+    threadId: "thread-77",
+    status: "blocked",
+    awaitInput: null,
+    block: {
+      kind: "evidence",
+      message: "Source fetch failed",
+      requiredAction: "Retry the fetch",
+      allowedResolutions: ["retry", "remove_source"],
+    },
+    draftMarkdown: "## Partial",
   });
 });

@@ -170,3 +170,82 @@ test("blocked keeps the session recoverable without turning it into an error", (
     allowedResolutions: ["retry", "remove_source"],
   });
 });
+
+test("hydrate restores awaiting_input state and current draft markdown", () => {
+  const next = aiCreateSessionReducer(
+    createInitialAiCreateSessionState(),
+    {
+      type: "hydrate",
+      threadId: "session-42",
+      taskId: null,
+      status: "awaiting_input",
+      draftMarkdown: "# Draft\n\nBody",
+      awaitInput: {
+        phase: "blueprint" as const,
+        data: {
+          type: "blueprint" as const,
+          blueprint: {
+            title: "Recovered blueprint",
+            sections: [],
+            total_word_budget: 1800,
+            style_guide: "Direct",
+            visual_plan_summary: "No visuals",
+          },
+        },
+      },
+      block: null,
+    } as any,
+  );
+
+  assert.equal(next.status, "awaiting_input");
+  assert.equal(next.threadId, "session-42");
+  assert.equal(next.error, null);
+  assert.equal(next.accumulatedContent, "# Draft\n\nBody");
+  assert.equal(next.mdBuffer, "# Draft\n\nBody");
+  assert.deepEqual(next.awaitInput, {
+    phase: "blueprint",
+    data: {
+      type: "blueprint" as const,
+      blueprint: {
+        title: "Recovered blueprint",
+        sections: [],
+        total_word_budget: 1800,
+        style_guide: "Direct",
+        visual_plan_summary: "No visuals",
+      },
+    },
+  });
+});
+
+test("hydrate restores blocked state without routing through generic error", () => {
+  const next = aiCreateSessionReducer(
+    createInitialAiCreateSessionState(),
+    {
+      type: "hydrate",
+      threadId: "session-99",
+      taskId: "task-99",
+      status: "blocked",
+      draftMarkdown: "## Partial draft",
+      awaitInput: null,
+      block: {
+        kind: "evidence",
+        message: "Could not read source page",
+        requiredAction: "Retry the source read",
+        allowedResolutions: ["retry", "remove_source"],
+      },
+    } as any,
+  );
+
+  assert.equal(next.status, "blocked");
+  assert.equal(next.threadId, "session-99");
+  assert.equal(next.taskId, "task-99");
+  assert.equal(next.error, null);
+  assert.equal(next.awaitInput, null);
+  assert.equal(next.accumulatedContent, "## Partial draft");
+  assert.deepEqual(next.block, {
+    kind: "evidence",
+    message: "Could not read source page",
+    requiredAction: "Retry the source read",
+    allowedResolutions: ["retry", "remove_source"],
+  });
+});

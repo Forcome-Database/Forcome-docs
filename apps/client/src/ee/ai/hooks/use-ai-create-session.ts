@@ -13,6 +13,7 @@ import {
   resumeAgentAiCreate,
   stopAgentAiCreateTask,
 } from "../services/ai-create-runner";
+import { getAgentSession } from "../services/agent-service";
 import type { AiCreateRunEvent } from "../services/ai-create-runner";
 import { resolveAiIntent } from "../services/ai-intent";
 import type { SelectionRange } from "../components/ai-creator/ai-creator-atoms";
@@ -22,6 +23,7 @@ import {
 } from "../components/ai-creator/ai-create-session.reducer";
 import {
   createAssistantPlaceholderMessage,
+  createHydratedMessages,
   createInteractiveMessage,
   createPendingRunMessages,
 } from "../components/ai-creator/ai-create-session.messages";
@@ -39,6 +41,7 @@ import type {
 } from "../components/ai-creator/ai-creator.types";
 
 const CONTINUE_KEYWORDS = ["continue", "append"];
+const SESSION_STORAGE_PREFIX = "docmost.ai.create.session";
 
 interface UseAiCreateSessionOptions {
   pageId: string;
@@ -114,6 +117,62 @@ function normalizePageVersion(value?: string | Date | null): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function getSessionStorageKey(pageId: string): string {
+  return `${SESSION_STORAGE_PREFIX}:${pageId}`;
+}
+
+function readStoredSessionHandle(
+  pageId: string,
+): { sessionId: string; taskId: string | null } | null {
+  if (typeof window === "undefined" || !pageId) {
+    return null;
+  }
+
+  const raw = window.sessionStorage.getItem(getSessionStorageKey(pageId));
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      sessionId?: unknown;
+      taskId?: unknown;
+    };
+    if (typeof parsed.sessionId !== "string" || !parsed.sessionId) {
+      return null;
+    }
+
+    return {
+      sessionId: parsed.sessionId,
+      taskId: typeof parsed.taskId === "string" ? parsed.taskId : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSessionHandle(
+  pageId: string,
+  value: { sessionId: string; taskId: string | null },
+) {
+  if (typeof window === "undefined" || !pageId) {
+    return;
+  }
+
+  window.sessionStorage.setItem(
+    getSessionStorageKey(pageId),
+    JSON.stringify(value),
+  );
+}
+
+function clearStoredSessionHandle(pageId: string) {
+  if (typeof window === "undefined" || !pageId) {
+    return;
+  }
+
+  window.sessionStorage.removeItem(getSessionStorageKey(pageId));
+}
+
 export function useAiCreateSession({
   pageId,
   editor,
@@ -143,6 +202,21 @@ export function useAiCreateSession({
   const replayedStepRef = useRef<string | null>(null);
   const pageVersionRef = useRef<string | null>(
     normalizePageVersion(pageUpdatedAt),
+  );
+  const persistSessionHandle = useCallback(
+    (value: { sessionId: string; taskId: string | null } | null) => {
+      if (!pageId) {
+        return;
+      }
+
+      if (!value) {
+        clearStoredSessionHandle(pageId);
+        return;
+      }
+
+      writeStoredSessionHandle(pageId, value);
+    },
+    [pageId],
   );
 
   useEffect(() => {
@@ -191,8 +265,7 @@ export function useAiCreateSession({
     dispatch({ type: "task_received", taskId: null });
   }, []);
 
-  const resetConversationState = useCallback(() => {
-    const taskId = taskIdRef.current;
+  const clearLocalConversationState = useCallback(() => {
     controllerRef.current?.abort();
     unlockEditor();
     setMessages([]);
@@ -208,17 +281,77 @@ export function useAiCreateSession({
     replayedStepRef.current = null;
     clearController();
     dispatch({ type: "reset" });
+  }, [clearController, unlockEditor]);
+
+  const resetConversationState = useCallback(() => {
+    const taskId = taskIdRef.current;
+    clearLocalConversationState();
+    persistSessionHandle(null);
 
     if (taskId) {
       void stopAgentAiCreateTask(taskId).catch(() => {});
     }
-  }, [clearController, unlockEditor]);
+  }, [clearLocalConversationState, persistSessionHandle]);
+
+  const hydrateStoredSession = useCallback(async () => {
+    clearLocalConversationState();
+    const stored = readStoredSessionHandle(pageId);
+    if (!stored?.sessionId) {
+      return;
+    }
+
+    try {
+      const snapshot = await getAgentSession(stored.sessionId);
+      if (!snapshot) {
+        persistSessionHandle(null);
+        return;
+      }
+
+      threadIdRef.current = snapshot.sessionId;
+      taskIdRef.current = snapshot.status === "running" ? stored.taskId : null;
+      accumulatedContentRef.current = snapshot.draftMarkdown;
+      awaitInputRef.current = snapshot.awaitInput !== null;
+      dispatch({
+        type: "hydrate",
+        threadId: snapshot.sessionId,
+        taskId: snapshot.status === "running" ? stored.taskId : null,
+        status: snapshot.status,
+        awaitInput: snapshot.awaitInput,
+        block: snapshot.block,
+        draftMarkdown: snapshot.draftMarkdown,
+      });
+      setMessages(
+        createHydratedMessages({
+          draftMarkdown: snapshot.draftMarkdown,
+          awaitInput: snapshot.awaitInput,
+        }),
+      );
+      setSteps([]);
+      setIsStreaming(snapshot.status === "running");
+      persistSessionHandle({
+        sessionId: snapshot.sessionId,
+        taskId: snapshot.status === "running" ? stored.taskId : null,
+      });
+    } catch {
+      persistSessionHandle(null);
+    }
+  }, [clearLocalConversationState, pageId, persistSessionHandle]);
+
+  useEffect(() => {
+    void hydrateStoredSession();
+  }, [hydrateStoredSession]);
 
   const addInteractiveMessage = useCallback(
     (phase: AiCreateAwaitInputPhase, data: AgentAwaitInputData) => {
       removeLastEmptyAssistant();
       appendMessage(createInteractiveMessage(phase, data));
       clearController();
+      if (threadIdRef.current) {
+        persistSessionHandle({
+          sessionId: threadIdRef.current,
+          taskId: null,
+        });
+      }
       unlockEditor();
       setIsStreaming(false);
       awaitInputRef.current = true;
@@ -231,6 +364,12 @@ export function useAiCreateSession({
     (message: string) => {
       removeLastEmptyAssistant();
       clearController();
+      if (threadIdRef.current) {
+        persistSessionHandle({
+          sessionId: threadIdRef.current,
+          taskId: null,
+        });
+      }
       unlockEditor();
       accumulatedContentRef.current = "";
       replayedStepRef.current = null;
@@ -248,6 +387,12 @@ export function useAiCreateSession({
       const content = finalContent || accumulatedContentRef.current;
 
       clearController();
+      if (threadIdRef.current) {
+        persistSessionHandle({
+          sessionId: threadIdRef.current,
+          taskId: null,
+        });
+      }
       dispatch({ type: "done" });
       setIsStreaming(false);
       replayedStepRef.current = null;
@@ -360,6 +505,7 @@ export function useAiCreateSession({
         startedAt: startedAtRef.current,
         threadId: null,
       });
+      persistSessionHandle(null);
 
       if (autoInsert) {
         lockEditor();
@@ -367,7 +513,7 @@ export function useAiCreateSession({
 
       setIsStreaming(true);
     },
-    [editor, lockEditor],
+    [editor, lockEditor, persistSessionHandle],
   );
 
   const handleRunEvent = useCallback(
@@ -376,9 +522,19 @@ export function useAiCreateSession({
         case "task":
           taskIdRef.current = event.taskId;
           dispatch({ type: "task_received", taskId: event.taskId });
+          if (threadIdRef.current) {
+            persistSessionHandle({
+              sessionId: threadIdRef.current,
+              taskId: event.taskId,
+            });
+          }
           return;
         case "session":
           threadIdRef.current = event.sessionId || event.threadId;
+          persistSessionHandle({
+            sessionId: event.sessionId || event.threadId,
+            taskId: taskIdRef.current,
+          });
           dispatch({ type: "session_received", threadId: event.sessionId || event.threadId });
           return;
         case "step_start":
@@ -423,6 +579,12 @@ export function useAiCreateSession({
           replayedStepRef.current = null;
           removeLastEmptyAssistant();
           clearController();
+          if (threadIdRef.current) {
+            persistSessionHandle({
+              sessionId: threadIdRef.current,
+              taskId: null,
+            });
+          }
           unlockEditor();
           dispatch({
             type: "blocked",
@@ -441,11 +603,23 @@ export function useAiCreateSession({
             void finalizeRun(event.finalContent);
           } else {
             clearController();
+            if (threadIdRef.current) {
+              persistSessionHandle({
+                sessionId: threadIdRef.current,
+                taskId: null,
+              });
+            }
           }
           return;
         case "cancelled":
           replayedStepRef.current = null;
           clearController();
+          if (threadIdRef.current) {
+            persistSessionHandle({
+              sessionId: threadIdRef.current,
+              taskId: null,
+            });
+          }
           unlockEditor();
           accumulatedContentRef.current = "";
           dispatch({ type: "cancelled" });
@@ -463,6 +637,7 @@ export function useAiCreateSession({
       unlockEditor,
       updateLastAssistant,
       updateStep,
+      persistSessionHandle,
     ],
   );
 
@@ -644,6 +819,12 @@ export function useAiCreateSession({
     controllerRef.current = null;
     taskIdRef.current = null;
     replayedStepRef.current = null;
+    if (threadIdRef.current) {
+      persistSessionHandle({
+        sessionId: threadIdRef.current,
+        taskId: null,
+      });
+    }
 
     if (taskId) {
       void stopAgentAiCreateTask(taskId).catch(() => {});
@@ -655,7 +836,7 @@ export function useAiCreateSession({
     accumulatedContentRef.current = "";
     dispatch({ type: "cancelled" });
     setIsStreaming(false);
-  }, [removeLastEmptyAssistant, unlockEditor]);
+  }, [removeLastEmptyAssistant, unlockEditor, persistSessionHandle]);
 
   return {
     messages,

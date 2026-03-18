@@ -83,6 +83,29 @@ export interface AgentDraftPatchSection {
   content: string;
 }
 
+export type AgentSessionRunState =
+  | "idle"
+  | "running"
+  | "awaiting_input"
+  | "blocked"
+  | "completed"
+  | "error"
+  | "cancelled";
+
+export interface AgentSessionAwaitInputState {
+  phase: "brief" | "blueprint" | "review";
+  data: AgentAwaitInputData;
+}
+
+export interface AgentSessionSnapshot {
+  sessionId: string;
+  threadId: string;
+  status: AgentSessionRunState;
+  awaitInput: AgentSessionAwaitInputState | null;
+  block: AgentBlockState | null;
+  draftMarkdown: string;
+}
+
 export type AgentAwaitInputData =
   | AgentBriefAwaitInputData
   | AgentBlueprintAwaitInputData

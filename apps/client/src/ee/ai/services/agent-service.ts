@@ -1,4 +1,11 @@
-import type { AgentResumeValue, AgentSSEEvent } from '../types/agent.types';
+import type {
+  AgentAwaitInputData,
+  AgentBlockState,
+  AgentResumeValue,
+  AgentSessionSnapshot,
+  AgentSessionRunState,
+  AgentSSEEvent,
+} from '../types/agent.types';
 
 export interface AgentGenerateParams {
   files?: File[];
@@ -17,6 +24,75 @@ export interface AgentGenerateParams {
 
 function createReaderErrorMessage(): string {
   return 'Unable to read agent response stream';
+}
+
+function normalizeSessionRunState(value: unknown): AgentSessionRunState | null {
+  switch (value) {
+    case 'idle':
+    case 'running':
+    case 'awaiting_input':
+    case 'blocked':
+    case 'completed':
+    case 'error':
+    case 'cancelled':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizeSessionAwaitInput(
+  value: unknown,
+): AgentSessionSnapshot['awaitInput'] {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const phase = (value as { phase?: unknown }).phase;
+  const data = (value as { data?: unknown }).data;
+  if (
+    (phase !== 'brief' && phase !== 'blueprint' && phase !== 'review') ||
+    !data ||
+    typeof data !== 'object' ||
+    (data as { type?: unknown }).type !== phase
+  ) {
+    return null;
+  }
+
+  return {
+    phase,
+    data: data as AgentAwaitInputData,
+  };
+}
+
+function normalizeSessionBlock(value: unknown): AgentBlockState | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const message = typeof (value as { message?: unknown }).message === 'string'
+    ? (value as { message: string }).message
+    : null;
+  if (!message) {
+    return null;
+  }
+
+  return {
+    kind:
+      typeof (value as { kind?: unknown }).kind === 'string'
+        ? (value as { kind: string }).kind
+        : 'general',
+    message,
+    requiredAction:
+      typeof (value as { required_action?: unknown }).required_action === 'string'
+        ? (value as { required_action: string }).required_action
+        : '',
+    allowedResolutions: Array.isArray(
+      (value as { allowed_resolutions?: unknown }).allowed_resolutions,
+    )
+      ? (value as { allowed_resolutions: string[] }).allowed_resolutions
+      : [],
+  };
 }
 
 export function agentGenerate(
@@ -194,4 +270,47 @@ export async function stopAgentTask(taskId: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Failed to stop agent task: ${response.status}`);
   }
+}
+
+export async function getAgentSession(
+  sessionId: string,
+): Promise<AgentSessionSnapshot | null> {
+  const response = await fetch(`/api/agent/session/${sessionId}`);
+  if (!response.ok) {
+    throw new Error(`Failed to load agent session: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (payload?.status !== 'ok' || !payload.session || typeof payload.session !== 'object') {
+    return null;
+  }
+
+  const session = payload.session as Record<string, unknown>;
+  const status = normalizeSessionRunState(session.run_state);
+  if (!status) {
+    return null;
+  }
+
+  const normalizedSessionId =
+    typeof session.session_id === 'string' ? session.session_id : sessionId;
+  const threadId =
+    typeof session.thread_id === 'string' ? session.thread_id : normalizedSessionId;
+  const draftMarkdown =
+    typeof session.draft_markdown === 'string'
+      ? session.draft_markdown
+      : typeof session.final_content === 'string'
+        ? session.final_content
+        : '';
+
+  return {
+    sessionId: normalizedSessionId,
+    threadId,
+    status,
+    awaitInput:
+      status === 'awaiting_input'
+        ? normalizeSessionAwaitInput(session.pending_decision)
+        : null,
+    block: status === 'blocked' ? normalizeSessionBlock(session.blocked) : null,
+    draftMarkdown,
+  };
 }
