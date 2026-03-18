@@ -1,6 +1,7 @@
 """Write section tools for the orchestrator."""
 from __future__ import annotations
 import asyncio
+import re
 from app.models.blueprint import CreationBlueprint, SectionPlan
 from app.models.brief import CreationBrief
 from app.models.asset_map import AssetMap
@@ -12,6 +13,35 @@ from app.workers.section_writer import (
     generate_section_visuals,
 )
 from app.agent.events import emit
+
+
+def _build_local_recovery_notes(section: SectionPlan, draft: SectionDraft) -> list[str]:
+    notes: list[str] = []
+    budget = section.word_budget
+    actual = draft.word_count
+
+    if budget > 0:
+        if actual < budget * 0.9:
+            notes.append(
+                f"Expand this section to the target budget of about {budget} words/characters; the current draft is only {actual}."
+            )
+        elif actual > budget * 1.1:
+            notes.append(
+                f"Condense this section to stay near the target budget of {budget} words/characters; the current draft is {actual}."
+            )
+
+    missing_assets = [asset_id for asset_id in section.assets if asset_id not in draft.assets_used]
+    if missing_assets:
+        notes.append(
+            "Materially use the assigned source assets and include their markers: "
+            + ", ".join(missing_assets)
+        )
+
+    has_image_markdown = bool(re.search(r'!\[[^\]]*\]\(([^)]+)\)', draft.content))
+    if any(visual.type == "ai_image" for visual in section.visuals) and not has_image_markdown:
+        notes.append("Insert the required generated image into the markdown body using standard image syntax.")
+
+    return notes
 
 
 def build_document_tree(
@@ -61,6 +91,7 @@ async def write_single_section(
     system_prompt: str = "",
     template_prompt: str = "",
     intent_route: str = "document_create",
+    recovery_notes: list[str] | None = None,
 ) -> SectionDraft:
     """Write a single section with full context."""
     drafts = existing_drafts or []
@@ -96,6 +127,7 @@ async def write_single_section(
         template_prompt=template_prompt,
         intent_route=intent_route,
         generated_image_urls=generated_urls,
+        revision_notes=recovery_notes,
     )
 
     draft.visuals_generated = generated_urls
@@ -134,17 +166,43 @@ async def write_all_sections(
     if not parallel:
         # Sequential: each section uses previous section's tail
         for i, section in enumerate(blueprint.sections):
-            draft = await write_single_section(
-                section=section,
-                blueprint=blueprint,
-                brief=brief,
-                asset_map=asset_map,
-                existing_drafts=drafts,
-                section_index=i,
-                thread_id=thread_id,
-                page_id=page_id,
-                **ctx_kwargs,
-            )
+            recovery_notes: list[str] | None = None
+            draft: SectionDraft | None = None
+            for attempt in range(2):
+                draft = await write_single_section(
+                    section=section,
+                    blueprint=blueprint,
+                    brief=brief,
+                    asset_map=asset_map,
+                    existing_drafts=drafts,
+                    section_index=i,
+                    thread_id=thread_id,
+                    page_id=page_id,
+                    recovery_notes=recovery_notes,
+                    **ctx_kwargs,
+                )
+                recovery_notes = _build_local_recovery_notes(section, draft)
+                if not recovery_notes or attempt == 1:
+                    break
+
+                await emit(
+                    thread_id,
+                    {
+                        "type": "step_start",
+                        "step": f"revise_section_{section.id}",
+                        "description": f"Revising {section.title} to satisfy section constraints",
+                    },
+                )
+                await emit(
+                    thread_id,
+                    {
+                        "type": "step_done",
+                        "step": f"revise_section_{section.id}",
+                        "result_summary": "; ".join(recovery_notes),
+                    },
+                )
+
+            assert draft is not None
             drafts.append(draft)
     else:
         # Parallel: group odd/even sections (non-adjacent can run concurrently)

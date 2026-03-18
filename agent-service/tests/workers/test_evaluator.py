@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.models.asset_map import AssetItem, AssetMap
-from app.models.blueprint import CreationBlueprint, SectionPlan
+from app.models.blueprint import CreationBlueprint, SectionPlan, VisualPlan
 from app.models.brief import CreationBrief
 from app.models.draft import SectionDraft
 from app.models.review import ReviewIssue
@@ -16,6 +16,7 @@ from app.workers.evaluator import (
     check_heading_levels,
     check_image_urls,
     check_mermaid_syntax,
+    check_visual_coverage,
     check_word_budgets,
     evaluate_deterministic,
 )
@@ -131,6 +132,30 @@ def test_asset_coverage_planned_but_not_in_map_not_flagged():
     draft = make_draft("s1", assets_used=[])
     issues = check_asset_coverage([draft], blueprint, asset_map)
     assert issues == []
+
+
+def test_visual_coverage_ai_image_generated_but_not_inserted_is_still_flagged():
+    section = SectionPlan(
+        id="s1",
+        title="Overview",
+        level=2,
+        word_budget=300,
+        visuals=[VisualPlan(type="ai_image", description="System overview")],
+    )
+    blueprint = make_blueprint(section)
+    draft = make_draft(
+        "s1",
+        content="Only text, no markdown image here.",
+        word_count=120,
+    )
+    draft.visuals_generated = ["https://cdn.example.com/generated.png"]
+
+    issues = check_visual_coverage([draft], blueprint)
+
+    assert len(issues) == 1
+    assert issues[0].severity == "error"
+    assert issues[0].category == "visual"
+    assert "未落图" in issues[0].description
 
 
 # ── check_heading_levels ──────────────────────────────────────────────────────

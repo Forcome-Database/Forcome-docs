@@ -106,7 +106,7 @@ def check_visual_coverage(
         has_table = "|" in draft.content and "\n|" in draft.content
 
         for visual in section.visuals:
-            if visual.type == "ai_image" and not draft.visuals_generated and not has_image_markdown:
+            if visual.type == "ai_image" and not has_image_markdown:
                 issues.append(ReviewIssue(
                     id=_make_issue_id(),
                     section_id=draft.section_id,

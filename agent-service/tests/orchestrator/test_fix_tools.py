@@ -190,3 +190,34 @@ async def test_fix_selected_updates_word_count():
         )
 
     assert result[0].word_count > 3  # more than original "Short." word count
+
+
+@pytest.mark.asyncio
+async def test_fix_selected_rewrites_each_affected_section_only_once():
+    from app.orchestrator.tools.fix_tools import fix_selected_issues
+
+    blueprint = make_blueprint(make_section("s1"), make_section("s2"))
+    draft_one = make_draft("s1", content="Section one.")
+    draft_two = make_draft("s2", content="Section two.")
+    issues = [
+        make_issue("i1", "s1", auto_fixable=False, description="Strengthen the opening"),
+        make_issue("i2", "s1", auto_fixable=False, description="Add one concrete example"),
+        make_issue("i3", "s2", auto_fixable=False, description="Tighten the ending"),
+    ]
+
+    fix_targeted_mock = AsyncMock(return_value="Section one rewritten once.")
+
+    with patch("app.orchestrator.tools.fix_tools.apply_auto_fixes", return_value=([draft_one, draft_two], 0)), \
+         patch("app.orchestrator.tools.fix_tools.fix_targeted", fix_targeted_mock), \
+         patch("app.orchestrator.tools.fix_tools.emit", new_callable=AsyncMock):
+        result = await fix_selected_issues(
+            drafts=[draft_one, draft_two],
+            issues=issues,
+            selected_issue_ids=["i1", "i2"],
+            blueprint=blueprint,
+            thread_id="t1",
+        )
+
+    assert fix_targeted_mock.await_count == 1
+    assert result[0].content == "Section one rewritten once."
+    assert result[1].content == "Section two."

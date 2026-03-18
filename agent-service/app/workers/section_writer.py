@@ -71,6 +71,7 @@ def build_section_context(
     template_prompt: str = "",
     intent_route: str = "document_create",
     generated_image_urls: list[str] | None = None,
+    revision_notes: list[str] | None = None,
 ) -> str:
     """Build the context package for writing one section."""
     parts = []
@@ -163,6 +164,10 @@ def build_section_context(
         for index, url in enumerate(generated_image_urls, start=1):
             parts.append(f"- Include generated image {index}: ![{section.title} visual {index}]({url})")
 
+    if revision_notes:
+        parts.append("\n[Revision Requirements]")
+        parts.extend(f"- {note}" for note in revision_notes)
+
     return "\n".join(parts)
 
 
@@ -246,6 +251,7 @@ async def write_section(
     template_prompt: str = "",
     intent_route: str = "document_create",
     generated_image_urls: list[str] | None = None,
+    revision_notes: list[str] | None = None,
 ) -> SectionDraft:
     """Write a single section with word budget enforcement."""
     from pydantic_ai import Agent
@@ -264,6 +270,7 @@ async def write_section(
         template_prompt=template_prompt,
         intent_route=intent_route,
         generated_image_urls=generated_image_urls,
+        revision_notes=revision_notes,
     )
 
     model = create_pydantic_ai_model()
