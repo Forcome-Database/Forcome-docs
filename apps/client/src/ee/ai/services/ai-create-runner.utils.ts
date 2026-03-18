@@ -1,7 +1,6 @@
 import type {
   AgentAwaitInputData,
-  AgentDocumentArtifact,
-  AgentOutlineArtifactPlanItem,
+  AgentDraftPatchSection,
   AgentSSEEvent,
 } from "../types/agent.types";
 import type { AiCreateAwaitInputPhase } from "../components/ai-creator/ai-create-session.types";
@@ -9,182 +8,68 @@ import type { SSEEventV2 } from '../types/events-v2.types';
 
 export type AiCreateRunEvent =
   | { type: "task"; taskId: string | null }
-  | { type: "session"; threadId: string }
+  | { type: "session"; sessionId: string; threadId: string }
   | { type: "step_start"; step: string; description: string }
   | { type: "step_done"; step: string; resultSummary?: string }
   | { type: "content_delta"; chunk: string }
   | { type: "content_cleared" }
+  | { type: "draft_patch"; markdown: string; sections: AgentDraftPatchSection[] }
   | { type: "await_input"; phase: AiCreateAwaitInputPhase; data: AgentAwaitInputData }
   | { type: "done"; finalContent?: string }
   | { type: "error"; message: string }
-  | { type: "blocked"; message: string }
+  | { type: "blocked"; kind: string; message: string; requiredAction: string; allowedResolutions: string[] }
   | { type: "cancelled" };
 
-type RawClarifyAwaitInputData = {
-  type: "clarify";
-  questions: string[];
-};
-
-type RawProposeAwaitInputData = {
-  type: "propose";
-  proposals: { title: string; description: string }[];
-};
-
-type RawOutlineArtifactPlanItem = {
-  sectionId?: unknown;
-  section_id?: unknown;
-  sectionTitle?: unknown;
-  section_title?: unknown;
-  artifacts?: unknown;
-};
-
-type RawOutlineAwaitInputData = {
-  type: "outline";
-  outline: string;
-  artifactPlan?: unknown;
-  artifact_plan?: unknown;
-};
-
-type RawAwaitInputData =
-  | RawClarifyAwaitInputData
-  | RawProposeAwaitInputData
-  | RawOutlineAwaitInputData;
-
 export function toAwaitInputPhase(phase: string): AiCreateAwaitInputPhase | null {
-  if (phase === "clarify" || phase === "propose" || phase === "outline" ||
-      phase === "brief" || phase === "blueprint" || phase === "review") {
+  if (phase === "brief" || phase === "blueprint" || phase === "review") {
     return phase;
   }
 
   return null;
 }
 
-function isRawAwaitInputData(
-  phase: AiCreateAwaitInputPhase,
-  data: unknown,
-): data is RawAwaitInputData {
-  if (!data || typeof data !== "object") {
-    return false;
-  }
-
-  if (phase === "clarify") {
-    return (
-      (data as { type?: unknown }).type === "clarify" &&
-      Array.isArray((data as { questions?: unknown }).questions)
-    );
-  }
-
-  if (phase === "propose") {
-    return (
-      (data as { type?: unknown }).type === "propose" &&
-      Array.isArray((data as { proposals?: unknown }).proposals)
-    );
-  }
-
-  return (
-    (data as { type?: unknown }).type === "outline" &&
-    typeof (data as { outline?: unknown }).outline === "string"
-  );
-}
-
-function isDocumentArtifact(value: unknown): value is AgentDocumentArtifact {
-  return (
-    value === "table" ||
-    value === "mermaid" ||
-    value === "code_block" ||
-    value === "image" ||
-    value === "callout" ||
-    value === "details"
-  );
-}
-
-function normalizeOutlineArtifactPlanItem(
-  item: RawOutlineArtifactPlanItem,
-): AgentOutlineArtifactPlanItem | null {
-  const sectionId =
-    typeof item.sectionId === "string"
-      ? item.sectionId
-      : typeof item.section_id === "string"
-        ? item.section_id
-        : null;
-  const sectionTitle =
-    typeof item.sectionTitle === "string"
-      ? item.sectionTitle
-      : typeof item.section_title === "string"
-        ? item.section_title
-        : null;
-  const artifacts = Array.isArray(item.artifacts)
-    ? item.artifacts.filter(isDocumentArtifact)
-    : [];
-
-  if (!sectionId || !sectionTitle) {
-    return null;
-  }
-
-  return {
-    sectionId,
-    sectionTitle,
-    artifacts,
-  };
-}
-
-function normalizeOutlineArtifactPlan(
-  data: RawOutlineAwaitInputData,
-): AgentOutlineArtifactPlanItem[] {
-  const rawPlan = Array.isArray(data.artifactPlan)
-    ? data.artifactPlan
-    : Array.isArray(data.artifact_plan)
-      ? data.artifact_plan
-      : [];
-
-  return rawPlan.flatMap((item) => {
-    if (!item || typeof item !== "object") {
-      return [];
-    }
-
-    const normalizedItem = normalizeOutlineArtifactPlanItem(
-      item as RawOutlineArtifactPlanItem,
-    );
-    return normalizedItem ? [normalizedItem] : [];
-  });
-}
-
 function normalizeAwaitInputData(
   phase: AiCreateAwaitInputPhase,
   data: unknown,
 ): AgentAwaitInputData | null {
-  // V2 phases: pass through as-is (brief/blueprint/review carry their own structure)
-  if (phase === "brief" || phase === "blueprint" || phase === "review") {
-    if (!data || typeof data !== "object") {
-      return null;
-    }
-    if ((data as { type?: unknown }).type !== phase) {
-      return null;
-    }
-    return data as AgentAwaitInputData;
-  }
-
-  if (!isRawAwaitInputData(phase, data)) {
+  if (!data || typeof data !== "object") {
     return null;
   }
+  if ((data as { type?: unknown }).type !== phase) {
+    return null;
+  }
+  return data as AgentAwaitInputData;
+}
 
-  if (phase === "clarify" && data.type === "clarify") {
-    return data as AgentAwaitInputData;
+function normalizeDraftPatchSections(data: unknown): AgentDraftPatchSection[] {
+  if (!Array.isArray(data)) {
+    return [];
   }
 
-  if (phase === "propose" && data.type === "propose") {
-    return data as AgentAwaitInputData;
-  }
+  return data.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
 
-  if (data.type === "outline") {
-    return {
-      type: "outline",
-      outline: data.outline,
-      artifactPlan: normalizeOutlineArtifactPlan(data),
-    };
-  }
+    const sectionId = typeof (item as { section_id?: unknown }).section_id === "string"
+      ? (item as { section_id: string }).section_id
+      : null;
+    const title = typeof (item as { title?: unknown }).title === "string"
+      ? (item as { title: string }).title
+      : null;
+    const level = typeof (item as { level?: unknown }).level === "number"
+      ? (item as { level: number }).level
+      : 2;
+    const content = typeof (item as { content?: unknown }).content === "string"
+      ? (item as { content: string }).content
+      : null;
 
-  return null;
+    if (!sectionId || !title || content === null) {
+      return [];
+    }
+
+    return [{ sectionId, title, level, content }];
+  });
 }
 
 /**
@@ -297,7 +182,14 @@ export function normalizeAgentRunEvent(event: AgentSSEEvent): AiCreateRunEvent |
     case "session":
       return {
         type: "session",
+        sessionId: event.session_id || event.thread_id,
         threadId: event.thread_id,
+      };
+    case "draft_patch":
+      return {
+        type: "draft_patch",
+        markdown: event.markdown,
+        sections: normalizeDraftPatchSections(event.sections),
       };
     case "error":
       return {
@@ -307,7 +199,10 @@ export function normalizeAgentRunEvent(event: AgentSSEEvent): AiCreateRunEvent |
     case "blocked":
       return {
         type: "blocked",
+        kind: event.kind || "general",
         message: event.message,
+        requiredAction: event.required_action || "",
+        allowedResolutions: event.allowed_resolutions || [],
       };
     case "done":
       return {

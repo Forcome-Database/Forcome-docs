@@ -5,34 +5,6 @@ from pydantic import BaseModel, Field, model_validator
 from app.models.blueprint import CreationBlueprint
 from app.models.brief import CreationBrief
 from app.models.review import ReviewReport
-from app.schemas.document_contracts import DocumentArtifact
-
-
-class ClarifyAwaitInputData(BaseModel):
-    type: Literal["clarify"] = "clarify"
-    questions: list[str]
-
-
-class ProposalOption(BaseModel):
-    title: str
-    description: str
-
-
-class ProposeAwaitInputData(BaseModel):
-    type: Literal["propose"] = "propose"
-    proposals: list[ProposalOption]
-
-
-class OutlineArtifactPlanItem(BaseModel):
-    section_id: str
-    section_title: str
-    artifacts: list[DocumentArtifact] = Field(default_factory=list)
-
-
-class OutlineAwaitInputData(BaseModel):
-    type: Literal["outline"] = "outline"
-    outline: str
-    artifact_plan: list[OutlineArtifactPlanItem] = Field(default_factory=list)
 
 
 class BriefAssetSummary(BaseModel):
@@ -84,6 +56,19 @@ class ImageEvent(BaseModel):
     url: str
     alt: str
 
+
+class DraftPatchSection(BaseModel):
+    section_id: str
+    title: str
+    level: int = 2
+    content: str
+
+
+class DraftPatchEvent(BaseModel):
+    type: Literal["draft_patch"] = "draft_patch"
+    markdown: str
+    sections: list[DraftPatchSection] = Field(default_factory=list)
+
 class ToolCallEvent(BaseModel):
     type: Literal["tool_call"] = "tool_call"
     tool: str
@@ -95,7 +80,10 @@ class ErrorEvent(BaseModel):
 
 class BlockedEvent(BaseModel):
     type: Literal["blocked"] = "blocked"
+    kind: str = "general"
     message: str
+    required_action: str = ""
+    allowed_resolutions: list[str] = Field(default_factory=list)
 
 class DoneEvent(BaseModel):
     type: Literal["done"] = "done"
@@ -104,12 +92,9 @@ class DoneEvent(BaseModel):
 
 class AwaitInputEvent(BaseModel):
     type: Literal["await_input"] = "await_input"
-    phase: Literal["clarify", "propose", "outline", "brief", "blueprint", "review"]
+    phase: Literal["brief", "blueprint", "review"]
     data: (
-        ClarifyAwaitInputData
-        | ProposeAwaitInputData
-        | OutlineAwaitInputData
-        | BriefAwaitInputData
+        BriefAwaitInputData
         | BlueprintAwaitInputData
         | ReviewAwaitInputData
         | dict[str, Any]
@@ -146,10 +131,11 @@ class FixAppliedEvent(BaseModel):
 
 class SessionEvent(BaseModel):
     type: Literal["session"] = "session"
-    thread_id: str
+    session_id: str
+    thread_id: str | None = None
 
 
 class CancelledEvent(BaseModel):
     type: Literal["cancelled"] = "cancelled"
 
-SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ContentClearEvent | ImageEvent | ToolCallEvent | ErrorEvent | BlockedEvent | DoneEvent | AwaitInputEvent | SectionProgressEvent | ComplexityAnalyzedEvent | FixAppliedEvent | SessionEvent | CancelledEvent
+SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ContentClearEvent | ImageEvent | DraftPatchEvent | ToolCallEvent | ErrorEvent | BlockedEvent | DoneEvent | AwaitInputEvent | SectionProgressEvent | ComplexityAnalyzedEvent | FixAppliedEvent | SessionEvent | CancelledEvent

@@ -15,6 +15,7 @@ export function createInitialAiCreateSessionState(): AiCreateSessionState {
     startedAt: null,
     selectionSnapshot: null,
     awaitInput: null,
+    block: null,
     error: null,
   };
 }
@@ -38,6 +39,7 @@ export function aiCreateSessionReducer(
         startedAt: action.startedAt,
         selectionSnapshot: action.selectionSnapshot,
         awaitInput: null,
+        block: null,
         error: null,
       };
     case "session_received":
@@ -75,6 +77,16 @@ export function aiCreateSessionReducer(
           phase: action.phase,
           data: action.data,
         },
+        block: null,
+        error: null,
+      };
+    case "blocked":
+      return {
+        ...state,
+        status: "blocked",
+        taskId: null,
+        awaitInput: null,
+        block: action.block,
         error: null,
       };
     case "done":
@@ -83,6 +95,7 @@ export function aiCreateSessionReducer(
         status: "completed",
         taskId: null,
         awaitInput: null,
+        block: null,
         error: null,
       };
     case "error":
@@ -91,6 +104,7 @@ export function aiCreateSessionReducer(
         status: "error",
         taskId: null,
         awaitInput: null,
+        block: null,
         error: action.message,
       };
     case "cancelled":
@@ -99,6 +113,7 @@ export function aiCreateSessionReducer(
         status: "cancelled",
         taskId: null,
         awaitInput: null,
+        block: null,
         error: null,
       };
     default:

@@ -109,7 +109,7 @@ export function agentGenerate(
 }
 
 export function resumeAgent(
-  threadId: string,
+  sessionId: string,
   resumeValue: AgentResumeValue,
   onEvent: (event: AgentSSEEvent) => void,
   onError: (error: string) => void,
@@ -121,7 +121,7 @@ export function resumeAgent(
   fetch('/api/agent/resume', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ threadId, resumeValue }),
+    body: JSON.stringify({ sessionId, resumeValue }),
     signal: controller.signal,
   })
     .then(async (resp) => {

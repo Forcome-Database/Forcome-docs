@@ -12,7 +12,23 @@ test("run_started resets streaming artifacts and clears thread for new runs", ()
     taskId: "task-1",
     accumulatedContent: "draft",
     mdBuffer: "buffer",
-    awaitInput: { phase: "outline" as const, data: { type: "outline" as const, outline: "A" } },
+    awaitInput: {
+      phase: "brief" as const,
+      data: {
+        type: "brief" as const,
+        brief: {
+          audience: "engineers",
+          goal: "Explain the system",
+          target_length: 1200,
+          length_tolerance: 0.1,
+          style: "technical",
+          tone: "professional",
+          structure_strategy: "ai_recommend" as const,
+          image_strategy: "none" as const,
+          constraints: [],
+        },
+      },
+    },
   };
 
   const next = aiCreateSessionReducer(initial, {
@@ -35,6 +51,7 @@ test("run_started resets streaming artifacts and clears thread for new runs", ()
     startedAt: 42,
     selectionSnapshot: null,
     awaitInput: null,
+    block: null,
     error: null,
   });
 });
@@ -63,15 +80,35 @@ test("await_input moves session into awaiting_input and clears task ownership", 
 
   const next = aiCreateSessionReducer(initial, {
     type: "await_input",
-    phase: "clarify",
-    data: { type: "clarify" as const, questions: ["Audience?"] },
+    phase: "review",
+    data: {
+      type: "review" as const,
+      report: {
+        overall_score: 82,
+        length_compliance: 0.96,
+        asset_reuse_rate: 0.5,
+        issues: [],
+        auto_fixed_count: 1,
+        user_decision_needed: [],
+      },
+    },
   });
 
   assert.equal(next.status, "awaiting_input");
   assert.equal(next.taskId, null);
   assert.deepEqual(next.awaitInput, {
-    phase: "clarify",
-    data: { type: "clarify" as const, questions: ["Audience?"] },
+    phase: "review",
+    data: {
+      type: "review" as const,
+      report: {
+        overall_score: 82,
+        length_compliance: 0.96,
+        asset_reuse_rate: 0.5,
+        issues: [],
+        auto_fixed_count: 1,
+        user_decision_needed: [],
+      },
+    },
   });
 });
 
@@ -79,7 +116,19 @@ test("done and cancelled clear pending interrupt state", () => {
   const awaitingInput = {
     ...createInitialAiCreateSessionState(),
     status: "awaiting_input" as const,
-    awaitInput: { phase: "outline" as const, data: { type: "outline" as const, outline: "A" } },
+    awaitInput: {
+      phase: "blueprint" as const,
+      data: {
+        type: "blueprint" as const,
+        blueprint: {
+          title: "Doc",
+          sections: [],
+          total_word_budget: 1200,
+          style_guide: "Technical and direct",
+          visual_plan_summary: "No visuals",
+        },
+      },
+    },
     taskId: "task-3",
   };
 
@@ -92,4 +141,32 @@ test("done and cancelled clear pending interrupt state", () => {
   assert.equal(cancelled.status, "cancelled");
   assert.equal(cancelled.taskId, null);
   assert.equal(cancelled.awaitInput, null);
+});
+
+test("blocked keeps the session recoverable without turning it into an error", () => {
+  const running = {
+    ...createInitialAiCreateSessionState(),
+    status: "running" as const,
+    taskId: "task-9",
+  };
+
+  const blocked = aiCreateSessionReducer(running, {
+    type: "blocked",
+    block: {
+      kind: "evidence",
+      message: "Source page could not be read",
+      requiredAction: "Retry or remove the source",
+      allowedResolutions: ["retry", "remove_source"],
+    },
+  });
+
+  assert.equal(blocked.status, "blocked");
+  assert.equal(blocked.taskId, null);
+  assert.equal(blocked.error, null);
+  assert.deepEqual(blocked.block, {
+    kind: "evidence",
+    message: "Source page could not be read",
+    requiredAction: "Retry or remove the source",
+    allowedResolutions: ["retry", "remove_source"],
+  });
 });

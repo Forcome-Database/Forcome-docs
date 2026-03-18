@@ -17,7 +17,7 @@ from app.agent.cancellation import (
 from app.agent.events import create_queue, emit, emit_done, remove_queue
 from app.config import settings
 from app.middleware.auth import verify_internal_secret
-from app.schemas.request import AgentStopRequest
+from app.schemas.request import AgentResumeRequest, AgentStopRequest
 
 # Windows asyncio requires SelectorEventLoop for compatibility with some async libs.
 if sys.platform == "win32":
@@ -50,13 +50,19 @@ async def health():
 # ── Orchestrator Endpoints ────────────────────────────────────────────
 
 from app.orchestrator.engine import OrchestratorEngine, OrchestratorRequest
+from app.orchestrator.session_store import session_store
 from app.orchestrator.tools.user_interaction import interaction_registry
 
 _orchestrator = OrchestratorEngine()
 
 
 async def _event_generator(thread_id: str, queue: asyncio.Queue):
-    yield {"data": json.dumps({"type": "session", "thread_id": thread_id}, ensure_ascii=False)}
+    yield {
+        "data": json.dumps(
+            {"type": "session", "session_id": thread_id, "thread_id": thread_id},
+            ensure_ascii=False,
+        )
+    }
     try:
         while True:
             try:
@@ -78,6 +84,40 @@ async def _single_event_stream(event: dict):
     yield {"data": json.dumps(event, ensure_ascii=False)}
 
 
+def _normalize_resume_value_for_engine(request: AgentResumeRequest) -> dict:
+    resume_value = request.resume_value
+
+    if resume_value.type == "confirm_brief":
+        return {"brief": resume_value.brief}
+
+    if resume_value.type in {"confirm_blueprint", "apply_blueprint_patch"}:
+        return {
+            "blueprint": resume_value.blueprint,
+            **({"feedback": resume_value.feedback} if getattr(resume_value, "feedback", None) else {}),
+        }
+
+    if resume_value.type == "fix_selected_issues":
+        return {
+            "selected_issue_ids": resume_value.selected_issue_ids,
+            **({"feedback": resume_value.feedback} if resume_value.feedback else {}),
+        }
+
+    if resume_value.type == "resolve_block":
+        return {
+            "resolution": resume_value.resolution,
+            "context": resume_value.context,
+        }
+
+    if resume_value.type == "skip_issue":
+        return {
+            "skip": True,
+            "selected_issue_ids": [resume_value.issue_id],
+            **({"feedback": resume_value.feedback} if resume_value.feedback else {}),
+        }
+
+    return {}
+
+
 async def _run_orchestrator_with_stream(
     *,
     task_id: str,
@@ -87,8 +127,25 @@ async def _run_orchestrator_with_stream(
     try:
         await _orchestrator.run(request)
     except AgentCancelledError:
+        session_store.upsert_session(
+            session_id=thread_id,
+            thread_id=thread_id,
+            run_state="cancelled",
+            phase="cancelled",
+            pending_decision=None,
+            blocked=None,
+        )
         await emit(thread_id, {"type": "cancelled"})
     except Exception as exc:
+        session_store.upsert_session(
+            session_id=thread_id,
+            thread_id=thread_id,
+            run_state="error",
+            phase="error",
+            pending_decision=None,
+            blocked=None,
+            last_error=str(exc)[:500],
+        )
         await emit(thread_id, {"type": "error", "message": str(exc)[:500]})
     finally:
         await emit_done(thread_id)
@@ -102,6 +159,15 @@ async def run_agent(request: dict):
     _task_counter += 1
     task_id = f"task-{_task_counter}"
     thread_id = request.get("thread_id") or str(uuid4())
+    session_store.upsert_session(
+        session_id=thread_id,
+        thread_id=thread_id,
+        run_state="running",
+        phase="init",
+        pending_decision=None,
+        blocked=None,
+        last_error=None,
+    )
 
     register_task(task_id, thread_id)
     queue = create_queue(thread_id)
@@ -138,9 +204,9 @@ async def run_agent(request: dict):
 
 
 @app.post("/agent/resume", dependencies=[Depends(verify_internal_secret)])
-async def resume_agent(request: dict):
-    thread_id = request.get("thread_id", "")
-    resume_value = request.get("resume_value", {})
+async def resume_agent(request: AgentResumeRequest):
+    thread_id = request.session_id
+    resume_value = _normalize_resume_value_for_engine(request)
 
     queue = create_queue(thread_id)
     ok = interaction_registry.submit_response(thread_id, resume_value)
@@ -154,7 +220,22 @@ async def resume_agent(request: dict):
                 }
             )
         )
+    session_store.upsert_session(
+        session_id=thread_id,
+        thread_id=thread_id,
+        run_state="running",
+        pending_decision=None,
+        blocked=None,
+    )
     return EventSourceResponse(_event_generator(thread_id, queue))
+
+
+@app.get("/agent/session/{session_id}", dependencies=[Depends(verify_internal_secret)])
+async def get_agent_session(session_id: str):
+    session = session_store.get_session(session_id)
+    if not session:
+        return {"status": "not_found"}
+    return {"status": "ok", "session": session.model_dump()}
 
 
 @app.post("/agent/stop", dependencies=[Depends(verify_internal_secret)])

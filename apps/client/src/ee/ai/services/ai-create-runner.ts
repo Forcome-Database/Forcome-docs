@@ -67,12 +67,12 @@ export function runAgentAiCreate(
 }
 
 export function resumeAgentAiCreate(
-  threadId: string,
+  sessionId: string,
   resumeValue: AgentResumeValue,
   onEvent: (event: AiCreateRunEvent) => void,
 ): AbortController {
   return resumeAgent(
-    threadId,
+    sessionId,
     resumeValue,
     (event) => {
       const normalized = normalizeAgentRunEvent(event);

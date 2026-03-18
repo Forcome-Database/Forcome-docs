@@ -15,28 +15,6 @@ export function createInteractiveMessage(
     timestamp: Date.now(),
   } satisfies Pick<AiCreatorMessage, "id" | "role" | "content" | "timestamp">;
 
-  if (phase === "clarify" && data.type === "clarify") {
-    return {
-      ...baseMessage,
-      questions: data.questions,
-    };
-  }
-
-  if (phase === "propose" && data.type === "propose") {
-    return {
-      ...baseMessage,
-      proposals: data.proposals,
-    };
-  }
-
-  if (phase === "outline" && data.type === "outline") {
-    return {
-      ...baseMessage,
-      outline: data.outline,
-      artifactPlan: data.artifactPlan,
-    };
-  }
-
   // V2 phases: brief / blueprint / review — store raw data
   if (phase === "brief") {
     return {
@@ -64,11 +42,7 @@ export function createInteractiveMessage(
     };
   }
 
-  return {
-    ...baseMessage,
-    outline: data.type === "outline" ? data.outline : undefined,
-    artifactPlan: data.type === "outline" ? data.artifactPlan : undefined,
-  };
+  return baseMessage;
 }
 
 export function createAssistantPlaceholderMessage(): AiCreatorMessage {

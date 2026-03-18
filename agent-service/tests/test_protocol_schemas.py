@@ -1,82 +1,92 @@
+import pytest
+from pydantic import ValidationError
+
 from app.schemas.request import AgentResumeRequest
-from app.schemas.response import AwaitInputEvent, CancelledEvent
+from app.schemas.response import AwaitInputEvent, BlockedEvent, CancelledEvent, DraftPatchEvent, SessionEvent
 
 
-def test_agent_resume_request_accepts_clarify_and_outline_payloads():
-    clarify = AgentResumeRequest.model_validate(
+def test_agent_resume_request_accepts_typed_chunk2_resume_commands():
+    confirm_brief = AgentResumeRequest.model_validate(
         {
-            "thread_id": "thread-1",
-            "resume_value": {"answers": "Focus on rollback and retries."},
-        }
-    )
-    outline = AgentResumeRequest.model_validate(
-        {
-            "thread_id": "thread-1",
+            "session_id": "session-1",
             "resume_value": {
-                "action": "confirm",
-                "confirmed_outline": "## Overview\n## Workflow",
-            },
-        }
-    )
-
-    assert clarify.resume_value.answers == "Focus on rollback and retries."
-    assert outline.resume_value.action == "confirm"
-
-
-def test_agent_resume_request_accepts_brief_blueprint_and_review_payloads():
-    brief = AgentResumeRequest.model_validate(
-        {
-            "thread_id": "thread-1",
-            "resume_value": {
-                "type": "brief",
+                "type": "confirm_brief",
                 "brief": {"audience": "engineers"},
             },
         }
     )
-    blueprint = AgentResumeRequest.model_validate(
+    confirm_blueprint = AgentResumeRequest.model_validate(
         {
-            "thread_id": "thread-1",
+            "session_id": "session-1",
             "resume_value": {
-                "type": "blueprint",
+                "type": "confirm_blueprint",
                 "blueprint": {"title": "Doc", "sections": []},
             },
         }
     )
-    review = AgentResumeRequest.model_validate(
+    fix_selected = AgentResumeRequest.model_validate(
         {
-            "thread_id": "thread-1",
+            "session_id": "session-1",
             "resume_value": {
-                "type": "review",
+                "type": "fix_selected_issues",
                 "selected_issue_ids": ["issue-1"],
-                "feedback": "Tighten this section",
+                "feedback": "Tighten the opening",
             },
         }
     )
 
-    assert brief.resume_value.type == "brief"
-    assert blueprint.resume_value.type == "blueprint"
-    assert review.resume_value.type == "review"
-    assert review.resume_value.selected_issue_ids == ["issue-1"]
+    assert confirm_brief.resume_value.type == "confirm_brief"
+    assert confirm_blueprint.resume_value.type == "confirm_blueprint"
+    assert fix_selected.resume_value.type == "fix_selected_issues"
+    assert fix_selected.resume_value.selected_issue_ids == ["issue-1"]
 
 
-def test_await_input_event_requires_typed_phase_payload_match():
+def test_agent_resume_request_rejects_legacy_resume_payloads():
+    with pytest.raises(ValidationError):
+        AgentResumeRequest.model_validate(
+            {
+                "thread_id": "thread-1",
+                "resume_value": {"answers": "Focus on rollback and retries."},
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        AgentResumeRequest.model_validate(
+            {
+                "thread_id": "thread-1",
+                "resume_value": {
+                    "action": "confirm",
+                    "confirmed_outline": "## Overview\n## Workflow",
+                },
+            }
+        )
+
+
+def test_await_input_event_requires_user_visible_typed_phase_payload_match():
     event = AwaitInputEvent.model_validate(
         {
             "type": "await_input",
-            "phase": "propose",
+            "phase": "brief",
             "data": {
-                "type": "propose",
-                "proposals": [
-                    {"title": "Option A", "description": "Lean structure"},
-                    {"title": "Option B", "description": "Evidence-first"},
-                ],
+                "type": "brief",
+                "brief": {
+                    "audience": "engineers",
+                    "goal": "Explain the system",
+                    "target_length": 1200,
+                    "length_tolerance": 0.1,
+                    "style": "technical",
+                    "tone": "professional",
+                    "structure_strategy": "ai_recommend",
+                    "image_strategy": "none",
+                    "constraints": [],
+                },
             },
         }
     )
 
-    assert event.phase == "propose"
-    assert event.data.type == "propose"
-    assert event.data.proposals[1].title == "Option B"
+    assert event.phase == "brief"
+    assert event.data.type == "brief"
+    assert event.data.brief.goal == "Explain the system"
 
 
 def test_review_await_input_event_accepts_typed_report_payload():
@@ -103,37 +113,71 @@ def test_review_await_input_event_accepts_typed_report_payload():
     assert event.data.report.overall_score == 82
 
 
-def test_outline_await_input_event_accepts_structured_artifact_plan():
-    event = AwaitInputEvent.model_validate(
-        {
-            "type": "await_input",
-            "phase": "outline",
-            "data": {
-                "type": "outline",
-                "outline": "## Windows Installation\n## Verification",
-                "artifact_plan": [
-                    {
-                        "section_id": "section-1",
-                        "section_title": "Windows Installation",
-                        "artifacts": ["code_block", "table"],
-                    },
-                    {
-                        "section_id": "section-2",
-                        "section_title": "Verification",
-                        "artifacts": ["callout"],
-                    },
-                ],
-            },
-        }
-    )
-
-    assert event.phase == "outline"
-    assert event.data.type == "outline"
-    assert event.data.artifact_plan[0].section_title == "Windows Installation"
-    assert event.data.artifact_plan[0].artifacts == ["code_block", "table"]
+def test_await_input_event_rejects_legacy_outline_phase():
+    with pytest.raises(ValidationError):
+        AwaitInputEvent.model_validate(
+            {
+                "type": "await_input",
+                "phase": "outline",
+                "data": {
+                    "type": "outline",
+                    "outline": "## Windows Installation\n## Verification",
+                },
+            }
+        )
 
 
 def test_cancelled_event_schema_exists():
     event = CancelledEvent.model_validate({"type": "cancelled"})
 
     assert event.type == "cancelled"
+
+
+def test_session_event_schema_supports_session_id_and_thread_id():
+    event = SessionEvent.model_validate(
+        {
+            "type": "session",
+            "session_id": "session-1",
+            "thread_id": "thread-1",
+        }
+    )
+
+    assert event.session_id == "session-1"
+    assert event.thread_id == "thread-1"
+
+
+def test_blocked_event_schema_accepts_structured_resolution_metadata():
+    event = BlockedEvent.model_validate(
+        {
+            "type": "blocked",
+            "kind": "evidence",
+            "message": "Source page could not be read",
+            "required_action": "Resolve the source issue before continuing",
+            "allowed_resolutions": ["retry", "remove_source"],
+        }
+    )
+
+    assert event.kind == "evidence"
+    assert event.required_action == "Resolve the source issue before continuing"
+    assert event.allowed_resolutions == ["retry", "remove_source"]
+
+
+def test_draft_patch_event_schema_accepts_markdown_and_section_patches():
+    event = DraftPatchEvent.model_validate(
+        {
+            "type": "draft_patch",
+            "markdown": "# Title\n\n## Intro\n\nContent",
+            "sections": [
+                {
+                    "section_id": "intro",
+                    "title": "Intro",
+                    "level": 2,
+                    "content": "Content",
+                }
+            ],
+        }
+    )
+
+    assert event.markdown.startswith("# Title")
+    assert event.sections[0].section_id == "intro"
+    assert event.sections[0].content == "Content"

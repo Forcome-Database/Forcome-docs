@@ -120,7 +120,12 @@ function BriefMessageItem({
           <SmartBriefCard
             brief={briefData as unknown as CreationBrief}
             assetSummary={briefAssetSummary}
-            onConfirm={(brief) => onResume?.({ type: 'brief', brief: brief as unknown as Record<string, unknown> })}
+            onConfirm={(brief) =>
+              onResume?.({
+                type: 'confirm_brief',
+                brief: brief as unknown as Record<string, unknown>,
+              })
+            }
           />
         </div>
       </div>
@@ -148,11 +153,14 @@ function BlueprintMessageItem({
             onClose={() => setOpened(false)}
             blueprint={blueprintData as unknown as CreationBlueprint}
             onConfirm={(bp) => {
-              onResume?.({ type: 'blueprint', blueprint: bp as unknown as Record<string, unknown> });
+              onResume?.({
+                type: 'confirm_blueprint',
+                blueprint: bp as unknown as Record<string, unknown>,
+              });
               setOpened(false);
             }}
             onRegenerate={() => {
-              onResume?.({ type: 'blueprint', blueprint: null });
+              onResume?.({ type: 'apply_blueprint_patch', blueprint: null });
               setOpened(false);
             }}
           />
@@ -191,11 +199,11 @@ function ReviewMessageItem({
             onClose={() => setOpened(false)}
             report={reviewData as unknown as ReviewReport}
             onFixSelected={(ids, feedback) => {
-              onResume?.({ type: 'review', selected_issue_ids: ids, feedback });
+              onResume?.({ type: 'fix_selected_issues', selected_issue_ids: ids, feedback });
               setOpened(false);
             }}
             onSkip={() => {
-              onResume?.({ type: 'review', selected_issue_ids: [], skip: true });
+              onResume?.({ type: 'skip_issue', issue_id: 'visual-skip' });
               setOpened(false);
             }}
           />

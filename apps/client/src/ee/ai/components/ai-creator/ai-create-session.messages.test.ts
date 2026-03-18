@@ -6,38 +6,50 @@ import {
   createPendingRunMessages,
 } from "./ai-create-session.messages";
 
-test("createInteractiveMessage preserves structured artifact plans for outline bubbles", () => {
-  const message = createInteractiveMessage("outline", {
-    type: "outline",
-    outline: "## Windows Installation\n## Verification",
-    artifactPlan: [
-      {
-        sectionId: "section-1",
-        sectionTitle: "Windows Installation",
-        artifacts: ["code_block", "table"],
-      },
-      {
-        sectionId: "section-2",
-        sectionTitle: "Verification",
-        artifacts: ["callout"],
-      },
-    ],
+test("createInteractiveMessage stores typed brief payloads for the brief card", () => {
+  const message = createInteractiveMessage("brief", {
+    type: "brief",
+    brief: {
+      audience: "engineers",
+      goal: "Explain the system",
+      target_length: 1200,
+      length_tolerance: 0.1,
+      style: "technical",
+      tone: "professional",
+      structure_strategy: "ai_recommend",
+      image_strategy: "none",
+      constraints: [],
+    },
+    asset_summary: {
+      images: 1,
+      tables: 0,
+      code: 2,
+      text: 3,
+      source_word_count: 900,
+      source_section_counts: { h1: 1, h2: 3 },
+    },
   });
 
-  assert.equal(message.role, "outline");
-  assert.equal(message.outline, "## Windows Installation\n## Verification");
-  assert.deepEqual(message.artifactPlan, [
-    {
-      sectionId: "section-1",
-      sectionTitle: "Windows Installation",
-      artifacts: ["code_block", "table"],
-    },
-    {
-      sectionId: "section-2",
-      sectionTitle: "Verification",
-      artifacts: ["callout"],
-    },
-  ]);
+  assert.equal(message.role, "brief");
+  assert.deepEqual(message.briefData, {
+    audience: "engineers",
+    goal: "Explain the system",
+    target_length: 1200,
+    length_tolerance: 0.1,
+    style: "technical",
+    tone: "professional",
+    structure_strategy: "ai_recommend",
+    image_strategy: "none",
+    constraints: [],
+  });
+  assert.deepEqual(message.briefAssetSummary, {
+    images: 1,
+    tables: 0,
+    code: 2,
+    text: 3,
+    source_word_count: 900,
+    source_section_counts: { h1: 1, h2: 3 },
+  });
 });
 
 test("createPendingRunMessages creates user and assistant placeholders for submit flow", () => {

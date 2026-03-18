@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.schemas.document_contracts import AiDocumentStrategy
 
@@ -51,55 +51,56 @@ class AgentRunRequest(BaseModel):
     prioritize_user_instructions: bool = True
 
 
-class ClarifyResumeValue(BaseModel):
-    answers: str
+class StrictResumeValue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
-class ProposeResumeValue(BaseModel):
-    selected_proposal: int
-    feedback: str | None = None
-
-
-class OutlineConfirmResumeValue(BaseModel):
-    action: Literal["confirm"]
-    confirmed_outline: str
-
-
-class OutlineRegenerateResumeValue(BaseModel):
-    action: Literal["regenerate"]
-    feedback: str | None = None
-
-
-class BriefResumeValue(BaseModel):
-    type: Literal["brief"] = "brief"
+class ConfirmBriefResumeValue(StrictResumeValue):
+    type: Literal["confirm_brief"]
     brief: dict
 
 
-class BlueprintResumeValue(BaseModel):
-    type: Literal["blueprint"] = "blueprint"
+class ConfirmBlueprintResumeValue(StrictResumeValue):
+    type: Literal["confirm_blueprint"]
     blueprint: dict | None = None
 
 
-class ReviewResumeValue(BaseModel):
-    type: Literal["review"] = "review"
+class ApplyBlueprintPatchResumeValue(StrictResumeValue):
+    type: Literal["apply_blueprint_patch"]
+    blueprint: dict | None = None
+    feedback: str | None = None
+
+
+class FixSelectedIssuesResumeValue(StrictResumeValue):
+    type: Literal["fix_selected_issues"]
     selected_issue_ids: list[str] = Field(default_factory=list)
     feedback: str | None = None
-    skip: bool = False
+
+
+class ResolveBlockResumeValue(StrictResumeValue):
+    type: Literal["resolve_block"]
+    resolution: str
+    context: dict = Field(default_factory=dict)
+
+
+class SkipIssueResumeValue(StrictResumeValue):
+    type: Literal["skip_issue"]
+    issue_id: str
+    feedback: str | None = None
 
 
 AgentResumeValue = (
-    ClarifyResumeValue
-    | ProposeResumeValue
-    | OutlineConfirmResumeValue
-    | OutlineRegenerateResumeValue
-    | BriefResumeValue
-    | BlueprintResumeValue
-    | ReviewResumeValue
+    ConfirmBriefResumeValue
+    | ConfirmBlueprintResumeValue
+    | ApplyBlueprintPatchResumeValue
+    | FixSelectedIssuesResumeValue
+    | ResolveBlockResumeValue
+    | SkipIssueResumeValue
 )
 
 
 class AgentResumeRequest(BaseModel):
-    thread_id: str
+    session_id: str = Field(validation_alias=AliasChoices("session_id", "thread_id"))
     resume_value: AgentResumeValue
 
 class AgentStopRequest(BaseModel):

@@ -1,16 +1,17 @@
 import type { SelectionSnapshot } from "./ai-creator.types";
-import type { AgentAwaitInputData } from "../../types/agent.types";
+import type { AgentAwaitInputData, AgentBlockState } from "../../types/agent.types";
 
 export type AiCreateSessionMode = "standard" | "agent";
 export type AiCreateSessionStatus =
   | "idle"
   | "running"
   | "awaiting_input"
+  | "blocked"
   | "completed"
   | "error"
   | "cancelled";
 export type AiCreateInsertMode = "create" | "append" | "overwrite" | "replace";
-export type AiCreateAwaitInputPhase = "clarify" | "propose" | "outline" | "brief" | "blueprint" | "review";
+export type AiCreateAwaitInputPhase = "brief" | "blueprint" | "review";
 
 export interface AiCreateAwaitInputState {
   phase: AiCreateAwaitInputPhase;
@@ -28,6 +29,7 @@ export interface AiCreateSessionState {
   startedAt: number | null;
   selectionSnapshot: SelectionSnapshot | null;
   awaitInput: AiCreateAwaitInputState | null;
+  block: AgentBlockState | null;
   error: string | null;
 }
 
@@ -47,6 +49,7 @@ export type AiCreateSessionAction =
   | { type: "content_cleared" }
   | { type: "buffer_updated"; buffer: string }
   | { type: "await_input"; phase: AiCreateAwaitInputPhase; data: AgentAwaitInputData }
+  | { type: "blocked"; block: AgentBlockState }
   | { type: "done" }
   | { type: "error"; message: string }
   | { type: "cancelled" };

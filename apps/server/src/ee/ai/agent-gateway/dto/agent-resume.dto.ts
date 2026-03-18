@@ -3,7 +3,7 @@ import type { AgentResumeValue } from '../agent-gateway.types';
 
 export class AgentResumeDto {
   @IsString()
-  threadId: string;
+  sessionId: string;
 
   @IsObject()
   resumeValue: AgentResumeValue;

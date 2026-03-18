@@ -378,8 +378,8 @@ export function useAiCreateSession({
           dispatch({ type: "task_received", taskId: event.taskId });
           return;
         case "session":
-          threadIdRef.current = event.threadId;
-          dispatch({ type: "session_received", threadId: event.threadId });
+          threadIdRef.current = event.sessionId || event.threadId;
+          dispatch({ type: "session_received", threadId: event.sessionId || event.threadId });
           return;
         case "step_start":
           updateStep({
@@ -405,6 +405,12 @@ export function useAiCreateSession({
           dispatch({ type: "content_cleared" });
           updateLastAssistant(() => "");
           return;
+        case "draft_patch":
+          accumulatedContentRef.current = event.markdown;
+          dispatch({ type: "content_cleared" });
+          dispatch({ type: "content_delta", chunk: event.markdown });
+          updateLastAssistant(() => event.markdown);
+          return;
         case "await_input":
           replayedStepRef.current = null;
           addInteractiveMessage(event.phase, event.data);
@@ -415,7 +421,19 @@ export function useAiCreateSession({
           return;
         case "blocked":
           replayedStepRef.current = null;
-          handleRunError(event.message);
+          removeLastEmptyAssistant();
+          clearController();
+          unlockEditor();
+          dispatch({
+            type: "blocked",
+            block: {
+              kind: event.kind,
+              message: event.message,
+              requiredAction: event.requiredAction,
+              allowedResolutions: event.allowedResolutions,
+            },
+          });
+          setIsStreaming(false);
           return;
         case "done":
           replayedStepRef.current = null;

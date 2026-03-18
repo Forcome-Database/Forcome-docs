@@ -1,6 +1,8 @@
 import {
   Controller,
   Post,
+  Get,
+  Param,
   Body,
   Req,
   Res,
@@ -222,7 +224,7 @@ export class AgentGatewayController {
     const secret = this.environmentService.getAgentInternalSecret();
 
     const payload = JSON.stringify({
-      thread_id: body.threadId,
+      thread_id: body.sessionId ?? body.threadId,
       resume_value: body.resumeValue,
     });
 
@@ -265,6 +267,60 @@ export class AgentGatewayController {
 
     proxyReq.write(payload);
     proxyReq.end();
+  }
+
+  @Get('session/:sessionId')
+  async getSessionSnapshot(
+    @Param('sessionId') sessionId: string,
+    @Res() res: FastifyReply,
+  ) {
+    const agentUrl = this.environmentService.getAgentServiceUrl();
+    if (!agentUrl) {
+      res.status(503).send({ error: 'Agent service not configured' });
+      return;
+    }
+
+    const url = new URL(`/agent/session/${sessionId}`, agentUrl);
+    const secret = this.environmentService.getAgentInternalSecret();
+
+    const options: http.RequestOptions = {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'GET',
+      headers: {
+        'X-Internal-Secret': secret || '',
+      },
+    };
+
+    await new Promise<void>((resolve) => {
+      const proxyReq = http.request(options, (proxyRes) => {
+        let body = '';
+
+        proxyRes.on('data', (chunk: Buffer) => {
+          body += chunk.toString('utf8');
+        });
+
+        proxyRes.on('end', () => {
+          const statusCode = proxyRes.statusCode ?? 200;
+          try {
+            res.status(statusCode).send(body ? JSON.parse(body) : {});
+          } catch (err: any) {
+            this.logger.error(`Agent session snapshot proxy parse error: ${err.message}`);
+            res.status(502).send({ error: 'Invalid agent session response' });
+          }
+          resolve();
+        });
+      });
+
+      proxyReq.on('error', (err) => {
+        this.logger.error(`Agent session snapshot proxy error: ${err.message}`);
+        res.status(502).send({ error: 'Agent service unavailable' });
+        resolve();
+      });
+
+      proxyReq.end();
+    });
   }
 
   @Post('stop')

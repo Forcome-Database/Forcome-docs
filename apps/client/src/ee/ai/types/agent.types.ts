@@ -69,39 +69,66 @@ export interface AgentReviewAwaitInputData {
   report: ReviewReport;
 }
 
+export interface AgentBlockState {
+  kind: string;
+  message: string;
+  requiredAction: string;
+  allowedResolutions: string[];
+}
+
+export interface AgentDraftPatchSection {
+  sectionId: string;
+  title: string;
+  level: number;
+  content: string;
+}
+
 export type AgentAwaitInputData =
-  | AgentClarifyAwaitInputData
-  | AgentProposeAwaitInputData
-  | AgentOutlineAwaitInputData
   | AgentBriefAwaitInputData
   | AgentBlueprintAwaitInputData
   | AgentReviewAwaitInputData;
 
-export interface AgentBriefResumeValue {
-  type: "brief";
+export interface AgentConfirmBriefResumeValue {
+  type: "confirm_brief";
   brief: Record<string, unknown>;
 }
 
-export interface AgentBlueprintResumeValue {
-  type: "blueprint";
+export interface AgentConfirmBlueprintResumeValue {
+  type: "confirm_blueprint";
   blueprint: Record<string, unknown> | null;
 }
 
-export interface AgentReviewResumeValue {
-  type: "review";
+export interface AgentApplyBlueprintPatchResumeValue {
+  type: "apply_blueprint_patch";
+  blueprint: Record<string, unknown> | null;
+  feedback?: string;
+}
+
+export interface AgentFixSelectedIssuesResumeValue {
+  type: "fix_selected_issues";
   selected_issue_ids: string[];
   feedback?: string;
-  skip?: boolean;
+}
+
+export interface AgentResolveBlockResumeValue {
+  type: "resolve_block";
+  resolution: string;
+  context?: Record<string, unknown>;
+}
+
+export interface AgentSkipIssueResumeValue {
+  type: "skip_issue";
+  issue_id: string;
+  feedback?: string;
 }
 
 export type AgentResumeValue =
-  | { answers: string }
-  | { selected_proposal: number; feedback?: string }
-  | { action: 'confirm'; confirmed_outline: string }
-  | { action: 'regenerate'; feedback?: string }
-  | AgentBriefResumeValue
-  | AgentBlueprintResumeValue
-  | AgentReviewResumeValue;
+  | AgentConfirmBriefResumeValue
+  | AgentConfirmBlueprintResumeValue
+  | AgentApplyBlueprintPatchResumeValue
+  | AgentFixSelectedIssuesResumeValue
+  | AgentResolveBlockResumeValue
+  | AgentSkipIssueResumeValue;
 
 export type AgentSSEEvent =
   | {
@@ -143,7 +170,10 @@ export type AgentSSEEvent =
     }
   | {
       type: 'blocked';
+      kind?: string;
       message: string;
+      required_action?: string;
+      allowed_resolutions?: string[];
     }
   | {
       type: 'done';
@@ -152,12 +182,23 @@ export type AgentSSEEvent =
     }
   | {
       type: 'await_input';
-      phase: 'clarify' | 'propose' | 'outline' | 'brief' | 'blueprint' | 'review' | string;
+      phase: 'brief' | 'blueprint' | 'review' | string;
       data: AgentAwaitInputData | Record<string, unknown>;
     }
   | {
       type: 'session';
+      session_id?: string;
       thread_id: string;
+    }
+  | {
+      type: 'draft_patch';
+      markdown: string;
+      sections: Array<{
+        section_id: string;
+        title: string;
+        level: number;
+        content: string;
+      }>;
     }
   | {
       type: 'cancelled';

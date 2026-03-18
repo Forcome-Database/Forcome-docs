@@ -32,9 +32,11 @@ from app.orchestrator.tools.user_interaction import interaction_registry
 from app.orchestrator.tools.write_tools import write_all_sections
 from app.workers.consistency_checker import run_consistency_checks
 from app.orchestrator.draft_manager import draft_store
+from app.orchestrator.session_store import session_store
 from app.models.brief import CreationBrief
 from app.models.blueprint import CreationBlueprint
 from app.models.review import ReviewIssue
+from app.models.session import SessionDraftSection
 
 # Phase 4 tools
 from app.orchestrator.tools.evaluate import evaluate_quality
@@ -158,6 +160,29 @@ def _has_blocking_review_issues(
     return False
 
 
+def _build_draft_snapshot(
+    blueprint: CreationBlueprint,
+    section_drafts: list[object],
+) -> tuple[str, list[SessionDraftSection]]:
+    merged_sections = [
+        {"title": blueprint.title, "level": 1, "content": ""},
+    ] + [
+        {"title": section.title, "level": section.level, "content": draft.content}
+        for section, draft in zip(blueprint.sections, section_drafts)
+    ]
+    markdown = merge_sections(merged_sections)
+    sections = [
+        SessionDraftSection(
+            section_id=section.id,
+            title=section.title,
+            level=section.level,
+            content=draft.content,
+        )
+        for section, draft in zip(blueprint.sections, section_drafts)
+    ]
+    return markdown, sections
+
+
 class OrchestratorRequest(BaseModel):
     """Input model for an orchestrator run."""
 
@@ -273,6 +298,14 @@ class OrchestratorEngine:
         timeout_message: str,
         raise_on_timeout: bool = True,
     ) -> dict | None:
+        session_store.upsert_session(
+            session_id=thread_id,
+            thread_id=thread_id,
+            run_state="awaiting_input",
+            phase=phase,
+            pending_decision={"phase": phase, "data": data},
+            blocked=None,
+        )
         interaction_registry.register(thread_id)
         await emit(
             thread_id,
@@ -285,12 +318,27 @@ class OrchestratorEngine:
         try:
             response = await interaction_registry.wait_for_response(thread_id)
         except asyncio.TimeoutError:
+            session_store.upsert_session(
+                session_id=thread_id,
+                thread_id=thread_id,
+                run_state="error",
+                phase=phase,
+                last_error=timeout_message,
+            )
             await emit(thread_id, {"type": "error", "message": timeout_message})
             interaction_registry.cleanup(thread_id)
             if raise_on_timeout:
                 raise
             return None
 
+        session_store.upsert_session(
+            session_id=thread_id,
+            thread_id=thread_id,
+            run_state="running",
+            phase=phase,
+            pending_decision=None,
+            blocked=None,
+        )
         return response if isinstance(response, dict) else None
 
     async def _emit_draft_preview(
@@ -300,14 +348,16 @@ class OrchestratorEngine:
         blueprint: CreationBlueprint,
         section_drafts: list,
     ) -> None:
-        merged_sections = [
-            {"title": blueprint.title, "level": 1, "content": ""},
-        ] + [
-            {"title": section.title, "level": section.level, "content": draft.content}
-            for section, draft in zip(blueprint.sections, section_drafts)
-        ]
-        preview = merge_sections(merged_sections)
+        preview, sections = _build_draft_snapshot(blueprint, section_drafts)
 
+        session_store.upsert_session(
+            session_id=thread_id,
+            thread_id=thread_id,
+            draft_markdown=preview,
+            draft_sections=sections,
+        )
+
+        await emit(thread_id, {"type": "draft_patch", "markdown": preview, "sections": [section.model_dump() for section in sections]})
         await emit(thread_id, {"type": "content_clear"})
         for index in range(0, len(preview), 1200):
             await emit(thread_id, {"type": "content", "chunk": preview[index:index + 1200]})
@@ -353,6 +403,11 @@ class OrchestratorEngine:
         review_report.user_decision_needed = [
             issue.id for issue in review_report.issues if not issue.auto_fixable and not issue.fixed
         ]
+        session_store.upsert_session(
+            session_id=thread_id,
+            thread_id=thread_id,
+            review_report=review_report,
+        )
         return review_report, section_drafts
 
     async def _execute_level1(self, request: OrchestratorRequest) -> str:
@@ -417,6 +472,12 @@ class OrchestratorEngine:
             page_content=request.page_content or None,
             template_prompt=request.template_prompt or None,
             thread_id=request.thread_id,
+        )
+        session_store.upsert_session(
+            session_id=request.thread_id,
+            thread_id=request.thread_id,
+            phase="brief",
+            brief=brief,
         )
 
         # Step 3: Emit brief for user confirmation and wait
@@ -602,6 +663,13 @@ class OrchestratorEngine:
         # User may have modified the brief
         if isinstance(brief_response, dict) and brief_response.get("brief"):
             brief = CreationBrief.model_validate(brief_response["brief"])
+        session_store.upsert_session(
+            session_id=request.thread_id,
+            thread_id=request.thread_id,
+            phase="brief_confirmed",
+            brief=brief,
+            pending_decision=None,
+        )
 
         # 4. Generate blueprint
         blueprint = await generate_blueprint(
@@ -609,6 +677,12 @@ class OrchestratorEngine:
             brief=brief,
             asset_map=asset_map,
             thread_id=request.thread_id,
+        )
+        session_store.upsert_session(
+            session_id=request.thread_id,
+            thread_id=request.thread_id,
+            phase="blueprint",
+            blueprint=blueprint,
         )
 
         # 5. Ask user to confirm blueprint
@@ -623,6 +697,13 @@ class OrchestratorEngine:
         )
         if isinstance(blueprint_response, dict) and blueprint_response.get("blueprint"):
             blueprint = CreationBlueprint.model_validate(blueprint_response["blueprint"])
+        session_store.upsert_session(
+            session_id=request.thread_id,
+            thread_id=request.thread_id,
+            phase="blueprint_confirmed",
+            blueprint=blueprint,
+            pending_decision=None,
+        )
 
         # 6. Write all sections
         section_drafts = await write_all_sections(
@@ -635,6 +716,11 @@ class OrchestratorEngine:
             system_prompt=request.system_prompt,
             template_prompt=request.template_prompt,
             intent_route=request.intent_route,
+        )
+        await self._emit_draft_preview(
+            thread_id=request.thread_id,
+            blueprint=blueprint,
+            section_drafts=section_drafts,
         )
 
         # 7. Save draft
@@ -677,6 +763,42 @@ class OrchestratorEngine:
                 if isinstance(issue_id, str)
             ]
             feedback = review_response.get("feedback")
+
+            if skip_requested and _has_blocking_review_issues(review_report, allow_visual_skip=True):
+                blocked_event = {
+                    "type": "blocked",
+                    "kind": "review",
+                    "message": "Blocking review issues remain and must be fixed before completion",
+                    "required_action": "Fix the remaining blocking issues before completing",
+                    "allowed_resolutions": ["fix_selected_issues", "update_brief", "update_blueprint"],
+                }
+                session_store.upsert_session(
+                    session_id=request.thread_id,
+                    thread_id=request.thread_id,
+                    run_state="blocked",
+                    phase="review",
+                    blocked={k: v for k, v in blocked_event.items() if k != "type"},
+                )
+                await emit(request.thread_id, blocked_event)
+                continue
+
+            if not selected_ids and not skip_requested:
+                blocked_event = {
+                    "type": "blocked",
+                    "kind": "review",
+                    "message": "Select one or more review issues to fix before continuing",
+                    "required_action": "Choose review issues to fix, or skip visual issues explicitly",
+                    "allowed_resolutions": ["fix_selected_issues", "skip_visual_issues"],
+                }
+                session_store.upsert_session(
+                    session_id=request.thread_id,
+                    thread_id=request.thread_id,
+                    run_state="blocked",
+                    phase="review",
+                    blocked={k: v for k, v in blocked_event.items() if k != "type"},
+                )
+                await emit(request.thread_id, blocked_event)
+                continue
 
             if skip_requested:
                 if _has_blocking_review_issues(review_report, allow_visual_skip=True):
@@ -736,6 +858,16 @@ class OrchestratorEngine:
             thread_id=request.thread_id,
             sections=merged_sections,
             insert_mode=request.insert_mode,
+        )
+        session_store.upsert_session(
+            session_id=request.thread_id,
+            thread_id=request.thread_id,
+            run_state="completed",
+            phase="done",
+            pending_decision=None,
+            blocked=None,
+            final_content=final_content,
+            draft_markdown=final_content,
         )
 
         return final_content

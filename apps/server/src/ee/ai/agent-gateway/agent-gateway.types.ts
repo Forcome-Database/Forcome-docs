@@ -3,28 +3,15 @@ export interface AgentProposalOption {
   description: string;
 }
 
-export interface AgentClarifyAwaitInputData {
-  type: 'clarify';
-  questions: string[];
-}
-
-export interface AgentProposeAwaitInputData {
-  type: 'propose';
-  proposals: AgentProposalOption[];
-}
-
-export interface AgentOutlineAwaitInputData {
-  type: 'outline';
-  outline: string;
-}
-
 export type AgentAwaitInputData =
-  | AgentClarifyAwaitInputData
-  | AgentProposeAwaitInputData
-  | AgentOutlineAwaitInputData;
+  | { type: 'brief'; brief: Record<string, unknown>; asset_summary?: Record<string, unknown> }
+  | { type: 'blueprint'; blueprint: Record<string, unknown> }
+  | { type: 'review'; report: Record<string, unknown> };
 
 export type AgentResumeValue =
-  | { answers: string }
-  | { selected_proposal: number; feedback?: string }
-  | { action: 'confirm'; confirmed_outline: string }
-  | { action: 'regenerate'; feedback?: string };
+  | { type: 'confirm_brief'; brief: Record<string, unknown> }
+  | { type: 'confirm_blueprint'; blueprint: Record<string, unknown> | null }
+  | { type: 'apply_blueprint_patch'; blueprint: Record<string, unknown> | null; feedback?: string }
+  | { type: 'fix_selected_issues'; selected_issue_ids: string[]; feedback?: string }
+  | { type: 'resolve_block'; resolution: string; context?: Record<string, unknown> }
+  | { type: 'skip_issue'; issue_id: string; feedback?: string };
