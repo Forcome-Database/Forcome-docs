@@ -74,7 +74,7 @@ test("resolveAiIntent falls back to document creation on blank pages", () => {
 
 test("resolveAiIntent treats referenced URLs as source-first transforms even on blank pages", () => {
   const result = resolveAiIntent({
-    prompt: "https://help.router-for.me/cn/introduction/quick-start.html 请复刻这个文档内容",
+    prompt: "https://help.router-for.me/cn/introduction/quick-start.html mirror this document",
     selection: "",
     files: [],
     pageHasContent: false,
@@ -85,6 +85,25 @@ test("resolveAiIntent treats referenced URLs as source-first transforms even on 
     route: "document_transform",
     scope: "blank_page",
     sourcePolicy: "transform_source",
+    lengthPolicy: "preserve",
+    prioritizeUserInstructions: true,
+    effectiveMode: "agent",
+  });
+});
+
+test("resolveAiIntent keeps freshness-only blank page prompts on document_create so evidence gating stays runtime-owned", () => {
+  const result = resolveAiIntent({
+    prompt: "Write the latest overview of AI coding agents for an internal memo",
+    selection: "",
+    files: [],
+    pageHasContent: false,
+    agentMode: true,
+  });
+
+  assert.deepEqual(result, {
+    route: "document_create",
+    scope: "blank_page",
+    sourcePolicy: "create_new",
     lengthPolicy: "preserve",
     prioritizeUserInstructions: true,
     effectiveMode: "agent",

@@ -167,6 +167,7 @@ async def run_agent(request: dict):
         pending_decision=None,
         blocked=None,
         last_error=None,
+        block_resolution_choices=[],
     )
 
     register_task(task_id, thread_id)
@@ -226,6 +227,7 @@ async def resume_agent(request: AgentResumeRequest):
         run_state="running",
         pending_decision=None,
         blocked=None,
+        block_resolution_choices=[],
     )
     return EventSourceResponse(_event_generator(thread_id, queue))
 

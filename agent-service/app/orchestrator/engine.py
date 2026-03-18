@@ -25,8 +25,12 @@ from app.orchestrator.tools.simple_edit import SimpleEditRequest, execute_simple
 from app.orchestrator.tools.parse_assets import parse_assets_tool
 from app.orchestrator.tools.create_brief import generate_brief
 from app.orchestrator.tools.create_blueprint import generate_blueprint
-from app.orchestrator.tools.research import research_tool
 from app.orchestrator.tools.user_interaction import interaction_registry
+from app.orchestrator.tools.evidence import (
+    build_evidence_snapshot,
+    collect_evidence,
+    failed_required_evidence,
+)
 
 # Phase 3 tools
 from app.orchestrator.tools.write_tools import write_all_sections
@@ -63,13 +67,6 @@ def _build_asset_summary(asset_map: object) -> dict:
         "source_word_count": asset_map.source_word_count,
         "source_section_counts": asset_map.source_section_counts,
     }
-
-
-def _extract_first_url(text: str) -> str | None:
-    import re
-
-    match = re.search(r"https?://[^\s)>\]]+", text)
-    return match.group(0) if match else None
 
 
 def _build_consistency_review_issues(consistency_issues: list[object]) -> list[ReviewIssue]:
@@ -181,6 +178,16 @@ def _build_draft_snapshot(
         for section, draft in zip(blueprint.sections, section_drafts)
     ]
     return markdown, sections
+
+
+def _evidence_block_event() -> dict:
+    return {
+        "type": "blocked",
+        "kind": "evidence",
+        "message": "Required evidence could not be collected",
+        "required_action": "Retry the failed evidence step or remove the missing source",
+        "allowed_resolutions": ["retry", "remove_source"],
+    }
 
 
 class OrchestratorRequest(BaseModel):
@@ -410,6 +417,56 @@ class OrchestratorEngine:
         )
         return review_report, section_drafts
 
+    async def _prepare_evidence(
+        self,
+        request: OrchestratorRequest,
+        *,
+        page_id_for_assets: str | None = None,
+    ):
+        asset_map = None
+        parse_error = None
+        if request.files:
+            try:
+                parse_kwargs = {"files": request.files}
+                if page_id_for_assets is not None:
+                    parse_kwargs["page_id"] = page_id_for_assets
+                asset_map = await parse_assets_tool(**parse_kwargs)
+            except Exception as exc:
+                parse_error = str(exc)[:200]
+
+        asset_map, evidence_items = await collect_evidence(
+            request,
+            asset_map=asset_map,
+            parse_error=parse_error,
+        )
+        snapshot = build_evidence_snapshot(evidence_items)
+        session_store.upsert_session(
+            session_id=request.thread_id,
+            thread_id=request.thread_id,
+            **snapshot,
+        )
+        return asset_map, evidence_items
+
+    async def _emit_evidence_block(
+        self,
+        *,
+        thread_id: str,
+        evidence_items: list,
+    ) -> str:
+        blocked_event = _evidence_block_event()
+        snapshot = build_evidence_snapshot(evidence_items)
+        session_store.upsert_session(
+            session_id=thread_id,
+            thread_id=thread_id,
+            run_state="blocked",
+            phase="evidence",
+            blocked={k: v for k, v in blocked_event.items() if k != "type"},
+            block_resolution_choices=blocked_event["allowed_resolutions"],
+            **snapshot,
+        )
+        await emit(thread_id, blocked_event)
+        return ""
+
     async def _execute_level1(self, request: OrchestratorRequest) -> str:
         """Execute a Level 1 (simple edit) task.
 
@@ -458,11 +515,11 @@ class OrchestratorEngine:
         Returns:
             The final content string.
         """
-        # Step 1: Parse assets if files are present
-        asset_map = None
-        if request.files:
-            asset_map = await parse_assets_tool(
-                files=request.files,
+        asset_map, evidence_items = await self._prepare_evidence(request)
+        if failed_required_evidence(evidence_items):
+            return await self._emit_evidence_block(
+                thread_id=request.thread_id,
+                evidence_items=evidence_items,
             )
 
         # Step 2: Generate Smart Brief
@@ -556,20 +613,19 @@ class OrchestratorEngine:
         Returns:
             The final content string.
         """
-        # 1. Parse assets if files present
-        asset_map = None
-        if request.files:
-            asset_map = await parse_assets_tool(
-                files=request.files,
-                page_id=request.page_id,
+        asset_map, evidence_items = await self._prepare_evidence(
+            request,
+            page_id_for_assets=request.page_id,
+        )
+        if failed_required_evidence(evidence_items):
+            return await self._emit_evidence_block(
+                thread_id=request.thread_id,
+                evidence_items=evidence_items,
             )
 
         # 1b. Research step — if no uploaded files, gather web research
-        has_text_assets = (
-            asset_map is not None
-            and any(item.type == "text" for item in asset_map.items)
-        )
-        has_sufficient_evidence = has_text_assets and (asset_map.source_word_count >= 500)
+        has_text_assets = True
+        has_sufficient_evidence = True
         if not has_sufficient_evidence:
             await emit(request.thread_id, {
                 "type": "step_start",

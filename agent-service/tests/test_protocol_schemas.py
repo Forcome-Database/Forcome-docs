@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from app.models.session import CreationSessionSnapshot
 from app.schemas.request import AgentResumeRequest
 from app.schemas.response import AwaitInputEvent, BlockedEvent, CancelledEvent, DraftPatchEvent, SessionEvent
 
@@ -181,3 +182,40 @@ def test_draft_patch_event_schema_accepts_markdown_and_section_patches():
     assert event.markdown.startswith("# Title")
     assert event.sections[0].section_id == "intro"
     assert event.sections[0].content == "Content"
+
+
+def test_creation_session_snapshot_preserves_evidence_metadata():
+    snapshot = CreationSessionSnapshot.model_validate(
+        {
+            "session_id": "session-1",
+            "thread_id": "thread-1",
+            "evidence_summary": {
+                "total": 2,
+                "required_total": 1,
+                "optional_total": 1,
+                "failed_required": 1,
+            },
+            "failed_evidence_items": [
+                {
+                    "kind": "reference_url",
+                    "source": "https://example.com/spec",
+                    "required": True,
+                    "status": "failed",
+                    "purpose": "ground the source document",
+                    "error": "crawl timeout",
+                }
+            ],
+            "block_resolution_choices": ["retry", "remove_source"],
+        }
+    )
+
+    payload = snapshot.model_dump()
+
+    assert payload["evidence_summary"] == {
+        "total": 2,
+        "required_total": 1,
+        "optional_total": 1,
+        "failed_required": 1,
+    }
+    assert payload["failed_evidence_items"][0]["kind"] == "reference_url"
+    assert payload["block_resolution_choices"] == ["retry", "remove_source"]

@@ -67,6 +67,23 @@ async def test_get_session_snapshot_returns_current_creation_session():
             },
         },
         draft_markdown="# Draft",
+        evidence_summary={
+            "total": 2,
+            "required_total": 1,
+            "optional_total": 1,
+            "failed_required": 1,
+        },
+        failed_evidence_items=[
+            {
+                "kind": "reference_url",
+                "source": "https://example.com/spec",
+                "required": True,
+                "status": "failed",
+                "purpose": "ground the source document",
+                "error": "crawl timeout",
+            }
+        ],
+        block_resolution_choices=["retry", "remove_source"],
     )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -108,5 +125,22 @@ async def test_get_session_snapshot_returns_current_creation_session():
             "draft_sections": [],
             "final_content": "",
             "last_error": None,
+            "evidence_summary": {
+                "total": 2,
+                "required_total": 1,
+                "optional_total": 1,
+                "failed_required": 1,
+            },
+            "failed_evidence_items": [
+                {
+                    "kind": "reference_url",
+                    "source": "https://example.com/spec",
+                    "required": True,
+                    "status": "failed",
+                    "purpose": "ground the source document",
+                    "error": "crawl timeout",
+                }
+            ],
+            "block_resolution_choices": ["retry", "remove_source"],
         },
     }

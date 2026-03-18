@@ -18,14 +18,18 @@ class PageContext(BaseModel):
 
 
 class EvidenceRequirement(BaseModel):
-    type: Literal[
+    kind: Literal[
         "reference_url",
         "uploaded_document",
         "uploaded_image",
         "page_context",
         "web_search",
-    ]
+    ] = Field(validation_alias=AliasChoices("kind", "type"))
+    source: str | None = None
     required: bool = True
+    status: Literal["pending", "success", "failed"] = "pending"
+    purpose: str = ""
+    error: str | None = None
     url: str | None = None
     fileName: str | None = None
     pageId: str | None = None
