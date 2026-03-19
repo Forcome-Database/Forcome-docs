@@ -1,3 +1,4 @@
+import React from 'react';
 import { Group, RingProgress, Text, Stack, Paper, SimpleGrid } from '@mantine/core';
 
 interface ReviewScoreBoardProps {

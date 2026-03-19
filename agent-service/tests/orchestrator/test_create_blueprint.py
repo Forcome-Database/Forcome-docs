@@ -85,6 +85,18 @@ def _make_asset_map(with_images: bool = False) -> AssetMap:
     )
 
 
+def _make_image_candidate(asset_id: str = "img-001", score: float = 0.9) -> dict:
+    return {
+        "asset_id": asset_id,
+        "score": score,
+        "caption": "Architecture diagram",
+        "source": "doc.pdf",
+        "source_page": 2,
+        "source_heading": "Architecture",
+        "rationale": "Matches architecture keywords",
+    }
+
+
 def _make_llm_response(sections_data: list[dict], title: str = "Test Doc", total_budget: int = 1000) -> dict:
     return {
         "title": title,
@@ -633,6 +645,51 @@ class TestGenerateBlueprint:
             )
 
         assert any(v.type == "ai_image" for v in result.sections[0].visuals)
+
+    @pytest.mark.asyncio
+    async def test_canonical_image_strategy_prefers_source_candidates(self):
+        llm_data = {
+            "title": "Doc",
+            "total_word_budget": 500,
+            "sections": [
+                {
+                    "id": "s1",
+                    "title": "Overview",
+                    "level": 2,
+                    "word_budget": 500,
+                    "description": "Architecture overview",
+                    "assets": [],
+                    "visual_candidates": [_make_image_candidate()],
+                    "visuals": [
+                        {
+                            "type": "reuse_image",
+                            "description": "Reuse the source architecture diagram",
+                            "source_asset_id": "img-001",
+                            "position": "before_section",
+                        }
+                    ],
+                    "must_cover": ["system layout"],
+                }
+            ],
+        }
+
+        with (
+            patch(
+                "app.orchestrator.tools.create_blueprint._call_llm_for_blueprint",
+                new_callable=AsyncMock,
+                return_value=llm_data,
+            ),
+            patch("app.orchestrator.tools.create_blueprint.emit", new_callable=AsyncMock),
+        ):
+            result = await generate_blueprint(
+                user_message="Write a source-aware system overview",
+                brief=_make_brief(image_strategy="reuse_source", target_length=500),
+                asset_map=_make_asset_map(with_images=True),
+                thread_id="t1",
+            )
+
+        assert result.sections[0].visual_candidates[0].asset_id == "img-001"
+        assert result.sections[0].visuals[0].type == "reuse_image"
 
 
 class TestClassifyBlueprintDelta:

@@ -1,6 +1,7 @@
 import type {
   AgentAwaitInputData,
   AgentBlockState,
+  AgentEvidenceSummary,
   AgentResumeValue,
   AgentSessionSnapshot,
   AgentSessionRunState,
@@ -24,6 +25,54 @@ export interface AgentGenerateParams {
 
 function createReaderErrorMessage(): string {
   return 'Unable to read agent response stream';
+}
+
+function dispatchAgentSseLine(
+  line: string,
+  onEvent: (event: AgentSSEEvent) => void,
+) {
+  if (!line.startsWith('data: ')) {
+    return;
+  }
+
+  const data = line.slice(6).trim();
+  if (!data || data === '[DONE]') {
+    return;
+  }
+
+  try {
+    const event: AgentSSEEvent = JSON.parse(data);
+    onEvent(event);
+  } catch {
+    // Ignore parse errors from malformed stream chunks.
+  }
+}
+
+function consumeAgentSseBuffer(
+  buffer: string,
+  onEvent: (event: AgentSSEEvent) => void,
+): string {
+  const lines = buffer.split('\n');
+  const remainder = lines.pop() || '';
+
+  for (const line of lines) {
+    dispatchAgentSseLine(line, onEvent);
+  }
+
+  return remainder;
+}
+
+function flushFinalAgentSseBuffer(
+  buffer: string,
+  onEvent: (event: AgentSSEEvent) => void,
+) {
+  if (!buffer.trim()) {
+    return;
+  }
+
+  for (const line of buffer.split('\n')) {
+    dispatchAgentSseLine(line, onEvent);
+  }
 }
 
 function normalizeSessionRunState(value: unknown): AgentSessionRunState | null {
@@ -129,13 +178,78 @@ function normalizeSessionDraftSections(
       typeof (item as { content?: unknown }).content === 'string'
         ? (item as { content: string }).content
         : null;
+    const writeAttempts =
+      typeof (item as { write_attempts?: unknown }).write_attempts === 'number'
+        ? (item as { write_attempts: number }).write_attempts
+        : undefined;
+    const imageStatus =
+      typeof (item as { image_status?: unknown }).image_status === 'string'
+        ? (item as { image_status: string }).image_status
+        : undefined;
+    const sourceImageAssetId =
+      typeof (item as { source_image_asset_id?: unknown }).source_image_asset_id === 'string'
+        ? (item as { source_image_asset_id: string }).source_image_asset_id
+        : null;
+    const degradedReason =
+      typeof (item as { degraded_reason?: unknown }).degraded_reason === 'string'
+        ? (item as { degraded_reason: string }).degraded_reason
+        : null;
 
     if (!nodeId || !sectionId || !title || content === null) {
       return [];
     }
 
-    return [{ nodeId, sectionId, title, level, content }];
+    return [{
+      nodeId,
+      sectionId,
+      title,
+      level,
+      content,
+      ...(writeAttempts !== undefined ? { writeAttempts } : {}),
+      ...(imageStatus ? { imageStatus } : {}),
+      ...(sourceImageAssetId ? { sourceImageAssetId } : {}),
+      ...(degradedReason ? { degradedReason } : {}),
+    }];
   });
+}
+
+function normalizeEvidenceSummary(value: unknown): AgentEvidenceSummary | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const total =
+    typeof (value as { total?: unknown }).total === 'number'
+      ? (value as { total: number }).total
+      : null;
+  const requiredTotal =
+    typeof (value as { required_total?: unknown }).required_total === 'number'
+      ? (value as { required_total: number }).required_total
+      : null;
+  const optionalTotal =
+    typeof (value as { optional_total?: unknown }).optional_total === 'number'
+      ? (value as { optional_total: number }).optional_total
+      : null;
+  const failedRequired =
+    typeof (value as { failed_required?: unknown }).failed_required === 'number'
+      ? (value as { failed_required: number }).failed_required
+      : null;
+
+  if (
+    total === null ||
+    requiredTotal === null ||
+    optionalTotal === null ||
+    failedRequired === null
+  ) {
+    return null;
+  }
+
+  return {
+    total,
+    requiredTotal,
+    optionalTotal,
+    failedRequired,
+  };
 }
 
 export function agentGenerate(
@@ -194,28 +308,10 @@ export function agentGenerate(
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) {
-            continue;
-          }
-
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') {
-            continue;
-          }
-
-          try {
-            const event: AgentSSEEvent = JSON.parse(data);
-            onEvent(event);
-          } catch {
-            // Ignore parse errors from malformed stream chunks.
-          }
-        }
+        buffer = consumeAgentSseBuffer(buffer, onEvent);
       }
 
+      flushFinalAgentSseBuffer(buffer + decoder.decode(), onEvent);
       onComplete();
     })
     .catch((err) => {
@@ -268,28 +364,10 @@ export function resumeAgent(
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) {
-            continue;
-          }
-
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') {
-            continue;
-          }
-
-          try {
-            const event: AgentSSEEvent = JSON.parse(data);
-            onEvent(event);
-          } catch {
-            // Ignore parse errors from malformed stream chunks.
-          }
-        }
+        buffer = consumeAgentSseBuffer(buffer, onEvent);
       }
 
+      flushFinalAgentSseBuffer(buffer + decoder.decode(), onEvent);
       onComplete();
     })
     .catch((err) => {
@@ -354,6 +432,16 @@ export async function getAgentSession(
         ? normalizeSessionAwaitInput(session.pending_decision)
         : null,
     block: status === 'blocked' ? normalizeSessionBlock(session.blocked) : null,
+    brief: session.brief && typeof session.brief === 'object'
+      ? (session.brief as AgentSessionSnapshot['brief'])
+      : null,
+    blueprint: session.blueprint && typeof session.blueprint === 'object'
+      ? (session.blueprint as AgentSessionSnapshot['blueprint'])
+      : null,
+    reviewReport: session.review_report && typeof session.review_report === 'object'
+      ? (session.review_report as AgentSessionSnapshot['reviewReport'])
+      : null,
+    evidenceSummary: normalizeEvidenceSummary(session.evidence_summary),
     draftMarkdown,
     draftSections: normalizeSessionDraftSections(session.draft_sections),
   };

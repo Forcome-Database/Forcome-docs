@@ -1,3 +1,5 @@
+import type { ImageStrategy } from './source-assets.types';
+
 export interface CreationBrief {
   audience: string;
   goal: string;
@@ -6,6 +8,6 @@ export interface CreationBrief {
   style: string;
   tone: string;
   structure_strategy: 'copy_source' | 'ai_recommend' | 'user_defined';
-  image_strategy: 'reuse_source' | 'generate_new' | 'mixed' | 'none';
+  image_strategy: ImageStrategy;
   constraints: string[];
 }

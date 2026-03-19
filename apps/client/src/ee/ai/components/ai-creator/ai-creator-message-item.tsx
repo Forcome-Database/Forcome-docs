@@ -30,6 +30,10 @@ import type { CreationBrief } from "../../types/brief.types";
 import type { CreationBlueprint } from "../../types/blueprint.types";
 import type { ReviewReport } from "../../types/review.types";
 import { BUBBLE_ALLOWED_URI_REGEXP } from "./ai-creator-bubble-render";
+import {
+  insertMarkdownAtDocumentEnd,
+  maybeExtractTitle,
+} from "./ai-creator-writeback";
 import classes from "./ai-creator.module.css";
 
 // Create an ISOLATED marked instance for bubble rendering (with hljs highlight)
@@ -97,7 +101,7 @@ interface Props {
   agentSteps?: AgentStepInfo[];
 }
 
-import { extractTitle, stripTimestamp, preprocessImagesForEditor } from './ai-creator-utils';
+import { stripTimestamp, preprocessImagesForEditor } from './ai-creator-utils';
 
 /* ---------- V2 wrapper sub-components (avoid conditional useState) ---------- */
 
@@ -187,6 +191,9 @@ function ReviewMessageItem({
   onResume?: (value: AgentResumeValue) => void;
 }) {
   const [opened, setOpened] = useState(true);
+  const report = reviewData as unknown as ReviewReport;
+  const firstSkippableIssueId =
+    report.issues.find((issue) => issue.category === "visual" && !issue.fixed)?.id ?? null;
   return (
     <div className={classes.messageAi}>
       <div className={classes.messageBubbleRow + " " + classes.messageBubbleRowAi}>
@@ -197,13 +204,20 @@ function ReviewMessageItem({
           <ReviewModal
             opened={opened}
             onClose={() => setOpened(false)}
-            report={reviewData as unknown as ReviewReport}
+            report={report}
             onFixSelected={(ids, feedback) => {
               onResume?.({ type: 'fix_selected_issues', selected_issue_ids: ids, feedback });
               setOpened(false);
             }}
+            onContinue={(feedback) => {
+              onResume?.({ type: 'accept_review', feedback });
+              setOpened(false);
+            }}
             onSkip={() => {
-              onResume?.({ type: 'skip_issue', issue_id: 'visual-skip' });
+              if (!firstSkippableIssueId) {
+                return;
+              }
+              onResume?.({ type: 'skip_issue', issue_id: firstSkippableIssueId });
               setOpened(false);
             }}
           />
@@ -246,25 +260,15 @@ export function AiCreatorMessageItem({
   const handleInsert = useCallback(() => {
     if (!editor) return;
 
-    let markdown = stripTimestamp(message.content);
+    const markdown = maybeExtractTitle(titleEditor, stripTimestamp(message.content));
+    const inserted = !markdown.trim() || insertMarkdownAtDocumentEnd(editor, markdown);
 
-    // Extract H1 as page title if the current title is empty
-    if (titleEditor) {
-      const currentTitle = titleEditor.state.doc.textContent.trim();
-      if (!currentTitle) {
-        const [title, remaining] = extractTitle(markdown);
-        if (title) {
-          titleEditor.commands.setContent(title);
-          markdown = remaining;
-        }
-      }
-    }
-
-    const html = renderEditorHtml(preprocessImagesForEditor(markdown));
-    if (html) {
-      editor.chain().focus("end").insertContent(html).run();
-    }
-    notifications.show({ message: t("Inserted") });
+    notifications.show({
+      color: inserted ? undefined : "red",
+      message: inserted
+        ? t("Inserted")
+        : t("Failed to insert the draft into the editor."),
+    });
   }, [editor, titleEditor, message.content, t]);
 
   const handleReplace = useCallback(() => {

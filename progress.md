@@ -98,3 +98,56 @@
 | What's the goal? | Implement AI Creator v2 spec-aligned end-to-end flow |
 | What have I learned? | Upload/resume/visual/review contracts were the main broken chains; they now have matching frontend/backend contracts |
 | What have I done? | Implemented the first end-to-end alignment pass and rerun key tests |
+
+## Session: 2026-03-19 MinerU-First Planning
+
+### Phase: Discovery & Planning
+- **Status:** complete
+- Actions taken:
+  - Verified from official MinerU documentation that the cloud API supports `pdf/doc/docx/ppt/pptx/png/jpg/jpeg/html`.
+  - Confirmed MinerU is better aligned with the current PDF/source-image preservation problem, while Docling still covers unsupported formats such as `xlsx`.
+  - Revalidated the local parser gap using the real `采购退货单sop.pdf` fixture: the Docling path leaves `<!-- image -->` placeholders but returns `image_count=0`.
+  - Wrote a dedicated implementation plan for a MinerU-first / Docling-fallback rollout.
+- Files created/modified:
+  - docs/superpowers/plans/2026-03-19-ai-creator-mineru-first-parsing.md
+  - findings.md
+  - progress.md
+  - task_plan.md
+
+## Upcoming Validation Targets
+| Test | Input | Expected | Status |
+|------|-------|----------|--------|
+| MinerU client unit tests | `python -m pytest agent-service/tests/tools/test_mineru_client.py -q` | Config, upload, polling, and ZIP download behavior verified | pending |
+| MinerU parser unit tests | `python -m pytest agent-service/tests/workers/test_mineru_parser.py -q` | ZIP output converts to text + image payloads | pending |
+| Parser routing tests | `python -m pytest agent-service/tests/orchestrator/test_parse_assets_mineru.py -q` | Supported files route to MinerU first, fallback to Docling on failure | pending |
+
+## Session: 2026-03-19 MinerU-First Implementation
+
+### Phase: MinerU Client & Parser Routing
+- **Status:** in_progress
+- Actions taken:
+  - Added a MinerU API client with env-driven config, upload URL request orchestration, polling, and ZIP download handling.
+  - Added a MinerU ZIP parser that preserves text, image payloads, basic heading structure, and block order metadata.
+  - Switched `asset_parser.parse_document()` to prefer MinerU for supported formats and fall back to Docling on failure.
+  - Added parser routing tests covering MinerU-first PDF handling, Docling fallback, and XLSX staying on Docling.
+  - Added MinerU env placeholders to `.env.example`.
+- Files created/modified:
+  - agent-service/app/tools/mineru_client.py
+  - agent-service/app/workers/mineru_parser.py
+  - agent-service/app/workers/asset_parser.py
+  - agent-service/app/models/source_assets.py
+  - agent-service/tests/test_tools/test_mineru_client.py
+  - agent-service/tests/workers/test_mineru_parser.py
+  - agent-service/tests/orchestrator/test_parse_assets_mineru.py
+  - .env.example
+
+## Additional Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| MinerU client + parser + asset parser + parse_assets | `python -m pytest agent-service/tests/test_tools/test_mineru_client.py agent-service/tests/workers/test_mineru_parser.py agent-service/tests/workers/test_asset_parser.py agent-service/tests/orchestrator/test_parse_assets.py agent-service/tests/orchestrator/test_parse_assets_parallel.py agent-service/tests/orchestrator/test_parse_assets_mineru.py -q` | Pass | 67 passed | pass |
+| Engine/L2 regression after MinerU-first routing | `python -m pytest agent-service/tests/orchestrator/test_engine.py agent-service/tests/orchestrator/test_e2e_level2.py -q` | Pass | 28 passed | pass |
+
+## Current Blockers
+| Blocker | Evidence | Next Step |
+|---------|----------|-----------|
+| MinerU cloud auth could not be validated with the provided token | Real requests to `GET https://mineru.net/api/v4/quota` and `POST https://mineru.net/api/v4/file-urls/batch` returned `401 user authenticate failed` | Confirm the correct API token / tenant binding, then rerun real API smoke validation before relying on MinerU in production |

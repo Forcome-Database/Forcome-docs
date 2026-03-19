@@ -4,7 +4,10 @@ import json
 import time
 from datetime import datetime
 
+import requests
+
 from playwright_ai_creator_utils import (
+    SERVER_URL,
     build_smoke_context,
     click_insert_to_editor,
     create_authenticated_session,
@@ -17,19 +20,23 @@ from playwright_ai_creator_utils import (
 
 
 def build_prompt(marker: str) -> str:
-    return f"""Use deep mode to create a short technical note.
+    return f"""Use deep mode to create a concise technical note.
 
 No external research, browsing, crawling, knowledge search, or image generation is needed.
 Do not call external tools unless the workflow cannot continue without them.
 Use only the request below and the current empty page context.
 
-You must provide an outline for approval before the final draft.
+Use the AI creator workbench checkpoints before the final draft, but keep those checkpoints internal.
+Do not create a separate "checkpoint" section in the final markdown.
+Do not wrap the final markdown in tool traces, result objects, quotes, or explanations.
 
 The final markdown must include:
 - a level-2 heading named `{marker}`
 - at least one markdown table
 - at least one mermaid block
+- one short paragraph comparing the two structures in plain prose
 
+Aim for roughly 250 to 350 words.
 Keep the draft concise and markdown only.
 """
 
@@ -39,35 +46,28 @@ def get_run_state(session) -> dict[str, object]:
         """
 (() => {
   const bodyText = document.body?.innerText || '';
-  const bubbles = Array.from(document.querySelectorAll('[class*="messageAiBubble"]'));
-  const latestMatchingBubble = (matcher) =>
-    [...bubbles].reverse().find((bubble) => matcher(bubble)) || null;
-  const getTextButtons = (bubble) =>
-    Array.from(bubble.querySelectorAll('button'))
-      .map((button) => (button.innerText || '').trim())
-      .filter(Boolean);
-  const countCards = (bubble) =>
-    Array.from(bubble.querySelectorAll('div')).filter((node) =>
-      (node.getAttribute('style') || '').includes('cursor: pointer')
-    ).length;
-  const clarifyBubble = latestMatchingBubble((bubble) => {
-    const textButtons = getTextButtons(bubble);
-    return !!bubble.querySelector('textarea') && textButtons.length === 1 && countCards(bubble) === 0;
-  });
-  const proposeBubble = latestMatchingBubble((bubble) => {
-    const textButtons = getTextButtons(bubble);
-    return !!bubble.querySelector('textarea') && textButtons.length === 1 && countCards(bubble) > 0;
-  });
-  const outlineBubble = latestMatchingBubble((bubble) => getTextButtons(bubble).length === 3);
+  const allButtons = Array.from(document.querySelectorAll('button'))
+    .map((button) => ({
+      text: (button.innerText || '').trim(),
+      disabled: !!button.disabled,
+    }))
+    .filter((button) => button.text.length > 0);
   const actionButtons = document.querySelectorAll('[class*="messageActions"] button').length;
   const isStreaming = bodyText.includes('AI is writing') || bodyText.includes('AI 正在写作');
+  const status = ['AWAITING_INPUT', 'RUNNING', 'BLOCKED', 'COMPLETED', 'ERROR']
+    .find((value) => bodyText.includes(value)) || null;
   return {
     bodyText,
+    status,
+    allButtons,
     actionButtons,
     isStreaming,
-    hasClarify: !!clarifyBubble,
-    hasPropose: !!proposeBubble,
-    hasOutline: !!outlineBubble,
+    hasBriefApproval:
+      bodyText.includes('Brief') &&
+      bodyText.includes('Needs approval') &&
+      allButtons.some((button) => /Confirm and continue|确认开始/.test(button.text)),
+    hasBlueprintApproval: allButtons.some((button) => button.text === 'Review blueprint'),
+    hasReviewApproval: allButtons.some((button) => button.text === 'Open review'),
   };
 })()
         """.strip(),
@@ -78,159 +78,226 @@ def get_run_state(session) -> dict[str, object]:
     return state
 
 
-def answer_clarify(session) -> None:
-    answer = json.dumps(
-        "Audience: engineers. Keep it minimal. "
-        "Do not add introduction or conclusion. "
-        "Use exactly the requested heading, one table, and one mermaid block."
-    )
-    session.run_code(
-        f"""
-async (page) => {{
-  await page.evaluate((answer) => {{
-    const bubbles = Array.from(document.querySelectorAll('[class*="messageAiBubble"]'));
-    const bubble = [...bubbles].reverse().find((node) => {{
-      const textButtons = Array.from(node.querySelectorAll('button'))
-        .map((button) => (button.innerText || '').trim())
-        .filter(Boolean);
-      const cards = Array.from(node.querySelectorAll('div')).filter((div) =>
-        (div.getAttribute('style') || '').includes('cursor: pointer')
-      );
-      return !!node.querySelector('textarea') && textButtons.length === 1 && cards.length === 0;
-    }});
-    if (!bubble) {{
-      throw new Error('Clarify bubble not found');
-    }}
-    const textarea = bubble.querySelector('textarea');
-    const submit = bubble.querySelector('button');
-    if (!textarea || !submit) {{
-      throw new Error('Clarify controls not found');
-    }}
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLTextAreaElement.prototype,
-      'value'
-    )?.set;
-    if (!setter) {{
-      throw new Error('Textarea value setter not found');
-    }}
-    setter.call(textarea, answer);
-    textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
-    textarea.dispatchEvent(new Event('change', {{ bubbles: true }}));
-    submit.click();
-  }}, {answer});
-}}
-        """.strip(),
-        timeout_seconds=60,
-    )
-
-
-def select_first_proposal(session) -> None:
+def confirm_brief(session) -> None:
     session.run_code(
         """
 async (page) => {
-  await page.evaluate(() => {
-    const bubbles = Array.from(document.querySelectorAll('[class*="messageAiBubble"]'));
-    const bubble = [...bubbles].reverse().find((node) => {
-      const textButtons = Array.from(node.querySelectorAll('button'))
-        .map((button) => (button.innerText || '').trim())
-        .filter(Boolean);
-      const cards = Array.from(node.querySelectorAll('div')).filter((div) =>
-        (div.getAttribute('style') || '').includes('cursor: pointer')
-      );
-      return !!node.querySelector('textarea') && textButtons.length === 1 && cards.length > 0;
-    });
-    if (!bubble) {
-      throw new Error('Proposal bubble not found');
-    }
-    const cards = Array.from(bubble.querySelectorAll('div')).filter((div) =>
-      (div.getAttribute('style') || '').includes('cursor: pointer')
-    );
-    const confirm = Array.from(bubble.querySelectorAll('button')).find((button) =>
-      ((button.innerText || '').trim().length > 0)
-    );
-    if (!cards.length || !confirm) {
-      throw new Error('Proposal controls not found');
-    }
-    cards[0].click();
-    confirm.click();
-  });
+  const button = page.getByRole('button', { name: /Confirm and continue|确认开始/ }).first();
+  await button.waitFor({ state: 'visible', timeout: 60000 });
+  await button.click();
 }
         """.strip(),
         timeout_seconds=60,
     )
 
 
-def confirm_outline(session) -> None:
+def open_blueprint_review(session) -> None:
     session.run_code(
         """
 async (page) => {
-  await page.evaluate(() => {
-    const bubbles = Array.from(document.querySelectorAll('[class*="messageAiBubble"]'));
-    const bubble = [...bubbles].reverse().find((node) => {
-      const textButtons = Array.from(node.querySelectorAll('button'))
-        .map((button) => (button.innerText || '').trim())
-        .filter(Boolean);
-      return textButtons.length === 3;
-    });
-    if (!bubble) {
-      throw new Error('Outline bubble not found');
-    }
-    const buttons = Array.from(bubble.querySelectorAll('button')).filter((button) =>
-      ((button.innerText || '').trim().length > 0)
-    );
-    if (buttons.length !== 3) {
-      throw new Error('Outline controls not found');
-    }
-    buttons[1].click();
-  });
+  const button = page.getByRole('button', { name: /Review blueprint/i });
+  await button.waitFor({ state: 'visible', timeout: 60000 });
+  await button.click();
 }
         """.strip(),
         timeout_seconds=60,
     )
 
 
-def wait_for_final_agent_content(session, marker: str, timeout_seconds: int = 480) -> str:
+def confirm_blueprint(session) -> None:
+    session.run_code(
+        """
+async (page) => {
+  const dialog = page.getByRole('dialog');
+  await dialog.waitFor({ state: 'visible', timeout: 60000 });
+  const button = dialog.getByRole('button').filter({ hasText: /Confirm|确认/ }).last();
+  await button.waitFor({ state: 'visible', timeout: 60000 });
+  await button.click();
+}
+        """.strip(),
+        timeout_seconds=60,
+    )
+
+
+def open_review(session) -> None:
+    session.run_code(
+        """
+async (page) => {
+  const button = page.getByRole('button', { name: /Open review/i });
+  await button.waitFor({ state: 'visible', timeout: 60000 });
+  await button.click();
+}
+        """.strip(),
+        timeout_seconds=60,
+    )
+
+
+def resolve_review(session) -> None:
+    session.run_code(
+        """
+async (page) => {
+  const dialog = page.getByRole('dialog');
+  await dialog.waitFor({ state: 'visible', timeout: 60000 });
+
+  const continueDraft = dialog.getByRole('button', { name: /Continue with current draft/i });
+  if (await continueDraft.count()) {
+    if (!(await continueDraft.isDisabled())) {
+      await continueDraft.click();
+      return;
+    }
+  }
+
+  const selectAll = dialog.getByRole('button', { name: /Select all/i });
+  if (await selectAll.count()) {
+    await selectAll.click();
+  }
+
+  const fixSelected = dialog.getByRole('button').filter({ hasText: /Fix selected/i }).first();
+  if (await fixSelected.count()) {
+    if (!(await fixSelected.isDisabled())) {
+      await fixSelected.click();
+      return;
+    }
+  }
+
+  const skipVisual = dialog.getByRole('button', { name: /Skip visual blockers/i });
+  if (await skipVisual.count()) {
+    if (!(await skipVisual.isDisabled())) {
+      await skipVisual.click();
+      return;
+    }
+  }
+
+  throw new Error('Review dialog did not expose a usable continue action');
+}
+        """.strip(),
+        timeout_seconds=60,
+    )
+
+
+def read_session_handle(session, page_id: str) -> dict[str, object] | None:
+    raw_value = session.eval_json(
+        f"window.sessionStorage.getItem({json.dumps(f'docmost.ai.create.session:{page_id}')})",
+        timeout_seconds=30,
+    )
+    if not isinstance(raw_value, str) or not raw_value:
+        return None
+
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(parsed, dict):
+        return None
+
+    return parsed
+
+
+def fetch_agent_session_snapshot(session_id: str, token: str) -> dict[str, object] | None:
+    client = requests.Session()
+    client.cookies.set("authToken", token)
+    response = client.get(f"{SERVER_URL}/api/agent/session/{session_id}", timeout=30)
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("status") != "ok" or not isinstance(payload.get("session"), dict):
+        return None
+    return payload["session"]
+
+
+def wait_for_final_agent_content(
+    session,
+    page_storage_key: str,
+    token: str,
+    marker: str,
+    timeout_seconds: int = 480,
+) -> str:
+    del marker
+
     deadline = time.time() + timeout_seconds
-    outline_excerpt = ""
-    handled_stages: set[str] = set()
+    checkpoint_excerpt = ""
+    brief_confirmed = False
+    blueprint_confirmed = False
+    review_resolution_count = 0
     last_state: dict[str, object] | None = None
+    last_snapshot: dict[str, object] | None = None
+    session_id: str | None = None
 
     while time.time() < deadline:
         state = get_run_state(session)
         last_state = state
         body_text = str(state.get("bodyText") or "")
+        if not session_id:
+            handle = read_session_handle(session, page_storage_key)
+            raw_session_id = handle.get("sessionId") if isinstance(handle, dict) else None
+            if isinstance(raw_session_id, str) and raw_session_id:
+                session_id = raw_session_id
 
-        if state.get("hasClarify") and "clarify" not in handled_stages:
-            answer_clarify(session)
-            handled_stages.add("clarify")
+        snapshot = fetch_agent_session_snapshot(session_id, token) if session_id else None
+        last_snapshot = snapshot
+        run_state = str(snapshot.get("run_state") or "") if isinstance(snapshot, dict) else ""
+        pending_decision = snapshot.get("pending_decision") if isinstance(snapshot, dict) else None
+        pending_phase = (
+            pending_decision.get("phase")
+            if isinstance(pending_decision, dict)
+            else None
+        )
+
+        if (pending_phase == "brief" or state.get("hasBriefApproval")) and not brief_confirmed:
+            checkpoint_excerpt = body_text[:1200]
+            confirm_brief(session)
+            brief_confirmed = True
             time.sleep(2)
             continue
 
-        if state.get("hasPropose") and "propose" not in handled_stages:
-            select_first_proposal(session)
-            handled_stages.add("propose")
+        if (pending_phase == "blueprint" or state.get("hasBlueprintApproval")) and not blueprint_confirmed:
+            checkpoint_excerpt = body_text[:1200]
+            open_blueprint_review(session)
+            confirm_blueprint(session)
+            blueprint_confirmed = True
             time.sleep(2)
             continue
 
-        if state.get("hasOutline") and "outline" not in handled_stages:
-            outline_excerpt = body_text[:1200]
-            confirm_outline(session)
-            handled_stages.add("outline")
+        if (pending_phase == "review" or state.get("hasReviewApproval")) and review_resolution_count < 6:
+            checkpoint_excerpt = body_text[:1200]
+            open_review(session)
+            resolve_review(session)
+            review_resolution_count += 1
             time.sleep(2)
             continue
+
+        if run_state == "blocked" or str(state.get("status") or "") == "BLOCKED":
+            raise RuntimeError(
+                "Agent flow entered a blocked state during the happy-path browser acceptance.\n"
+                + json.dumps(
+                    {
+                        "ui": state,
+                        "session": snapshot,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
 
         if (
-            "outline" in handled_stages
+            run_state == "completed"
             and int(state.get("actionButtons") or 0) >= 2
             and not bool(state.get("isStreaming"))
         ):
-            return outline_excerpt or body_text[:1200]
+            return checkpoint_excerpt or body_text[:1200]
 
         time.sleep(2)
 
     raise TimeoutError(
-        "Timed out waiting for the agent clarify/propose/outline flow to reach final content.\n"
-        + json.dumps(last_state or {}, ensure_ascii=False, indent=2)
+        "Timed out waiting for the AI creator workbench flow to reach final content.\n"
+        + json.dumps(
+            {
+                "ui": last_state or {},
+                "session": last_snapshot or {},
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
     )
 
 
@@ -248,16 +315,14 @@ def wait_for_persisted_markdown(
         last_markdown = markdown
         if (
             markdown != "# Browser Smoke\n\nInitial content."
+            and marker in markdown
             and "```mermaid" in markdown
             and "| --- |" in markdown
         ):
             return markdown
         time.sleep(3)
 
-    raise TimeoutError(
-        "Timed out waiting for persisted markdown.\n"
-        + last_markdown[:1600]
-    )
+    raise TimeoutError("Timed out waiting for persisted markdown.\n" + last_markdown[:1600])
 
 
 def run_agent_outline_e2e() -> dict[str, object]:
@@ -276,7 +341,12 @@ def run_agent_outline_e2e() -> dict[str, object]:
         open_ai_creator(session)
         set_prompt_and_send(session, prompt)
 
-        outline_excerpt = wait_for_final_agent_content(session, marker)
+        workbench_excerpt = wait_for_final_agent_content(
+            session,
+            context.page_slug,
+            context.token,
+            marker,
+        )
         click_insert_to_editor(session)
 
         persisted_markdown = wait_for_persisted_markdown(
@@ -295,7 +365,7 @@ def run_agent_outline_e2e() -> dict[str, object]:
             "page_url": page_url,
             "page_id": context.page_id,
             "marker": marker,
-            "outline_excerpt": outline_excerpt,
+            "workbench_excerpt": workbench_excerpt,
             "browser_state": browser_state,
             "persisted_excerpt": persisted_markdown[:1600],
         }

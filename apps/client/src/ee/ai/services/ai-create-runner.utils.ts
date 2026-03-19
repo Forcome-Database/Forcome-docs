@@ -68,12 +68,34 @@ function normalizeDraftPatchSections(data: unknown): AgentDraftPatchSection[] {
     const content = typeof (item as { content?: unknown }).content === "string"
       ? (item as { content: string }).content
       : null;
+    const writeAttempts = typeof (item as { write_attempts?: unknown }).write_attempts === "number"
+      ? (item as { write_attempts: number }).write_attempts
+      : undefined;
+    const imageStatus = typeof (item as { image_status?: unknown }).image_status === "string"
+      ? (item as { image_status: string }).image_status
+      : undefined;
+    const sourceImageAssetId = typeof (item as { source_image_asset_id?: unknown }).source_image_asset_id === "string"
+      ? (item as { source_image_asset_id: string }).source_image_asset_id
+      : null;
+    const degradedReason = typeof (item as { degraded_reason?: unknown }).degraded_reason === "string"
+      ? (item as { degraded_reason: string }).degraded_reason
+      : null;
 
     if (!nodeId || !sectionId || !title || content === null) {
       return [];
     }
 
-    return [{ nodeId, sectionId, title, level, content }];
+    return [{
+      nodeId,
+      sectionId,
+      title,
+      level,
+      content,
+      ...(writeAttempts !== undefined ? { writeAttempts } : {}),
+      ...(imageStatus ? { imageStatus } : {}),
+      ...(sourceImageAssetId ? { sourceImageAssetId } : {}),
+      ...(degradedReason ? { degradedReason } : {}),
+    }];
   });
 }
 
@@ -208,6 +230,16 @@ export function normalizeAgentRunEvent(event: AgentSSEEvent): AiCreateRunEvent |
         message: event.message,
         requiredAction: event.required_action || "",
         allowedResolutions: event.allowed_resolutions || [],
+      };
+    case "section_state":
+      return {
+        type: "step_done",
+        step: `section_state_${event.section_id}`,
+        resultSummary: [
+          event.write_attempts ? `${event.write_attempts} attempts` : null,
+          event.image_status || null,
+          event.degraded_reason || null,
+        ].filter(Boolean).join(" | "),
       };
     case "done":
       return {

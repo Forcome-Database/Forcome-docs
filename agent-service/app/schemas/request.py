@@ -81,6 +81,11 @@ class FixSelectedIssuesResumeValue(StrictResumeValue):
     feedback: str | None = None
 
 
+class AcceptReviewResumeValue(StrictResumeValue):
+    type: Literal["accept_review"]
+    feedback: str | None = None
+
+
 class ResolveBlockResumeValue(StrictResumeValue):
     type: Literal["resolve_block"]
     resolution: str
@@ -98,6 +103,7 @@ AgentResumeValue = (
     | ConfirmBlueprintResumeValue
     | ApplyBlueprintPatchResumeValue
     | FixSelectedIssuesResumeValue
+    | AcceptReviewResumeValue
     | ResolveBlockResumeValue
     | SkipIssueResumeValue
 )

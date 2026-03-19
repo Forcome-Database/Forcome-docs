@@ -149,8 +149,9 @@ def test_visual_coverage_ai_image_generated_but_not_inserted_is_still_flagged():
         word_count=120,
     )
     draft.visuals_generated = ["https://cdn.example.com/generated.png"]
+    brief = make_brief()
 
-    issues = check_visual_coverage([draft], blueprint)
+    issues = check_visual_coverage([draft], blueprint, brief)
 
     assert len(issues) == 1
     assert issues[0].severity == "error"
@@ -464,3 +465,65 @@ async def test_evaluate_with_llm_emits_step_events():
     types = [e["type"] for e in emit_calls]
     assert "step_start" in types
     assert "step_done" in types
+
+
+def test_visual_coverage_reuse_source_only_rejects_generated_fallback():
+    section = SectionPlan(
+        id="s1",
+        title="Overview",
+        level=2,
+        word_budget=300,
+        visuals=[
+            VisualPlan(
+                type="ai_image",
+                description="System overview",
+                source_asset_id="img-source-1",
+                fallback_reason="source asset unavailable",
+            )
+        ],
+    )
+    blueprint = make_blueprint(section)
+    brief = CreationBrief(target_length=300, image_strategy="reuse_source_only")
+    draft = make_draft(
+        "s1",
+        content="![System overview](https://cdn.example.com/generated.png)\n\nBody copy.",
+        word_count=120,
+    )
+    draft.visuals_generated = ["https://cdn.example.com/generated.png"]
+
+    issues = check_visual_coverage([draft], blueprint, brief, None)
+
+    assert len(issues) == 1
+    assert issues[0].severity == "error"
+    assert "reuse_source_only" in issues[0].description
+
+
+def test_visual_coverage_prefer_source_then_generate_warns_on_explicit_fallback():
+    section = SectionPlan(
+        id="s1",
+        title="Overview",
+        level=2,
+        word_budget=300,
+        visuals=[
+            VisualPlan(
+                type="ai_image",
+                description="System overview",
+                source_asset_id="img-source-1",
+                fallback_reason="source asset unavailable",
+            )
+        ],
+    )
+    blueprint = make_blueprint(section)
+    brief = CreationBrief(target_length=300, image_strategy="prefer_source_then_generate")
+    draft = make_draft(
+        "s1",
+        content="![System overview](https://cdn.example.com/generated.png)\n\nBody copy.",
+        word_count=120,
+    )
+    draft.visuals_generated = ["https://cdn.example.com/generated.png"]
+
+    issues = check_visual_coverage([draft], blueprint, brief, None)
+
+    assert len(issues) == 1
+    assert issues[0].severity == "warning"
+    assert "fallback" in issues[0].description.lower()

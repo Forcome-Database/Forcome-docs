@@ -56,13 +56,28 @@ def docmost_rag(
 @tool
 def docmost_upload(file_content_b64: str, filename: str, page_id: str) -> str:
     """Upload an image to a Docmost page and return its URL."""
+    return upload_page_image(
+        file_content_b64=file_content_b64,
+        filename=filename,
+        page_id=page_id,
+        mime_type="image/png",
+    )
+
+
+def upload_page_image(
+    file_content_b64: str,
+    filename: str,
+    page_id: str,
+    mime_type: str = "image/png",
+) -> str:
+    """Upload an image to a Docmost page and return its URL."""
     result = _docmost_post(
         "/ai/internal/upload-page-image",
         {
             "pageId": page_id,
             "filename": filename,
             "fileContentB64": file_content_b64,
-            "mimeType": "image/png",
+            "mimeType": mime_type,
         },
     )
     return result.get("url", "Upload failed")

@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from sqlalchemy import Column, Integer, MetaData, String, Table, Text, create_engine, delete, insert, select, update
+from sqlalchemy.engine import make_url
 
 from app.models.blueprint import BlueprintChangeAuditEntry
 from app.models.session import CreationSessionSnapshot
@@ -14,7 +15,7 @@ class PostgresSessionStore:
         if not database_url:
             raise RuntimeError("database_url is required for the postgres_redis session backend")
 
-        self._engine = create_engine(database_url)
+        self._engine = create_engine(_normalize_database_url(database_url))
         self._metadata = MetaData()
         self._sessions = Table(
             "ai_creation_sessions",
@@ -129,3 +130,13 @@ class PostgresSessionStore:
                         snapshot_json=serialized,
                     )
                 )
+
+
+def _normalize_database_url(database_url: str) -> str:
+    url = make_url(database_url)
+    schema_query_keys = [key for key in url.query if key.lower() == "schema"]
+    if schema_query_keys:
+        url = url.difference_update_query(schema_query_keys)
+    if url.drivername not in {"postgres", "postgresql"}:
+        return url.render_as_string(hide_password=False)
+    return url.set(drivername="postgresql+psycopg").render_as_string(hide_password=False)

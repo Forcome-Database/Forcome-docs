@@ -16,6 +16,11 @@ export function createInitialAiCreateSessionState(): AiCreateSessionState {
     selectionSnapshot: null,
     awaitInput: null,
     block: null,
+    draftSections: [],
+    brief: null,
+    blueprint: null,
+    reviewReport: null,
+    evidenceSummary: null,
     error: null,
   };
 }
@@ -40,6 +45,11 @@ export function aiCreateSessionReducer(
         selectionSnapshot: action.selectionSnapshot,
         awaitInput: null,
         block: null,
+        draftSections: [],
+        brief: null,
+        blueprint: null,
+        reviewReport: null,
+        evidenceSummary: null,
         error: null,
       };
     case "session_received":
@@ -56,6 +66,13 @@ export function aiCreateSessionReducer(
       return {
         ...state,
         accumulatedContent: state.accumulatedContent + action.chunk,
+      };
+    case "draft_patch":
+      return {
+        ...state,
+        accumulatedContent: action.markdown,
+        mdBuffer: action.markdown,
+        draftSections: action.sections,
       };
     case "content_cleared":
       return {
@@ -78,6 +95,15 @@ export function aiCreateSessionReducer(
           data: action.data,
         },
         block: null,
+        brief: action.phase === "brief" && "brief" in action.data ? action.data.brief : state.brief,
+        blueprint:
+          action.phase === "blueprint" && "blueprint" in action.data
+            ? action.data.blueprint
+            : state.blueprint,
+        reviewReport:
+          action.phase === "review" && "report" in action.data
+            ? action.data.report
+            : state.reviewReport,
         error: null,
       };
     case "blocked":
@@ -100,6 +126,11 @@ export function aiCreateSessionReducer(
         mdBuffer: action.draftMarkdown,
         awaitInput: action.awaitInput,
         block: action.block,
+        draftSections: action.draftSections,
+        brief: action.brief,
+        blueprint: action.blueprint,
+        reviewReport: action.reviewReport,
+        evidenceSummary: action.evidenceSummary,
         error: null,
       };
     case "done":

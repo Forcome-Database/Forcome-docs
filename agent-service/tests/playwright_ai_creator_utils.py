@@ -5,7 +5,9 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -111,6 +113,51 @@ def build_smoke_context(page_title_prefix: str) -> SmokeContext:
         page_slug=str(payload["slugId"]),
         page_id=str(payload["id"]),
     )
+
+
+def _get_agent_service_module_path() -> Path:
+    return REPO_ROOT / "agent-service"
+
+
+def seed_agent_session(snapshot) -> object:
+    agent_service_path = str(_get_agent_service_module_path())
+    if agent_service_path not in sys.path:
+        sys.path.insert(0, agent_service_path)
+
+    from app.orchestrator.session_store import session_store
+
+    if hasattr(snapshot, "model_dump"):
+        data = snapshot.model_dump()
+        session_id = snapshot.session_id
+        thread_id = snapshot.thread_id
+    elif isinstance(snapshot, dict):
+        data = dict(snapshot)
+        session_id = str(data["session_id"])
+        thread_id = str(data["thread_id"])
+    else:
+        raise TypeError(f"Unsupported snapshot type: {type(snapshot)!r}")
+
+    session_store.delete_session(session_id)
+    return session_store.upsert_session(
+        session_id=session_id,
+        thread_id=thread_id,
+        **{
+            key: value
+            for key, value in data.items()
+            if key not in {"session_id", "thread_id"}
+        },
+    )
+
+
+def clear_agent_session(session_id: str) -> None:
+    agent_service_path = str(_get_agent_service_module_path())
+    if agent_service_path not in sys.path:
+        sys.path.insert(0, agent_service_path)
+
+    from app.orchestrator.session_store import session_store
+
+    with suppress(Exception):
+        session_store.delete_session(session_id)
 
 
 def fetch_page_markdown(page_id: str, token: str) -> str:
@@ -273,6 +320,47 @@ def create_authenticated_session(
     session.reload()
 
     return session, client_url, page_url
+
+
+def write_session_storage_handle(
+    session: PlaywrightCliSession,
+    page_slug: str,
+    session_id: str,
+    task_id: str | None = None,
+) -> None:
+    session.run_code(
+        f"""
+async (page) => {{
+  await page.evaluate((payload) => {{
+    window.sessionStorage.setItem(
+      {json.dumps(f"docmost.ai.create.session:{page_slug}")},
+      JSON.stringify(payload),
+    );
+  }}, {{
+    sessionId: {json.dumps(session_id)},
+    taskId: {json.dumps(task_id)},
+  }});
+}}
+        """.strip(),
+        timeout_seconds=30,
+    )
+
+
+def upload_files_to_ai_creator(
+    session: PlaywrightCliSession,
+    file_paths: list[str],
+    timeout_seconds: int = 30,
+) -> None:
+    serialized_paths = json.dumps(file_paths)
+    session.run_code(
+        f"""
+async (page) => {{
+  const input = page.locator('input[type="file"]').first();
+  await input.setInputFiles({serialized_paths});
+}}
+        """.strip(),
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def wait_for_editor_ready(session: PlaywrightCliSession, timeout_seconds: int = 45) -> None:

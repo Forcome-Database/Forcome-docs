@@ -1,24 +1,18 @@
-"""AssetParser Worker — document parsing and image processing.
-
-Parses uploaded documents via docling_parser, extracts structured assets
-(headings, text sections, tables, code blocks, mermaid diagrams), and
-optionally processes embedded images via VLM understanding.
-"""
+"""Asset parser worker for source documents and images."""
 from __future__ import annotations
 
+import asyncio
+import base64
 import hashlib
 import json
 import re
 
 from app.models.asset_map import AssetItem, AssetMap
+from app.models.source_assets import DocumentParseResult, SourceImagePayload
+from app.tools.mineru_client import MinerUClient, MinerUConfig
 from app.utils.text import count_words, count_words_by_section
+from app.workers.mineru_parser import parse_mineru_zip
 
-# ---------------------------------------------------------------------------
-# Lazy tool references — imported at first use, replaceable in tests
-# ---------------------------------------------------------------------------
-# We import them here so unittest.mock.patch("app.workers.asset_parser.<name>")
-# can intercept them.  The actual heavyweight libraries are only loaded when the
-# tools are first called.
 
 def _get_docling_parser():
     from app.tools.docling_parser import docling_parser  # type: ignore
@@ -35,102 +29,127 @@ def _get_vlm_understand():
     return vlm_understand
 
 
-# Module-level aliases — patch these in tests.
-docling_parser = None   # resolved lazily via _get_docling_parser()
-docmost_upload = None   # resolved lazily via _get_docmost_upload()
-vlm_understand = None   # resolved lazily via _get_vlm_understand()
+docling_parser = None
+docmost_upload = None
+vlm_understand = None
 
 
 def _docling_parser_invoke(args: dict) -> str:
-    """Call docling_parser, preferring the module-level alias if patched."""
     global docling_parser  # noqa: PLW0603
     tool = docling_parser if docling_parser is not None else _get_docling_parser()
     return tool.invoke(args)
 
 
 def _docmost_upload_invoke(args: dict) -> str:
-    """Call docmost_upload, preferring the module-level alias if patched."""
     global docmost_upload  # noqa: PLW0603
     tool = docmost_upload if docmost_upload is not None else _get_docmost_upload()
     return tool.invoke(args)
 
 
 def _vlm_understand_invoke(args: dict) -> str:
-    """Call vlm_understand, preferring the module-level alias if patched."""
     global vlm_understand  # noqa: PLW0603
     tool = vlm_understand if vlm_understand is not None else _get_vlm_understand()
     return tool.invoke(args)
 
 
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
-
 def _generate_asset_id(content: str, prefix: str = "asset") -> str:
-    """Generate a stable short ID based on content hash."""
     digest = hashlib.md5(content.encode("utf-8")).hexdigest()[:8]
     return f"{prefix}-{digest}"
 
 
-def _extract_headings(text: str) -> list[dict]:
-    """Extract all headings with their level and text.
+def _build_source_image_asset(image: SourceImagePayload, filename: str) -> AssetItem | None:
+    if not image.b64:
+        return None
 
-    Returns a list of dicts: {"level": int, "text": str}.
-    """
+    try:
+        raw_bytes = base64.b64decode(image.b64)
+    except Exception:
+        raw_bytes = image.b64.encode("utf-8")
+
+    content_hash = hashlib.md5(raw_bytes).hexdigest()
+    description = image.desc or f"Image {image.index + 1}"
+
+    return AssetItem(
+        id=_generate_asset_id(f"{filename}:{content_hash}:{image.index}", "img"),
+        type="image",
+        source=filename,
+        content=image.to_data_uri(),
+        summary=f"[source_image] {description[:200]}",
+        origin="uploaded_source",
+        content_hash=content_hash,
+        caption=description,
+        source_page=image.resolved_page_number,
+        source_heading=image.heading,
+        mime_type=image.mime_type,
+    )
+
+
+def _supports_mineru(filename: str, mimetype: str) -> bool:
+    extension = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    if extension in {"pdf", "doc", "docx", "ppt", "pptx", "png", "jpg", "jpeg", "html"}:
+        return True
+
+    normalized_mime = (mimetype or "").lower()
+    return normalized_mime in {
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "text/html",
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+    }
+
+
+def _extract_headings(text: str) -> list[dict]:
     headings = []
     for line in text.splitlines():
-        m = re.match(r'^(#{1,6})\s+(.+)$', line)
-        if m:
-            headings.append({"level": len(m.group(1)), "text": m.group(2).strip()})
+        match = re.match(r"^(#{1,6})\s+(.+)$", line)
+        if match:
+            headings.append({"level": len(match.group(1)), "text": match.group(2).strip()})
     return headings
 
 
 def _split_sections(text: str) -> list[dict]:
-    """Split text into sections by headings.
-
-    Returns list of dicts: {"heading": str, "level": int, "content": str}.
-    The first dict may have heading="" if there is content before the first heading.
-    """
     sections: list[dict] = []
     current_heading = ""
     current_level = 0
     current_lines: list[str] = []
 
     for line in text.splitlines():
-        m = re.match(r'^(#{1,6})\s+(.+)$', line)
-        if m:
-            # Save previous section
+        match = re.match(r"^(#{1,6})\s+(.+)$", line)
+        if match:
             content = "\n".join(current_lines).strip()
             if content or current_heading:
-                sections.append({
-                    "heading": current_heading,
-                    "level": current_level,
-                    "content": content,
-                })
-            current_heading = m.group(2).strip()
-            current_level = len(m.group(1))
+                sections.append(
+                    {
+                        "heading": current_heading,
+                        "level": current_level,
+                        "content": content,
+                    }
+                )
+            current_heading = match.group(2).strip()
+            current_level = len(match.group(1))
             current_lines = []
         else:
             current_lines.append(line)
 
-    # Last section
     content = "\n".join(current_lines).strip()
     if content or current_heading:
-        sections.append({
-            "heading": current_heading,
-            "level": current_level,
-            "content": content,
-        })
+        sections.append(
+            {
+                "heading": current_heading,
+                "level": current_level,
+                "content": content,
+            }
+        )
 
     return sections
 
 
 def _extract_tables(text: str) -> list[str]:
-    """Extract markdown tables from text.
-
-    A table is a group of lines where every non-empty line starts with '|'.
-    Returns list of raw table strings.
-    """
     tables: list[str] = []
     in_table = False
     current_table: list[str] = []
@@ -142,13 +161,11 @@ def _extract_tables(text: str) -> list[str]:
             current_table.append(line)
         else:
             if in_table and current_table:
-                # Need at least header + separator rows (2 lines) to be a table
                 if len(current_table) >= 2:
                     tables.append("\n".join(current_table))
                 current_table = []
                 in_table = False
 
-    # Handle table at end of text
     if in_table and len(current_table) >= 2:
         tables.append("\n".join(current_table))
 
@@ -156,19 +173,13 @@ def _extract_tables(text: str) -> list[str]:
 
 
 def _extract_code_blocks(text: str) -> tuple[list[str], list[str]]:
-    """Extract fenced code blocks and mermaid blocks separately.
-
-    Returns (code_blocks, mermaid_blocks) — each is a list of raw block strings
-    (including the fence markers).
-    """
     code_blocks: list[str] = []
     mermaid_blocks: list[str] = []
 
-    # Match fenced code blocks: ```[lang]\n...\n```
-    pattern = re.compile(r'```(\w*)\n(.*?)```', re.DOTALL)
-    for m in pattern.finditer(text):
-        lang = m.group(1).lower()
-        full_block = m.group(0)
+    pattern = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
+    for match in pattern.finditer(text):
+        lang = match.group(1).lower()
+        full_block = match.group(0)
         if lang == "mermaid":
             mermaid_blocks.append(full_block)
         else:
@@ -177,144 +188,154 @@ def _extract_code_blocks(text: str) -> tuple[list[str], list[str]]:
     return code_blocks, mermaid_blocks
 
 
-# ---------------------------------------------------------------------------
-# Public API — document parsing
-# ---------------------------------------------------------------------------
+def _parse_with_docling(file_content_b64: str, filename: str, mimetype: str) -> DocumentParseResult:
+    raw_json = _docling_parser_invoke(
+        {
+            "file_content_b64": file_content_b64,
+            "filename": filename,
+            "mimetype": mimetype,
+        }
+    )
+    return DocumentParseResult.model_validate(json.loads(raw_json))
 
-def parse_document(
-    file_content_b64: str,
-    filename: str,
-    mimetype: str,
-) -> AssetMap:
-    """Parse a document and return a structured AssetMap.
 
-    Steps:
-    1. Call docling_parser to obtain raw markdown text.
-    2. Extract heading structure, text sections, tables, code blocks, mermaid.
-    3. Compute source_word_count and source_section_counts.
+def _parse_with_mineru(file_content_b64: str, filename: str, mimetype: str) -> DocumentParseResult:
+    config = MinerUConfig.from_env()
+    if not config.enabled:
+        raise RuntimeError("MinerU is not enabled")
 
-    Args:
-        file_content_b64: Base-64 encoded file bytes.
-        filename: Original filename (used for extension detection).
-        mimetype: MIME type of the file.
+    file_bytes = base64.b64decode(file_content_b64)
 
-    Returns:
-        Populated AssetMap.
-    """
-    raw_json = _docling_parser_invoke({
-        "file_content_b64": file_content_b64,
-        "filename": filename,
-        "mimetype": mimetype,
-    })
-    result = json.loads(raw_json)
-    text: str = result.get("text", "")
+    async def _run() -> bytes:
+        client = MinerUClient(config=config)
+        try:
+            result = await client.extract_file(
+                name=filename,
+                content=file_bytes,
+                is_ocr=mimetype.lower().startswith("image/"),
+            )
+            return result.zip_bytes
+        finally:
+            await client.aclose()
 
+    zip_bytes = asyncio.run(_run())
+    return parse_mineru_zip(zip_bytes, filename)
+
+
+def _asset_map_from_parsed_document(parsed: DocumentParseResult, filename: str) -> AssetMap:
+    text = parsed.text
     items: list[AssetItem] = []
 
-    # --- Heading structure ---
-    headings = _extract_headings(text)
+    headings = parsed.structure or _extract_headings(text)
     if headings:
-        heading_summary = "; ".join(
-            f"{'#' * h['level']} {h['text']}" for h in headings
+        heading_summary = "; ".join(f"{'#' * h['level']} {h['text']}" for h in headings)
+        items.append(
+            AssetItem(
+                id=_generate_asset_id(heading_summary, "heading"),
+                type="heading_structure",
+                source=filename,
+                content=json.dumps(headings, ensure_ascii=False),
+                summary=f"{len(headings)} headings: {heading_summary[:120]}",
+            )
         )
-        items.append(AssetItem(
-            id=_generate_asset_id(heading_summary, "heading"),
-            type="heading_structure",
-            source=filename,
-            content=json.dumps(headings, ensure_ascii=False),
-            summary=f"{len(headings)} headings: {heading_summary[:120]}",
-        ))
 
-    # --- Remove code/mermaid blocks before text section extraction ---
     code_blocks, mermaid_blocks = _extract_code_blocks(text)
-    text_without_code = re.sub(r'```(\w*)\n.*?```', '', text, flags=re.DOTALL)
+    text_without_code = re.sub(r"```(\w*)\n.*?```", "", text, flags=re.DOTALL)
 
-    # --- Extract tables (from the original text, before code stripping) ---
     tables = _extract_tables(text)
-    # Remove table lines from text so they don't inflate text sections
     text_without_code_tables = text_without_code
-    for tbl in tables:
-        text_without_code_tables = text_without_code_tables.replace(tbl, "")
+    for table in tables:
+        text_without_code_tables = text_without_code_tables.replace(table, "")
 
-    # --- Text sections ---
     sections = _split_sections(text_without_code_tables)
-    for sec in sections:
-        content = sec["content"].strip()
+    for section in sections:
+        content = section["content"].strip()
         if not content:
             continue
         wc = count_words(content)
-        heading_label = sec["heading"] or "(intro)"
-        items.append(AssetItem(
-            id=_generate_asset_id(content[:64], "text"),
-            type="text",
-            source=filename,
-            content=content,
-            summary=f"Section '{heading_label}' — {wc} words",
-        ))
+        heading_label = section["heading"] or "(intro)"
+        items.append(
+            AssetItem(
+                id=_generate_asset_id(content[:64], "text"),
+                type="text",
+                source=filename,
+                content=content,
+                summary=f"Section '{heading_label}' - {wc} words",
+            )
+        )
 
-    # --- Tables ---
-    for i, tbl in enumerate(tables):
-        items.append(AssetItem(
-            id=_generate_asset_id(tbl[:64], "table"),
-            type="table",
-            source=filename,
-            content=tbl,
-            summary=f"Table {i + 1} ({tbl.count(chr(10)) + 1} rows)",
-        ))
+    for index, table in enumerate(tables):
+        items.append(
+            AssetItem(
+                id=_generate_asset_id(table[:64], "table"),
+                type="table",
+                source=filename,
+                content=table,
+                summary=f"Table {index + 1} ({table.count(chr(10)) + 1} rows)",
+            )
+        )
 
-    # --- Code blocks ---
-    for i, blk in enumerate(code_blocks):
-        items.append(AssetItem(
-            id=_generate_asset_id(blk[:64], "code"),
-            type="code",
-            source=filename,
-            content=blk,
-            summary=f"Code block {i + 1}",
-        ))
+    for index, block in enumerate(code_blocks):
+        items.append(
+            AssetItem(
+                id=_generate_asset_id(block[:64], "code"),
+                type="code",
+                source=filename,
+                content=block,
+                summary=f"Code block {index + 1}",
+            )
+        )
 
-    # --- Mermaid blocks ---
-    for i, blk in enumerate(mermaid_blocks):
-        items.append(AssetItem(
-            id=_generate_asset_id(blk[:64], "mermaid"),
-            type="mermaid",
-            source=filename,
-            content=blk,
-            summary=f"Mermaid diagram {i + 1}",
-        ))
+    for index, block in enumerate(mermaid_blocks):
+        items.append(
+            AssetItem(
+                id=_generate_asset_id(block[:64], "mermaid"),
+                type="mermaid",
+                source=filename,
+                content=block,
+                summary=f"Mermaid diagram {index + 1}",
+            )
+        )
 
-    # --- Compute stats ---
-    source_word_count = count_words(text)
-    source_section_counts = count_words_by_section(text)
-
-    # Build source_structure from headings
-    source_structure = headings
+    for image_payload in parsed.images:
+        image_item = _build_source_image_asset(image_payload, filename)
+        if image_item is not None:
+            items.append(image_item)
 
     return AssetMap(
         items=items,
-        source_structure=source_structure,
-        source_word_count=source_word_count,
-        source_section_counts=source_section_counts,
+        source_structure=headings,
+        source_word_count=count_words(text),
+        source_section_counts=count_words_by_section(text),
     )
 
 
-# ---------------------------------------------------------------------------
-# Image classification
-# ---------------------------------------------------------------------------
+def parse_document(file_content_b64: str, filename: str, mimetype: str) -> AssetMap:
+    """Parse a document into the shared AssetMap contract.
+
+    Prefer MinerU for supported formats when enabled, otherwise use Docling.
+    Any MinerU failure falls back to Docling.
+    """
+    if _supports_mineru(filename, mimetype):
+        try:
+            parsed = _parse_with_mineru(file_content_b64, filename, mimetype)
+        except Exception:
+            parsed = _parse_with_docling(file_content_b64, filename, mimetype)
+    else:
+        parsed = _parse_with_docling(file_content_b64, filename, mimetype)
+
+    return _asset_map_from_parsed_document(parsed, filename)
+
 
 def classify_image(vlm_description: str) -> str:
-    """Classify an image based on a VLM description using keyword matching.
-
-    Returns one of: screenshot, diagram, photo, chart, illustration, other.
-    """
     desc_lower = vlm_description.lower()
     if "screenshot" in desc_lower or "screen capture" in desc_lower or "ui " in desc_lower:
         return "screenshot"
     if any(kw in desc_lower for kw in ("diagram", "architecture", "flowchart", "uml", "workflow")):
         return "diagram"
-    # Use word-boundary for "graph" to avoid matching inside "photograph"
     if (
         "chart" in desc_lower
-        or re.search(r'\bgraph\b', desc_lower)
+        or re.search(r"\bgraph\b", desc_lower)
         or "bar chart" in desc_lower
         or "pie chart" in desc_lower
         or "line graph" in desc_lower
@@ -327,31 +348,11 @@ def classify_image(vlm_description: str) -> str:
     return "other"
 
 
-# ---------------------------------------------------------------------------
-# Image processing
-# ---------------------------------------------------------------------------
-
 def process_images(
     raw_images: list[dict],
     filename: str,
     page_id: str,
 ) -> list[AssetItem]:
-    """Upload images to Docmost and obtain VLM descriptions.
-
-    For each image dict (with keys "index", "b64", "desc"):
-    1. Upload to Docmost → get URL.
-    2. Call VLM → get description.
-    3. Classify image type.
-    4. Create an AssetItem.
-
-    Args:
-        raw_images: List of image dicts from docling_parser output.
-        filename: Source document filename (used as source label).
-        page_id: Docmost page ID for uploading the images.
-
-    Returns:
-        List of AssetItem with type="image".
-    """
     asset_items: list[AssetItem] = []
 
     for img in raw_images:
@@ -362,37 +363,37 @@ def process_images(
         if not b64:
             continue
 
-        # Step 1: Upload image
         img_filename = f"img_{index}_{filename.replace(' ', '_')}.png"
         try:
-            url = _docmost_upload_invoke({
-                "file_content_b64": b64,
-                "filename": img_filename,
-                "page_id": page_id,
-            })
+            url = _docmost_upload_invoke(
+                {
+                    "file_content_b64": b64,
+                    "filename": img_filename,
+                    "page_id": page_id,
+                }
+            )
         except Exception:
-            # Skip images that fail to upload
             continue
 
-        # Step 2: VLM description
         try:
-            vlm_desc = _vlm_understand_invoke({
-                "image_b64": b64,
-                "question": "Describe the content of this image in detail.",
-            })
+            vlm_desc = _vlm_understand_invoke(
+                {
+                    "image_b64": b64,
+                    "question": "Describe the content of this image in detail.",
+                }
+            )
         except Exception:
-            # Fallback to docling description
             vlm_desc = docling_desc
 
-        # Step 3: Classify
         image_type = classify_image(vlm_desc or docling_desc)
-
-        asset_items.append(AssetItem(
-            id=_generate_asset_id(b64[:32] + str(index), "img"),
-            type="image",
-            source=filename,
-            content=url,
-            summary=f"[{image_type}] {(vlm_desc or docling_desc)[:200]}",
-        ))
+        asset_items.append(
+            AssetItem(
+                id=_generate_asset_id(b64[:32] + str(index), "img"),
+                type="image",
+                source=filename,
+                content=url,
+                summary=f"[{image_type}] {(vlm_desc or docling_desc)[:200]}",
+            )
+        )
 
     return asset_items

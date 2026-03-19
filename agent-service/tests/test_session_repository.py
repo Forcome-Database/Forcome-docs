@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import app.orchestrator.persistence.postgres_session_store as postgres_session_store_module
 from app.orchestrator.persistence.postgres_session_store import PostgresSessionStore
 from app.orchestrator.persistence.redis_runtime_store import RedisRuntimeStore
 from app.orchestrator.session_store import build_session_store
@@ -89,6 +90,48 @@ def test_postgres_session_store_rehydrates_snapshot_across_instances(tmp_path):
     assert snapshot.document_tree is not None
     assert snapshot.document_tree.sections[0].node_id == "section:s1"
     assert snapshot.blueprint_change_audit[0].changes == ["section s1 must_cover updated"]
+
+
+def test_postgres_session_store_uses_psycopg_driver_for_default_postgres_urls(monkeypatch):
+    captured: dict[str, object] = {}
+    fake_engine = object()
+
+    def fake_create_engine(url: str):
+        captured["url"] = url
+        return fake_engine
+
+    def fake_create_all(self, bind, *args, **kwargs):
+        captured["bind"] = bind
+
+    monkeypatch.setattr(postgres_session_store_module, "create_engine", fake_create_engine)
+    monkeypatch.setattr(postgres_session_store_module.MetaData, "create_all", fake_create_all)
+
+    PostgresSessionStore(database_url="postgresql://user:pass@localhost:5432/docmost")
+
+    assert captured["url"] == "postgresql+psycopg://user:pass@localhost:5432/docmost"
+    assert captured["bind"] is fake_engine
+
+
+def test_postgres_session_store_strips_schema_query_parameter(monkeypatch):
+    captured: dict[str, object] = {}
+    fake_engine = object()
+
+    def fake_create_engine(url: str):
+        captured["url"] = url
+        return fake_engine
+
+    def fake_create_all(self, bind, *args, **kwargs):
+        captured["bind"] = bind
+
+    monkeypatch.setattr(postgres_session_store_module, "create_engine", fake_create_engine)
+    monkeypatch.setattr(postgres_session_store_module.MetaData, "create_all", fake_create_all)
+
+    PostgresSessionStore(
+        database_url="postgresql://user:pass@localhost:5432/docmost?schema=public&sslmode=require"
+    )
+
+    assert captured["url"] == "postgresql+psycopg://user:pass@localhost:5432/docmost?sslmode=require"
+    assert captured["bind"] is fake_engine
 
 
 def test_redis_runtime_store_preserves_cancellation_and_resume_metadata():

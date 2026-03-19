@@ -657,3 +657,11 @@ Week 1-2   Week 3-5       Week 5-7      Week 7-9      Week 9-10     Week 11-14
 ```
 
 **预计总工期：12-15 周**（一人 + AI 辅助开发）
+## Implementation Update (2026-03-19)
+
+- Uploaded-source images now survive ingestion as first-class assets with provenance, source page/heading metadata, content hash, and stable rehosted Docmost URLs.
+- Blueprint review now surfaces ranked source-image candidates per section and canonical image policies: `reuse_source_only`, `prefer_source_then_generate`, `generate_new_only`, `none`.
+- Section writing now follows one initial draft plus at most one targeted revision of the same draft. Repeated full-section rewrites are no longer part of the default Level 3 path.
+- Generated images are materialized only after section text stabilizes. Section snapshots expose `write_attempts`, image lifecycle status, source asset id, and degraded reason.
+- Review gating is now severity-based. Error-level issues remain blocking; warning/info issues can be accepted explicitly with `Continue with current draft`.
+- Browser acceptance coverage now includes blank-page smoke, outline/review/insert, source-image reuse with generated fallback, and persisted markdown verification for tables, mermaid, and images.

@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   Modal,
   Text,
@@ -13,9 +14,10 @@ import {
   Divider,
   ActionIcon,
 } from '@mantine/core';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { IconGripVertical, IconTrash } from '@tabler/icons-react';
 import type { CreationBlueprint, SectionPlan, VisualPlan } from '../../../types/blueprint.types';
+import { SourceImageCandidates } from './SourceImageCandidates';
 
 interface BlueprintModalProps {
   opened: boolean;
@@ -23,10 +25,55 @@ interface BlueprintModalProps {
   blueprint: CreationBlueprint;
   onConfirm: (blueprint: CreationBlueprint) => void;
   onRegenerate?: () => void;
+  withinPortal?: boolean;
 }
 
-export function BlueprintModal({ opened, onClose, blueprint, onConfirm, onRegenerate }: BlueprintModalProps) {
+function getSelectedSourceImageId(section: SectionPlan): string | null {
+  return section.visuals.find((visual) => visual.type === 'reuse_image')?.source_asset_id ?? null;
+}
+
+export function applySectionSourceImageSelection(section: SectionPlan, candidateId: string | null): SectionPlan {
+  const nextImageVisual: VisualPlan = candidateId
+    ? {
+        type: 'reuse_image',
+        description: `Reuse source image ${candidateId}`,
+        source_asset_id: candidateId,
+        position: 'before_section',
+      }
+    : {
+        type: 'ai_image',
+        description: 'Generate a new illustration for this section',
+        source_asset_id: null,
+        position: 'before_section',
+      };
+
+  const visuals = [...section.visuals];
+  const imageVisualIndex = visuals.findIndex(
+    (visual) => visual.type === 'reuse_image' || visual.type === 'ai_image',
+  );
+
+  if (imageVisualIndex >= 0) {
+    visuals[imageVisualIndex] = nextImageVisual;
+  } else {
+    visuals.push(nextImageVisual);
+  }
+
+  return { ...section, visuals };
+}
+
+export function BlueprintModal({
+  opened,
+  onClose,
+  blueprint,
+  onConfirm,
+  onRegenerate,
+  withinPortal = true,
+}: BlueprintModalProps) {
   const [localBlueprint, setLocalBlueprint] = useState<CreationBlueprint>(blueprint);
+
+  useEffect(() => {
+    setLocalBlueprint(blueprint);
+  }, [blueprint, opened]);
 
   const totalWords = localBlueprint.sections.reduce((sum, s) => sum + s.word_budget, 0);
 
@@ -68,6 +115,7 @@ export function BlueprintModal({ opened, onClose, blueprint, onConfirm, onRegene
       onClose={onClose}
       size="xl"
       title="📋 创作蓝图"
+      withinPortal={withinPortal}
       styles={{ body: { padding: 0 } }}
     >
       <Grid gutter={0} style={{ minHeight: '60vh' }}>
@@ -126,6 +174,16 @@ export function BlueprintModal({ opened, onClose, blueprint, onConfirm, onRegene
                       </Group>
                     )}
                   </Group>
+                  <SourceImageCandidates
+                    candidates={section.visual_candidates ?? []}
+                    selectedCandidateId={getSelectedSourceImageId(section)}
+                    onSelect={(candidateId) =>
+                      updateSection(idx, applySectionSourceImageSelection(section, candidateId))
+                    }
+                    onPreferGenerated={() =>
+                      updateSection(idx, applySectionSourceImageSelection(section, null))
+                    }
+                  />
                 </Paper>
               ))}
             </Stack>

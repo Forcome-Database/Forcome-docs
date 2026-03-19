@@ -2,8 +2,13 @@ import type { SelectionSnapshot } from "./ai-creator.types";
 import type {
   AgentAwaitInputData,
   AgentBlockState,
+  AgentDraftPatchSection,
+  AgentEvidenceSummary,
   AgentSessionRunState,
 } from "../../types/agent.types";
+import type { CreationBlueprint } from "../../types/blueprint.types";
+import type { CreationBrief } from "../../types/brief.types";
+import type { ReviewReport } from "../../types/review.types";
 
 export type AiCreateSessionMode = "standard" | "agent";
 export type AiCreateSessionStatus =
@@ -34,6 +39,11 @@ export interface AiCreateSessionState {
   selectionSnapshot: SelectionSnapshot | null;
   awaitInput: AiCreateAwaitInputState | null;
   block: AgentBlockState | null;
+  draftSections: AgentDraftPatchSection[];
+  brief: CreationBrief | null;
+  blueprint: CreationBlueprint | null;
+  reviewReport: ReviewReport | null;
+  evidenceSummary: AgentEvidenceSummary | null;
   error: string | null;
 }
 
@@ -50,6 +60,7 @@ export type AiCreateSessionAction =
   | { type: "session_received"; threadId: string }
   | { type: "task_received"; taskId: string | null }
   | { type: "content_delta"; chunk: string }
+  | { type: "draft_patch"; markdown: string; sections: AgentDraftPatchSection[] }
   | { type: "content_cleared" }
   | { type: "buffer_updated"; buffer: string }
   | { type: "await_input"; phase: AiCreateAwaitInputPhase; data: AgentAwaitInputData }
@@ -62,6 +73,11 @@ export type AiCreateSessionAction =
       awaitInput: AiCreateAwaitInputState | null;
       block: AgentBlockState | null;
       draftMarkdown: string;
+      draftSections: AgentDraftPatchSection[];
+      brief: CreationBrief | null;
+      blueprint: CreationBlueprint | null;
+      reviewReport: ReviewReport | null;
+      evidenceSummary: AgentEvidenceSummary | null;
     }
   | { type: "done" }
   | { type: "error"; message: string }

@@ -321,7 +321,29 @@ class TestGenerateBrief:
 
         # Invalid values should fall back to model defaults
         assert result.structure_strategy == "ai_recommend"
-        assert result.image_strategy == "mixed"
+        assert result.image_strategy == "prefer_source_then_generate"
+
+    @pytest.mark.asyncio
+    async def test_legacy_image_strategy_normalized_to_canonical_value(self):
+        with (
+            patch(
+                "app.orchestrator.tools.create_brief._call_llm_for_brief",
+                new_callable=AsyncMock,
+                return_value={
+                    "image_strategy": "mixed",
+                },
+            ),
+            patch("app.orchestrator.tools.create_brief.emit", new_callable=AsyncMock),
+        ):
+            result = await generate_brief(
+                user_message="Write with mixed image strategy",
+                asset_map=None,
+                page_content=None,
+                template_prompt=None,
+                thread_id="t1",
+            )
+
+        assert result.image_strategy == "prefer_source_then_generate"
 
     @pytest.mark.asyncio
     async def test_sse_events_emitted(self):

@@ -72,6 +72,7 @@ async def rewrite_section(
         section_index=section_index,
         total_sections=len(blueprint.sections),
         thread_id=thread_id,
+        max_retries=0,
     )
 
     await emit(thread_id, {

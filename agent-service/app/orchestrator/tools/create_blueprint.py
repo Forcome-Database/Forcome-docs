@@ -10,6 +10,7 @@ from app.models.blueprint import (
     BlueprintDeltaAssessment,
     CreationBlueprint,
     SectionPlan,
+    SourceImageCandidate,
     VisualPlan,
 )
 from app.models.brief import CreationBrief
@@ -114,6 +115,17 @@ def build_blueprint_prompt(
           "position": "<before_section|after_paragraph|end_of_section>"
         }}
       ],
+      "visual_candidates": [
+        {{
+          "asset_id": "<matching image asset id>",
+          "score": <number>,
+          "caption": "<source caption>",
+          "source": "<source file>",
+          "source_page": <number or null>,
+          "source_heading": "<nearby heading>",
+          "rationale": "<why this image matches>"
+        }}
+      ],
       "must_cover": ["<key point 1>", "<key point 2>"]
     }}
   ]
@@ -125,8 +137,9 @@ Rules:
 - Each section id must be unique (s1, s2, s3, ...).
 - Use level=2 for main sections, level=3 for subsections. Do NOT use level=1.
 - If image_strategy is "none", keep visuals empty and explain that in visual_plan_summary.
-- Prefer reuse_image when source assets already contain a relevant image.
-- If image_strategy is "generate_new" or "mixed", add ai_image visuals where illustrations would materially improve comprehension.
+- If image_strategy is "reuse_source_only", prefer reuse_image and provide visual_candidates when relevant source images exist.
+- If image_strategy is "prefer_source_then_generate", provide visual_candidates first and add ai_image visuals where illustrations would materially improve comprehension if no strong source image exists.
+- If image_strategy is "generate_new_only", prefer ai_image visuals and leave visual_candidates empty unless they help the user review alternatives.
 - Only include asset IDs from the available assets list.{asset_ids_hint}
 - Respond with ONLY the JSON object, no explanation."""
     )
@@ -200,6 +213,34 @@ def _parse_visuals(raw_visuals: object) -> list[VisualPlan]:
         except (TypeError, ValueError):
             continue
     return visuals
+
+
+def _parse_visual_candidates(raw_candidates: object) -> list[SourceImageCandidate]:
+    if not isinstance(raw_candidates, list):
+        return []
+
+    candidates: list[SourceImageCandidate] = []
+    for raw_candidate in raw_candidates:
+        if not isinstance(raw_candidate, dict):
+            continue
+        asset_id = raw_candidate.get("asset_id")
+        if not asset_id:
+            continue
+        try:
+            candidates.append(
+                SourceImageCandidate(
+                    asset_id=str(asset_id),
+                    score=float(raw_candidate.get("score", 0.0)),
+                    caption=str(raw_candidate.get("caption", "")),
+                    source=str(raw_candidate.get("source", "")),
+                    source_page=raw_candidate.get("source_page"),
+                    source_heading=str(raw_candidate.get("source_heading", "")),
+                    rationale=str(raw_candidate.get("rationale", "")),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    return candidates
 
 
 def _section_order(blueprint: CreationBlueprint) -> list[str]:
@@ -380,6 +421,7 @@ async def generate_blueprint(
                         description=str(raw_section.get("description", "")),
                         assets=list(raw_section.get("assets", [])),
                         visuals=_parse_visuals(raw_section.get("visuals", [])),
+                        visual_candidates=_parse_visual_candidates(raw_section.get("visual_candidates", [])),
                         must_cover=list(raw_section.get("must_cover", [])),
                     )
                 )
@@ -398,7 +440,7 @@ async def generate_blueprint(
     style_guide = str(llm_data.get("style_guide", "") or brief.style or "")
 
     sections = plan_visuals(sections, asset_map, brief)
-    if brief.image_strategy in {"generate_new", "mixed"} and not any(
+    if brief.image_strategy in {"generate_new_only", "prefer_source_then_generate"} and not any(
         any(visual.type == "ai_image" for visual in section.visuals)
         for section in sections
     ) and sections:

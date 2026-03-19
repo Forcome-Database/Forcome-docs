@@ -22,10 +22,14 @@ def wait_for_response(session, timeout_seconds: int = 90) -> str:
   isStreaming:
     (document.body?.innerText || '').includes('AI is writing') ||
     (document.body?.innerText || '').includes('AI 正在写作'),
-  hasInterrupt:
-    (document.body?.innerText || '').includes('提交回答') ||
-    (document.body?.innerText || '').includes('确认选择') ||
-    (document.body?.innerText || '').includes('确认生成')
+  hasAwaitingInput:
+    (document.body?.innerText || '').includes('AWAITING_INPUT') ||
+    (
+      (document.body?.innerText || '').includes('Brief') &&
+      (document.body?.innerText || '').includes('Needs approval')
+    ),
+  hasSessionHandle:
+    Object.keys(window.sessionStorage).some((key) => key.startsWith('docmost.ai.create.session:'))
 }))()
             """.strip(),
             timeout_seconds=30,
@@ -35,7 +39,11 @@ def wait_for_response(session, timeout_seconds: int = 90) -> str:
         body_text = str(state.get("bodyText") or "")
         if (
             "Create a short technical note" in body_text
-            and (bool(state.get("isStreaming")) or bool(state.get("hasInterrupt")))
+            and (
+                bool(state.get("isStreaming"))
+                or bool(state.get("hasAwaitingInput"))
+                or bool(state.get("hasSessionHandle"))
+            )
         ):
             return body_text
         time.sleep(1)

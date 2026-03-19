@@ -65,10 +65,8 @@ class TestWriteSingleSection:
 
         expected_draft = _make_draft("s2", "Methods content")
 
-        with patch("app.orchestrator.tools.write_tools.write_section", new_callable=AsyncMock) as mock_ws, \
-             patch("app.orchestrator.tools.write_tools.generate_section_visuals", new_callable=AsyncMock) as mock_gv:
+        with patch("app.orchestrator.tools.write_tools.write_section", new_callable=AsyncMock) as mock_ws:
             mock_ws.return_value = expected_draft
-            mock_gv.return_value = []
 
             result = await write_single_section(
                 section=s2,
@@ -99,10 +97,8 @@ class TestWriteSingleSection:
         prev_draft = _make_draft("s1", "First para.\n\nLast paragraph of intro.")
         expected_draft = _make_draft("s2")
 
-        with patch("app.orchestrator.tools.write_tools.write_section", new_callable=AsyncMock) as mock_ws, \
-             patch("app.orchestrator.tools.write_tools.generate_section_visuals", new_callable=AsyncMock) as mock_gv:
+        with patch("app.orchestrator.tools.write_tools.write_section", new_callable=AsyncMock) as mock_ws:
             mock_ws.return_value = expected_draft
-            mock_gv.return_value = []
 
             await write_single_section(
                 section=s2,
@@ -117,8 +113,8 @@ class TestWriteSingleSection:
         assert "Last paragraph of intro." in call_kwargs["prev_section_tail"]
 
     @pytest.mark.asyncio
-    async def test_sets_visuals_generated_on_draft(self):
-        """Generated visual URLs are stored in draft.visuals_generated."""
+    async def test_write_single_section_leaves_visual_materialization_for_later(self):
+        """write_single_section only drafts text; visuals are materialized after acceptance."""
         from app.orchestrator.tools.write_tools import write_single_section
 
         s1 = _make_section("s1")
@@ -126,10 +122,8 @@ class TestWriteSingleSection:
         brief = _make_brief()
         base_draft = _make_draft("s1")
 
-        with patch("app.orchestrator.tools.write_tools.write_section", new_callable=AsyncMock) as mock_ws, \
-             patch("app.orchestrator.tools.write_tools.generate_section_visuals", new_callable=AsyncMock) as mock_gv:
+        with patch("app.orchestrator.tools.write_tools.write_section", new_callable=AsyncMock) as mock_ws:
             mock_ws.return_value = base_draft
-            mock_gv.return_value = ["https://cdn.example.com/gen.png"]
 
             result = await write_single_section(
                 section=s1,
@@ -140,7 +134,7 @@ class TestWriteSingleSection:
                 page_id="page-42",
             )
 
-        assert result.visuals_generated == ["https://cdn.example.com/gen.png"]
+        assert result.visuals_generated == []
 
     @pytest.mark.asyncio
     async def test_emits_section_progress_event(self):
@@ -158,10 +152,8 @@ class TestWriteSingleSection:
             emitted_events.append(event)
 
         with patch("app.orchestrator.tools.write_tools.write_section", new_callable=AsyncMock) as mock_ws, \
-             patch("app.orchestrator.tools.write_tools.generate_section_visuals", new_callable=AsyncMock) as mock_gv, \
              patch("app.orchestrator.tools.write_tools.emit", side_effect=fake_emit):
             mock_ws.return_value = _make_draft("s2")
-            mock_gv.return_value = []
 
             await write_single_section(
                 section=s2,
@@ -183,6 +175,42 @@ class TestWriteSingleSection:
 # ---------------------------------------------------------------------------
 
 class TestWriteAllSectionsSequential:
+    @pytest.mark.asyncio
+    async def test_over_budget_section_uses_one_targeted_revision_without_second_full_write(self):
+        from app.orchestrator.tools.write_tools import write_all_sections
+
+        section = _make_section("s1", "Overview")
+        blueprint = _make_blueprint([section])
+        brief = _make_brief()
+
+        initial_draft = SectionDraft(
+            section_id="s1",
+            content="Long draft content.",
+            word_count=420,
+            budget_compliance=1.4,
+        )
+        revised_draft = SectionDraft(
+            section_id="s1",
+            content="Condensed draft content.",
+            word_count=300,
+            budget_compliance=1.0,
+        )
+
+        with patch("app.orchestrator.tools.write_tools.write_single_section", new=AsyncMock(return_value=initial_draft)) as mock_write_single, \
+             patch("app.orchestrator.tools.write_tools.revise_section_draft", new=AsyncMock(return_value=revised_draft), create=True) as mock_revise, \
+             patch("app.orchestrator.tools.write_tools.emit", new=AsyncMock()):
+            drafts = await write_all_sections(
+                blueprint=blueprint,
+                brief=brief,
+                parallel=False,
+            )
+
+        assert drafts == [revised_draft]
+        mock_write_single.assert_awaited_once()
+        mock_revise.assert_awaited_once()
+        assert mock_revise.await_args.kwargs["draft"] == initial_draft
+        assert mock_revise.await_args.kwargs["section"] == section
+
     @pytest.mark.asyncio
     async def test_returns_correct_number_of_drafts(self):
         from app.orchestrator.tools.write_tools import write_all_sections
@@ -222,7 +250,7 @@ class TestWriteAllSectionsSequential:
         async def fake_write_single(**kwargs):
             sid = kwargs["section"].id
             call_order.append(sid)
-            return _make_draft(sid)
+            return SectionDraft(section_id=sid, content="Draft content.", word_count=300)
 
         with patch("app.orchestrator.tools.write_tools.write_single_section", side_effect=fake_write_single):
             await write_all_sections(
@@ -250,7 +278,7 @@ class TestWriteAllSectionsSequential:
             sid = kwargs["section"].id
             existing = kwargs.get("existing_drafts") or []
             received_draft_counts.append(len(existing))
-            return _make_draft(sid)
+            return SectionDraft(section_id=sid, content="Draft content.", word_count=300)
 
         with patch("app.orchestrator.tools.write_tools.write_single_section", side_effect=fake_write_single):
             await write_all_sections(

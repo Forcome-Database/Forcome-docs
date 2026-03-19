@@ -102,6 +102,12 @@ def _normalize_resume_value_for_engine(request: AgentResumeRequest) -> dict:
             **({"feedback": resume_value.feedback} if resume_value.feedback else {}),
         }
 
+    if resume_value.type == "accept_review":
+        return {
+            "skip": True,
+            **({"feedback": resume_value.feedback} if resume_value.feedback else {}),
+        }
+
     if resume_value.type == "resolve_block":
         return {
             "resolution": resume_value.resolution,

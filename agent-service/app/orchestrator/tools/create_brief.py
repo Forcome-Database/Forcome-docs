@@ -11,7 +11,7 @@ import re
 
 from app.agent.events import emit  # imported at module level so tests can patch it
 from app.models.asset_map import AssetMap
-from app.models.brief import CreationBrief
+from app.models.brief import CreationBrief, normalize_image_strategy
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +94,7 @@ def build_brief_prompt(
   "style": "<writing style>",
   "tone": "<tone>",
   "structure_strategy": "<copy_source|ai_recommend|user_defined>",
-  "image_strategy": "<reuse_source|generate_new|mixed|none>",
+  "image_strategy": "<reuse_source_only|prefer_source_then_generate|generate_new_only|none>",
   "constraints": ["<constraint1>", ...]
 }
 
@@ -103,7 +103,9 @@ Rules:
 - structure_strategy = "copy_source" when the user wants to reproduce or adapt an existing document.
 - structure_strategy = "user_defined" when the user explicitly described the structure.
 - Otherwise use "ai_recommend".
-- image_strategy = "reuse_source" when source material has images and user wants them kept.
+- image_strategy = "reuse_source_only" when source material has images and user wants them kept.
+- image_strategy = "prefer_source_then_generate" when source images should be tried first but new generation is acceptable.
+- image_strategy = "generate_new_only" when all visuals should be newly generated.
 - image_strategy = "none" when no images are requested.
 - target_length: estimate based on the request. If reproducing a source document, use its character/word count.
 - Respond with ONLY the JSON object, no explanation."""
@@ -214,8 +216,8 @@ async def generate_brief(
         brief_kwargs["tone"] = str(llm_data["tone"])
     if llm_data.get("structure_strategy") in ("copy_source", "ai_recommend", "user_defined"):
         brief_kwargs["structure_strategy"] = llm_data["structure_strategy"]
-    if llm_data.get("image_strategy") in ("reuse_source", "generate_new", "mixed", "none"):
-        brief_kwargs["image_strategy"] = llm_data["image_strategy"]
+    if llm_data.get("image_strategy"):
+        brief_kwargs["image_strategy"] = normalize_image_strategy(str(llm_data["image_strategy"]))
     if isinstance(llm_data.get("constraints"), list):
         brief_kwargs["constraints"] = [str(c) for c in llm_data["constraints"]]
 

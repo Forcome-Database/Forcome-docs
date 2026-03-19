@@ -150,11 +150,28 @@ class TestParseAssetsParallel:
         assert parse_mock.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_images_processed_with_page_id(self):
-        """Images are processed via process_images when page_id is provided."""
+    async def test_parser_extracted_images_upgraded_with_page_id(self):
+        """Parser image assets are materialized even without file_info['images'].""" 
         asset_map = _make_asset_map("doc.pdf", 100)
-        images = [{"index": 0, "b64": "abc", "desc": "diagram"}]
-        image_assets = _make_image_assets("doc.pdf", n=2)
+        asset_map.items.append(
+            AssetItem(
+                id="img-doc.pdf-0",
+                type="image",
+                source="doc.pdf",
+                content="data:image/png;base64,YWJj",
+                summary="[diagram] Login flow screenshot",
+            )
+        )
+        upgraded_items = [
+            asset_map.items[0],
+            AssetItem(
+                id="img-doc.pdf-0",
+                type="image",
+                source="doc.pdf",
+                content="https://example.com/doc.pdf/0.png",
+                summary="[diagram] Login flow screenshot",
+            ),
+        ]
 
         with (
             patch(
@@ -162,17 +179,18 @@ class TestParseAssetsParallel:
                 return_value=asset_map,
             ),
             patch(
-                "app.orchestrator.tools.parse_assets.process_images",
-                return_value=image_assets,
-            ) as mock_pi,
+                "app.orchestrator.tools.parse_assets.upgrade_source_image_assets",
+                return_value=upgraded_items,
+                create=True,
+            ) as mock_upgrade,
         ):
             result = await parse_assets_tool(
-                files=[_make_file("doc.pdf", images=images)],
+                files=[_make_file("doc.pdf")],
                 page_id="page-xyz",
             )
 
-        mock_pi.assert_called_once_with(images, "doc.pdf", "page-xyz")
-        assert len(result.items_by_type("image")) == 2
+        mock_upgrade.assert_called_once()
+        assert len(result.items_by_type("image")) == 1
 
     @pytest.mark.asyncio
     async def test_empty_files_returns_empty_asset_map(self):

@@ -1,5 +1,5 @@
+import React, { useState } from 'react';
 import { Modal, Stack, Group, Button, Textarea, Divider, Text, ScrollArea } from '@mantine/core';
-import { useState } from 'react';
 import type { ReviewReport } from '../../../types/review.types';
 import { ReviewScoreBoard } from './ReviewScoreBoard';
 import { IssueCard } from './IssueCard';
@@ -11,20 +11,41 @@ interface ReviewModalProps {
   onClose: () => void;
   report: ReviewReport;
   onFixSelected: (issueIds: string[], feedback?: string) => void;
+  onContinue: (feedback?: string) => void;
   onSkip: () => void;
+  withinPortal?: boolean;
 }
 
-export function ReviewModal({ opened, onClose, report, onFixSelected, onSkip }: ReviewModalProps) {
-  const { selectedIssueIds, toggleIssue, selectAll, clearSelection, pendingIssues, autoFixedIssues, selectedCount } = useReviewActions(report);
+function isBlockingReviewIssue(issue: ReviewReport['issues'][number]): boolean {
+  return issue.severity === 'error' && !issue.fixed && !issue.auto_fixable;
+}
+
+export function ReviewModal({
+  opened,
+  onClose,
+  report,
+  onFixSelected,
+  onContinue,
+  onSkip,
+  withinPortal,
+}: ReviewModalProps) {
+  const { selectedIssueIds, toggleIssue, selectAll, clearSelection, pendingIssues, selectedCount } = useReviewActions(report);
   const [feedback, setFeedback] = useState('');
+  const skippableIssueCount = pendingIssues.filter((issue) => issue.category === 'visual').length;
+  const blockingIssueCount = pendingIssues.filter(isBlockingReviewIssue).length;
 
   const handleFix = () => {
     onFixSelected(Array.from(selectedIssueIds), feedback || undefined);
     onClose();
   };
 
+  const handleContinue = () => {
+    onContinue(feedback || undefined);
+    onClose();
+  };
+
   return (
-    <Modal opened={opened} onClose={onClose} size="xl" title="📋 质量评审报告">
+    <Modal opened={opened} onClose={onClose} size="xl" title="Quality Review" withinPortal={withinPortal}>
       <Stack gap="md">
         <ReviewScoreBoard
           overallScore={report.overall_score}
@@ -40,15 +61,21 @@ export function ReviewModal({ opened, onClose, report, onFixSelected, onSkip }: 
           <>
             <Divider />
             <Group justify="space-between">
-              <Text size="sm" fw={600}>⚠️ 需要您决定（{pendingIssues.length} 项）</Text>
+              <Text size="sm" fw={600}>
+                Pending decisions ({pendingIssues.length})
+              </Text>
               <Group gap="xs">
-                <Button size="compact-xs" variant="subtle" onClick={selectAll}>全选</Button>
-                <Button size="compact-xs" variant="subtle" onClick={clearSelection}>清除</Button>
+                <Button size="compact-xs" variant="subtle" onClick={selectAll}>
+                  Select all
+                </Button>
+                <Button size="compact-xs" variant="subtle" onClick={clearSelection}>
+                  Clear
+                </Button>
               </Group>
             </Group>
             <ScrollArea mah={300}>
               <Stack gap="xs">
-                {pendingIssues.map(issue => (
+                {pendingIssues.map((issue) => (
                   <IssueCard
                     key={issue.id}
                     issue={issue}
@@ -62,7 +89,7 @@ export function ReviewModal({ opened, onClose, report, onFixSelected, onSkip }: 
         )}
 
         <Textarea
-          placeholder="补充修改意见（可选）"
+          placeholder="Additional fix instructions (optional)"
           size="xs"
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
@@ -73,11 +100,27 @@ export function ReviewModal({ opened, onClose, report, onFixSelected, onSkip }: 
 
         <Divider />
         <Group justify="flex-end">
-          <Button size="sm" variant="subtle" onClick={() => { onSkip(); onClose(); }}>
-            跳过，直接使用
+          <Button
+            size="sm"
+            variant="light"
+            disabled={blockingIssueCount > 0}
+            onClick={handleContinue}
+          >
+            Continue with current draft
+          </Button>
+          <Button
+            size="sm"
+            variant="subtle"
+            disabled={skippableIssueCount === 0}
+            onClick={() => {
+              onSkip();
+              onClose();
+            }}
+          >
+            Skip visual blockers
           </Button>
           <Button size="sm" onClick={handleFix} disabled={selectedCount === 0}>
-            修复选中项（{selectedCount}）
+            Fix selected ({selectedCount})
           </Button>
         </Group>
       </Stack>

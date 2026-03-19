@@ -45,20 +45,22 @@ describe('AgentGatewayController', () => {
     };
 
     const writeHead = jest.fn();
-    const setHeader = jest.fn();
     const write = jest.fn();
     const end = jest.fn();
+    const hijack = jest.fn();
     const res = {
+      hijack,
       raw: {
         headersSent: false,
         writeHead,
-        setHeader,
         write,
         end,
+        flushHeaders: jest.fn(),
       },
     };
 
     let capturedBody = '';
+    let releaseStream: (() => void) | null = null;
 
     jest.spyOn(http, 'request').mockImplementation((options: any, callback: any) => {
       const proxyRes = new PassThrough() as PassThrough & {
@@ -75,22 +77,35 @@ describe('AgentGatewayController', () => {
         }),
         end: jest.fn(() => {
           callback(proxyRes);
-          proxyRes.end();
+          releaseStream = () => {
+            proxyRes.write('data: {"type":"session"}\n\n');
+            proxyRes.end();
+          };
         }),
       };
 
       return proxyReq as any;
     });
 
-    await controller.runAgent(
+    let settled = false;
+    const runPromise = controller
+      .runAgent(
       req as any,
       res as any,
       { id: 'user-1' },
       { id: 'workspace-1', settings: { ai: {} } },
-    );
+      )
+      .then(() => {
+        settled = true;
+      });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(hijack).toHaveBeenCalled();
+    expect(settled).toBe(false);
+    releaseStream?.();
 
     const agentBody = JSON.parse(capturedBody);
-
     expect(agentBody).toMatchObject({
       user_message: 'Use the uploaded file to rewrite this page.',
       page_id: 'page-123',
@@ -104,6 +119,15 @@ describe('AgentGatewayController', () => {
         },
       ],
     });
+    expect(writeHead).toHaveBeenCalledWith(
+      200,
+      expect.objectContaining({
+        'Content-Type': 'text/event-stream',
+        'X-Task-Id': 'task-1',
+      }),
+    );
+
+    await runPromise;
   });
 
   it('proxies session snapshot requests to the agent runtime', async () => {
@@ -191,20 +215,22 @@ describe('AgentGatewayController', () => {
     );
 
     const writeHead = jest.fn();
-    const setHeader = jest.fn();
     const write = jest.fn();
     const end = jest.fn();
+    const hijack = jest.fn();
     const res = {
+      hijack,
       raw: {
         headersSent: false,
         writeHead,
-        setHeader,
         write,
         end,
+        flushHeaders: jest.fn(),
       },
     };
 
     let capturedBody = '';
+    let releaseStream: (() => void) | null = null;
 
     jest.spyOn(http, 'request').mockImplementation((options: any, callback: any) => {
       const proxyRes = new PassThrough() as PassThrough & {
@@ -221,14 +247,19 @@ describe('AgentGatewayController', () => {
         }),
         end: jest.fn(() => {
           callback(proxyRes);
-          proxyRes.end();
+          releaseStream = () => {
+            proxyRes.write('data: {"type":"session"}\n\n');
+            proxyRes.end();
+          };
         }),
       };
 
       return proxyReq as any;
     });
 
-    await controller.resumeAgent(
+    let settled = false;
+    const resumePromise = controller
+      .resumeAgent(
       {
         sessionId: 'session-1',
         resumeValue: {
@@ -237,8 +268,16 @@ describe('AgentGatewayController', () => {
         },
       },
       res as any,
-    );
+      )
+      .then(() => {
+        settled = true;
+      });
 
+    await Promise.resolve();
+
+    expect(hijack).toHaveBeenCalled();
+    expect(settled).toBe(false);
+    releaseStream?.();
     expect(JSON.parse(capturedBody)).toEqual({
       thread_id: 'session-1',
       resume_value: {
@@ -246,5 +285,14 @@ describe('AgentGatewayController', () => {
         brief: { audience: 'engineers' },
       },
     });
+    expect(writeHead).toHaveBeenCalledWith(
+      200,
+      expect.objectContaining({
+        'Content-Type': 'text/event-stream',
+        'X-Task-Id': 'task-2',
+      }),
+    );
+
+    await resumePromise;
   });
 });

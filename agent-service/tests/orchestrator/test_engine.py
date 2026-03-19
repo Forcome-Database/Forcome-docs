@@ -9,7 +9,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.orchestrator.engine import OrchestratorEngine, OrchestratorRequest
+from app.orchestrator.engine import (
+    OrchestratorEngine,
+    OrchestratorRequest,
+    _should_promote_level2_to_structured_write,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +309,11 @@ class TestExecuteLevel2:
                 new_callable=AsyncMock,
                 return_value="final content",
             ),
+            patch.object(
+                engine,
+                "_await_user_input",
+                new=AsyncMock(return_value={"brief": CreationBrief().model_dump()}),
+            ),
             patch("app.orchestrator.engine.emit", new=AsyncMock()),
         ):
             req = OrchestratorRequest(
@@ -348,6 +357,11 @@ class TestExecuteLevel2:
                 new_callable=AsyncMock,
                 return_value="final",
             ),
+            patch.object(
+                engine,
+                "_await_user_input",
+                new=AsyncMock(return_value={"brief": CreationBrief().model_dump()}),
+            ),
             patch("app.orchestrator.engine.emit", new=AsyncMock()),
         ):
             req = OrchestratorRequest(
@@ -358,27 +372,181 @@ class TestExecuteLevel2:
             await engine._execute_level2(req)
             mock_parse.assert_not_called()
 
+    def test_promotes_level2_to_structured_write_for_source_images(self):
+        from app.models.asset_map import AssetItem, AssetMap
+        from app.models.brief import CreationBrief
+
+        request = OrchestratorRequest(
+            thread_id="t",
+            user_message="重新整理这个SOP并保留原图",
+            intent_route="document_transform",
+            files=[{"content_b64": "abc", "filename": "doc.pdf", "mimetype": "application/pdf"}],
+        )
+        asset_map = AssetMap(
+            items=[
+                AssetItem(id="txt-1", type="text", content="步骤说明"),
+                AssetItem(
+                    id="img-1",
+                    type="image",
+                    source="doc.pdf",
+                    content="/api/files/img-1/source.png",
+                    summary="[source_image] 原始流程截图",
+                ),
+            ]
+        )
+        brief = CreationBrief(
+            goal="整理排版",
+            target_length=500,
+            image_strategy="reuse_source_only",
+        )
+
+        assert _should_promote_level2_to_structured_write(
+            request=request,
+            asset_map=asset_map,
+            brief=brief,
+        ) is True
+
     @pytest.mark.asyncio
-    async def test_execute_level2_emits_ask_user_brief_and_blueprint(self):
+    async def test_execute_level2_upgrades_to_structured_write_when_source_images_must_be_preserved(self):
+        engine = OrchestratorEngine()
+        from app.models.asset_map import AssetItem, AssetMap
+        from app.models.brief import CreationBrief
+        from app.models.blueprint import CreationBlueprint, SectionPlan
+        from app.models.document_tree import DocumentNode, DocumentTree
+        from app.models.draft import SectionDraft
+        from app.models.review import ReviewReport
+
+        brief = CreationBrief(
+            goal="整理排版",
+            target_length=500,
+            image_strategy="reuse_source_only",
+        )
+        blueprint = CreationBlueprint(
+            title="采购退货单 SOP",
+            total_word_budget=500,
+            sections=[SectionPlan(id="s1", title="处理前提", level=2, word_budget=500)],
+        )
+        drafts = [
+            SectionDraft(
+                section_id="s1",
+                content="![原图](/api/files/img-1/source.png)\n\n整理后的正文",
+                word_count=120,
+                image_status="source_reused",
+                source_image_asset_id="img-1",
+            )
+        ]
+
+        with (
+            patch(
+                "app.orchestrator.engine.parse_assets_tool",
+                new_callable=AsyncMock,
+                return_value=AssetMap(
+                    items=[
+                        AssetItem(id="txt-1", type="text", content="原文说明"),
+                        AssetItem(
+                            id="img-1",
+                            type="image",
+                            source="doc.pdf",
+                            content="/api/files/img-1/source.png",
+                            summary="[source_image] 原始流程截图",
+                        ),
+                    ],
+                    source_word_count=800,
+                ),
+            ) as mock_parse,
+            patch(
+                "app.orchestrator.engine.generate_brief",
+                new_callable=AsyncMock,
+                return_value=brief,
+            ) as mock_brief,
+            patch.object(
+                engine,
+                "_await_user_input",
+                new=AsyncMock(return_value={"brief": brief.model_dump()}),
+            ),
+            patch(
+                "app.orchestrator.engine.generate_blueprint",
+                new_callable=AsyncMock,
+                return_value=blueprint,
+            ) as mock_blueprint,
+            patch.object(
+                engine,
+                "_confirm_blueprint",
+                new=AsyncMock(return_value=blueprint),
+            ),
+            patch(
+                "app.orchestrator.engine.write_all_sections",
+                new_callable=AsyncMock,
+                return_value=drafts,
+            ) as mock_write,
+            patch.object(engine, "_emit_draft_preview", new=AsyncMock()),
+            patch.object(
+                engine,
+                "_build_review_report",
+                new=AsyncMock(return_value=(ReviewReport(overall_score=95, issues=[]), drafts)),
+            ),
+            patch("app.orchestrator.engine.run_consistency_checks", return_value=[]),
+            patch("app.orchestrator.engine.draft_store") as mock_draft_store,
+            patch(
+                "app.orchestrator.engine.build_document_tree",
+                return_value=DocumentTree(
+                    root=DocumentNode(node_id="document:title", title="采购退货单 SOP", level=1),
+                    sections=[
+                        DocumentNode(
+                            node_id="section:s1",
+                            section_id="s1",
+                            title="处理前提",
+                            level=2,
+                            content=drafts[0].content,
+                        )
+                    ],
+                ),
+            ),
+            patch(
+                "app.orchestrator.engine.document_tree_to_sections",
+                return_value=[{"content": drafts[0].content}],
+            ),
+            patch(
+                "app.orchestrator.engine.finalize_and_emit",
+                new_callable=AsyncMock,
+                return_value=drafts[0].content,
+            ) as mock_finalize,
+            patch(
+                "app.orchestrator.engine.execute_simple_edit",
+                new_callable=AsyncMock,
+                return_value="plain text only",
+            ) as mock_simple_edit,
+            patch("app.orchestrator.engine.emit", new=AsyncMock()),
+        ):
+            req = OrchestratorRequest(
+                thread_id="t",
+                user_message="重新整理这个SOP并保留原图",
+                intent_route="document_transform",
+                page_id="page-1",
+                files=[{"content_b64": "abc", "filename": "doc.pdf", "mimetype": "application/pdf"}],
+            )
+
+            result = await engine._execute_level2(req)
+
+        mock_parse.assert_called_once()
+        mock_brief.assert_called_once()
+        mock_blueprint.assert_called_once()
+        mock_write.assert_called_once()
+        mock_simple_edit.assert_not_called()
+        mock_finalize.assert_called_once()
+        mock_draft_store.save_draft.assert_called_once()
+        assert result == drafts[0].content
+
+    @pytest.mark.asyncio
+    async def test_execute_level2_requests_brief_confirmation_before_simple_edit(self):
         engine = OrchestratorEngine()
         from app.models.brief import CreationBrief
-        from app.models.blueprint import CreationBlueprint
-
-        emitted_events: list[dict] = []
-
-        async def capture_emit(thread_id: str, event: dict) -> None:
-            emitted_events.append(event)
 
         with (
             patch(
                 "app.orchestrator.engine.generate_brief",
                 new_callable=AsyncMock,
                 return_value=CreationBrief(audience="engineers"),
-            ),
-            patch(
-                "app.orchestrator.engine.generate_blueprint",
-                new_callable=AsyncMock,
-                return_value=CreationBlueprint(title="My Doc"),
             ),
             patch(
                 "app.orchestrator.engine.execute_simple_edit",
@@ -390,7 +558,12 @@ class TestExecuteLevel2:
                 new_callable=AsyncMock,
                 return_value="final",
             ),
-            patch("app.orchestrator.engine.emit", side_effect=capture_emit),
+            patch.object(
+                engine,
+                "_await_user_input",
+                new=AsyncMock(return_value={"brief": CreationBrief(audience="engineers").model_dump()}),
+            ) as mock_await_input,
+            patch("app.orchestrator.engine.emit", new=AsyncMock()),
         ):
             req = OrchestratorRequest(
                 thread_id="t-ask",
@@ -398,10 +571,8 @@ class TestExecuteLevel2:
             )
             await engine._execute_level2(req)
 
-        ask_user_events = [e for e in emitted_events if e.get("type") == "ask_user"]
-        phases = {e.get("phase") for e in ask_user_events}
-        assert "brief" in phases
-        assert "blueprint" in phases
+        mock_await_input.assert_called_once()
+        assert mock_await_input.await_args.kwargs["phase"] == "brief"
 
     @pytest.mark.asyncio
     async def test_execute_level2_returns_string(self):
@@ -429,6 +600,11 @@ class TestExecuteLevel2:
                 "app.orchestrator.engine.finalize_and_emit",
                 new_callable=AsyncMock,
                 return_value="final document",
+            ),
+            patch.object(
+                engine,
+                "_await_user_input",
+                new=AsyncMock(return_value={"brief": CreationBrief().model_dump()}),
             ),
             patch("app.orchestrator.engine.emit", new=AsyncMock()),
         ):

@@ -13,5 +13,6 @@ export type AgentResumeValue =
   | { type: 'confirm_blueprint'; blueprint: Record<string, unknown> | null }
   | { type: 'apply_blueprint_patch'; blueprint: Record<string, unknown> | null; feedback?: string }
   | { type: 'fix_selected_issues'; selected_issue_ids: string[]; feedback?: string }
+  | { type: 'accept_review'; feedback?: string }
   | { type: 'resolve_block'; resolution: string; context?: Record<string, unknown> }
   | { type: 'skip_issue'; issue_id: string; feedback?: string };

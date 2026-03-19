@@ -77,6 +77,19 @@ async def test_get_session_snapshot_returns_current_creation_session():
             },
         },
         draft_markdown="# Draft",
+        draft_sections=[
+            {
+                "node_id": "section:intro",
+                "section_id": "intro",
+                "title": "Intro",
+                "level": 2,
+                "content": "Draft body",
+                "write_attempts": 2,
+                "image_status": "generated",
+                "source_image_asset_id": "img-source-1",
+                "degraded_reason": "source asset unavailable",
+            }
+        ],
         evidence_summary={
             "total": 2,
             "required_total": 1,
@@ -134,7 +147,19 @@ async def test_get_session_snapshot_returns_current_creation_session():
             "blueprint_change_audit": [],
             "review_report": None,
             "draft_markdown": "# Draft",
-            "draft_sections": [],
+            "draft_sections": [
+                {
+                    "node_id": "section:intro",
+                    "section_id": "intro",
+                    "title": "Intro",
+                    "level": 2,
+                    "content": "Draft body",
+                    "write_attempts": 2,
+                    "image_status": "generated",
+                    "source_image_asset_id": "img-source-1",
+                    "degraded_reason": "source asset unavailable",
+                }
+            ],
             "document_tree": None,
             "final_content": "",
             "last_error": None,

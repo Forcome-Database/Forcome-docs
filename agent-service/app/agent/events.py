@@ -8,6 +8,7 @@ import asyncio
 
 from pydantic import TypeAdapter
 
+from app.runtime_logging import log_sse_event
 from app.schemas.response import SSEEvent
 
 _event_queues: dict[str, asyncio.Queue] = {}
@@ -29,6 +30,7 @@ async def emit(task_id: str, event: dict):
     q = _event_queues.get(task_id)
     if q:
         validated = _sse_event_adapter.validate_python(event)
+        log_sse_event(task_id, validated.model_dump())
         await q.put(validated.model_dump())
 
 

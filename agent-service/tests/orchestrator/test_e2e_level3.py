@@ -300,6 +300,93 @@ async def test_level3_reopens_review_after_selected_fix_until_user_skips():
 
 
 @pytest.mark.asyncio
+async def test_level3_allows_accepting_non_blocking_review_issues():
+    engine = OrchestratorEngine()
+
+    request = OrchestratorRequest(
+        user_message="Write a concise technical note.",
+        thread_id="test-l3-review-accept",
+        workspace_id="ws-test",
+        intent_route="document_create",
+    )
+
+    with patch("app.orchestrator.engine.analyze_task_complexity") as mock_complexity, \
+         patch("app.orchestrator.tools.evidence.research_tool", new_callable=AsyncMock) as mock_research, \
+         patch("app.orchestrator.engine.generate_brief") as mock_brief, \
+         patch("app.orchestrator.engine.generate_blueprint") as mock_blueprint, \
+         patch("app.orchestrator.engine.interaction_registry") as mock_registry, \
+         patch("app.orchestrator.engine.write_all_sections") as mock_write, \
+         patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
+         patch("app.orchestrator.engine.evaluate_quality") as mock_evaluate, \
+         patch("app.orchestrator.engine.apply_auto_fixes") as mock_autofix, \
+         patch("app.orchestrator.engine.finalize_and_emit") as mock_finalize, \
+         patch("app.orchestrator.engine.emit") as mock_emit, \
+         patch("app.orchestrator.engine.draft_store") as mock_draft:
+
+        from app.models import CreationBrief, CreationBlueprint, SectionDraft
+        from app.models.blueprint import SectionPlan
+
+        mock_complexity.return_value = {"level": 3, "reasoning": "creation keyword"}
+        mock_research.return_value = []
+        mock_brief.return_value = CreationBrief(audience="developers", goal="technical note", target_length=300)
+        mock_blueprint.return_value = CreationBlueprint(
+            title="Technical Note",
+            total_word_budget=300,
+            sections=[SectionPlan(id="s1", title="Overview", level=2, word_budget=300)],
+        )
+        mock_registry.wait_for_response = AsyncMock(
+            side_effect=[
+                {"confirmed": True},
+                {"confirmed": True},
+                {"type": "review", "skip": True},
+            ]
+        )
+        mock_registry.register = MagicMock()
+        mock_registry.cleanup = MagicMock()
+        drafts = [SectionDraft(section_id="s1", content="content", word_count=330)]
+        mock_write.return_value = drafts
+        mock_consistency.return_value = []
+        mock_evaluate.return_value = ReviewReport(
+            overall_score=78,
+            issues=[
+                ReviewIssue(
+                    id="issue-1",
+                    section_id="s1",
+                    severity="warning",
+                    category="content",
+                    description="The note could be more concise.",
+                    suggestion="Tighten the wording.",
+                    auto_fixable=False,
+                ),
+                ReviewIssue(
+                    id="issue-2",
+                    section_id="s1",
+                    severity="info",
+                    category="length",
+                    description="The section is slightly above the target budget.",
+                    suggestion="Trim 20 to 30 words if desired.",
+                    auto_fixable=False,
+                ),
+            ],
+            user_decision_needed=["issue-1", "issue-2"],
+        )
+        mock_autofix.side_effect = lambda drafts, issues, levels: (drafts, 0)
+        mock_finalize.return_value = "final content"
+        mock_draft.save_draft = MagicMock()
+
+        result = await engine.run(request)
+
+    assert result == "final content"
+    mock_finalize.assert_awaited_once()
+    blocked_events = [
+        call.args[1]
+        for call in mock_emit.await_args_list
+        if len(call.args) == 2 and call.args[1].get("type") == "blocked"
+    ]
+    assert blocked_events == []
+
+
+@pytest.mark.asyncio
 async def test_level3_blocks_finalize_when_section_alignment_is_broken():
     engine = OrchestratorEngine()
 
@@ -605,6 +692,8 @@ async def test_level3_recovers_section_locally_before_review():
          patch("app.orchestrator.engine.generate_blueprint") as mock_blueprint, \
          patch("app.orchestrator.engine.interaction_registry") as mock_registry, \
          patch("app.orchestrator.tools.write_tools.write_single_section", new_callable=AsyncMock) as mock_write_single, \
+         patch("app.orchestrator.tools.write_tools.revise_section_draft", new_callable=AsyncMock) as mock_revise_section, \
+         patch("app.orchestrator.tools.write_tools.materialize_section_visuals", new_callable=AsyncMock, create=True) as mock_materialize_visuals, \
          patch("app.orchestrator.tools.write_tools.emit", new_callable=AsyncMock), \
          patch("app.orchestrator.engine.evaluate_quality") as mock_evaluate, \
          patch("app.orchestrator.engine.run_consistency_checks") as mock_consistency, \
@@ -640,10 +729,14 @@ async def test_level3_recovers_section_locally_before_review():
         )
         mock_registry.register = MagicMock()
         mock_registry.cleanup = MagicMock()
-        mock_write_single.side_effect = [
-            SectionDraft(section_id="s1", content="Too short.", word_count=20, assets_used=[]),
-            SectionDraft(section_id="s1", content="Recovered draft with explicit asset use.", word_count=400, assets_used=["asset-1"]),
-        ]
+        mock_write_single.return_value = SectionDraft(section_id="s1", content="Too short.", word_count=20, assets_used=[])
+        mock_revise_section.return_value = SectionDraft(
+            section_id="s1",
+            content="Recovered draft with explicit asset use.",
+            word_count=400,
+            assets_used=["asset-1"],
+        )
+        mock_materialize_visuals.side_effect = lambda draft, **_: draft
         mock_consistency.return_value = []
         mock_evaluate.return_value = ReviewReport(overall_score=90, issues=[])
         mock_autofix.side_effect = lambda drafts, issues, levels: (drafts, 0)
@@ -653,7 +746,9 @@ async def test_level3_recovers_section_locally_before_review():
         result = await engine.run(request)
 
     assert result == "final content"
-    assert mock_write_single.await_count == 2
+    assert mock_write_single.await_count == 1
+    mock_revise_section.assert_awaited_once()
+    mock_materialize_visuals.assert_awaited_once()
     snapshot = session_store.get_session(request.thread_id)
     assert snapshot is not None
     assert snapshot.draft_sections[0].content == "Recovered draft with explicit asset use."

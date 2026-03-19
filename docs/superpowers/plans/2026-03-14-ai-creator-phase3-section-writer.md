@@ -2945,3 +2945,10 @@ Expected: All tests pass
 git add agent-service/app/orchestrator/prompts.py agent-service/app/orchestrator/engine.py
 git commit -m "feat(orchestrator): add Level 3 system prompt with multi-document merge and write tools"
 ```
+## Implementation Status Update (2026-03-19)
+
+- The writer lifecycle is now `initial draft -> optional targeted revision`, replacing the previous compounded retry loops.
+- Section revisions operate on the previous draft instead of restarting from scratch, reducing token waste and repeated near-duplicate output.
+- Text is stabilized before any generated or reused images are materialized, so text retries no longer trigger duplicate image generation or uploads.
+- Section runtime state now records `write_attempts`, image status, approved source image id, and degraded reason for the workbench document tree.
+- Browser acceptance confirms the outline/review/insert path persists markdown with the expected heading, table, and mermaid artifacts.

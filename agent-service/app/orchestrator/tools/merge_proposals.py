@@ -8,6 +8,7 @@ import json
 import re
 from pydantic_ai import Agent
 from app.models.asset_map import AssetMap
+from app.orchestrator.llm_result import extract_text_output
 from app.orchestrator.llm_factory import create_pydantic_ai_model
 from app.agent.events import emit
 
@@ -67,7 +68,7 @@ Output JSON array:
     await emit(thread_id, {"type": "step_start", "step": "merge_proposals", "description": "生成合并方案"})
 
     result = await agent.run(prompt)
-    text = result.data if hasattr(result, 'data') else str(result)
+    text = extract_text_output(result)
 
     try:
         json_match = re.search(r'\[.*\]', text, re.DOTALL)

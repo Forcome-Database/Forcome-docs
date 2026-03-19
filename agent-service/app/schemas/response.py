@@ -117,6 +117,15 @@ class SectionProgressEvent(BaseModel):
     section_title: str = ""
 
 
+class SectionStateEvent(BaseModel):
+    type: Literal["section_state"] = "section_state"
+    section_id: str
+    write_attempts: int = 1
+    image_status: str = "not_requested"
+    source_image_asset_id: str | None = None
+    degraded_reason: str | None = None
+
+
 class ComplexityAnalyzedEvent(BaseModel):
     type: Literal["complexity_analyzed"] = "complexity_analyzed"
     level: int
@@ -139,4 +148,4 @@ class SessionEvent(BaseModel):
 class CancelledEvent(BaseModel):
     type: Literal["cancelled"] = "cancelled"
 
-SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ContentClearEvent | ImageEvent | DraftPatchEvent | ToolCallEvent | ErrorEvent | BlockedEvent | DoneEvent | AwaitInputEvent | SectionProgressEvent | ComplexityAnalyzedEvent | FixAppliedEvent | SessionEvent | CancelledEvent
+SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ContentClearEvent | ImageEvent | DraftPatchEvent | ToolCallEvent | ErrorEvent | BlockedEvent | DoneEvent | AwaitInputEvent | SectionProgressEvent | SectionStateEvent | ComplexityAnalyzedEvent | FixAppliedEvent | SessionEvent | CancelledEvent

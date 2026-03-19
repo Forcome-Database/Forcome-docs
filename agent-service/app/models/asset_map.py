@@ -12,6 +12,12 @@ class AssetItem(BaseModel):
     summary: str = ""
     suggested_usage: str = ""
     reuse_decision: Literal["reuse", "adapt", "skip"] | None = None
+    origin: Literal["uploaded_source", "page_context", "generated_image"] | None = None
+    content_hash: str = ""
+    caption: str = ""
+    source_page: int | None = None
+    source_heading: str = ""
+    mime_type: str = ""
 
 
 class AssetMap(BaseModel):

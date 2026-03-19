@@ -12,6 +12,8 @@ function renderMarkdownToEditorHtml(content: string): string {
   return markdownToHtml(content) as string;
 }
 
+const DEFAULT_EDITOR_INSERT_CHUNK_SIZE = 1600;
+
 export function maybeExtractTitle(
   titleEditor: any,
   markdown: string,
@@ -51,6 +53,75 @@ export function appendMarkdownToEditor(editor: any, markdown: string): void {
   if (html) {
     editor.chain().focus("end").insertContent(html).run();
   }
+}
+
+export function splitMarkdownForEditorInsert(
+  markdown: string,
+  maxChunkLength: number = DEFAULT_EDITOR_INSERT_CHUNK_SIZE,
+): string[] {
+  if (!markdown.trim()) {
+    return [];
+  }
+
+  const paragraphs = markdown
+    .split("\n\n")
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  if (paragraphs.length === 0) {
+    return [];
+  }
+
+  const chunks: string[] = [];
+  let currentChunk = "";
+
+  for (const paragraph of paragraphs) {
+    const candidate = currentChunk
+      ? `${currentChunk}\n\n${paragraph}`
+      : paragraph;
+
+    if (currentChunk && candidate.length > maxChunkLength) {
+      chunks.push(currentChunk);
+      currentChunk = paragraph;
+      continue;
+    }
+
+    currentChunk = candidate;
+  }
+
+  if (currentChunk) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+}
+
+export function insertMarkdownAtDocumentEnd(
+  editor: any,
+  markdown: string,
+  maxChunkLength: number = DEFAULT_EDITOR_INSERT_CHUNK_SIZE,
+): boolean {
+  if (!editor) {
+    return false;
+  }
+
+  const chunks = splitMarkdownForEditorInsert(markdown, maxChunkLength);
+  let inserted = false;
+
+  for (const chunk of chunks) {
+    const html = renderMarkdownToEditorHtml(preprocessImagesForEditor(chunk));
+    if (!html) {
+      continue;
+    }
+
+    inserted = true;
+    const didInsert = editor.chain().focus("end").insertContent(html).run();
+    if (!didInsert) {
+      return false;
+    }
+  }
+
+  return inserted;
 }
 
 export function flushMarkdownParagraphsToEditor(

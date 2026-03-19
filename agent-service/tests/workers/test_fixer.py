@@ -280,6 +280,28 @@ async def test_fix_targeted_returns_llm_output():
 
 
 @pytest.mark.asyncio
+async def test_fix_targeted_prefers_output_text_over_wrapper_repr():
+    from app.workers.fixer import fix_targeted
+
+    issue = make_issue("i1", "s1", "content", "Remove wrapper text", auto_fixable=False)
+
+    mock_result = MagicMock()
+    mock_result.output = "Clean fixed section content."
+    mock_result.data = {"unexpected": "structured"}
+    mock_result.__str__.return_value = "AgentRunResult(output='wrapped text')"
+
+    mock_agent = MagicMock()
+    mock_agent.run = AsyncMock(return_value=mock_result)
+
+    with patch("app.orchestrator.llm_factory.create_pydantic_ai_model"), \
+         patch("pydantic_ai.Agent", return_value=mock_agent), \
+         patch("app.agent.events.emit", new_callable=AsyncMock):
+        result = await fix_targeted("Original content.", issue, "thread-1")
+
+    assert result == "Clean fixed section content."
+
+
+@pytest.mark.asyncio
 async def test_fix_targeted_emits_events():
     from app.workers.fixer import fix_targeted
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { notifications } from "@mantine/notifications";
 import { useTranslation } from "react-i18next";
+import { getPageById } from "@/features/page/services/page-service";
 import type {
   AgentAwaitInputData,
   AgentResumeValue,
@@ -39,6 +40,10 @@ import type {
   AiCreatorMessage,
   SelectionSnapshot,
 } from "../components/ai-creator/ai-creator.types";
+import {
+  captureAiCreatePageSnapshot,
+  commitDraftWithRecovery,
+} from "./ai-create-session.commit";
 
 const CONTINUE_KEYWORDS = ["continue", "append"];
 const SESSION_STORAGE_PREFIX = "docmost.ai.create.session";
@@ -46,6 +51,7 @@ const SESSION_STORAGE_PREFIX = "docmost.ai.create.session";
 interface UseAiCreateSessionOptions {
   pageId: string;
   editor: any;
+  titleEditor?: any;
   pageUpdatedAt?: string | Date | null;
   lockEditor: () => void;
   unlockEditor: () => void;
@@ -176,6 +182,7 @@ function clearStoredSessionHandle(pageId: string) {
 export function useAiCreateSession({
   pageId,
   editor,
+  titleEditor,
   pageUpdatedAt,
   lockEditor,
   unlockEditor,
@@ -200,6 +207,9 @@ export function useAiCreateSession({
   const autoInsertRef = useRef(false);
   const awaitInputRef = useRef(false);
   const replayedStepRef = useRef<string | null>(null);
+  const pageSnapshotRef = useRef(
+    captureAiCreatePageSnapshot(editor, titleEditor),
+  );
   const pageVersionRef = useRef<string | null>(
     normalizePageVersion(pageUpdatedAt),
   );
@@ -319,6 +329,11 @@ export function useAiCreateSession({
         awaitInput: snapshot.awaitInput,
         block: snapshot.block,
         draftMarkdown: snapshot.draftMarkdown,
+        draftSections: snapshot.draftSections,
+        brief: snapshot.brief,
+        blueprint: snapshot.blueprint,
+        reviewReport: snapshot.reviewReport,
+        evidenceSummary: snapshot.evidenceSummary,
       });
       setMessages(
         createHydratedMessages({
@@ -398,34 +413,39 @@ export function useAiCreateSession({
       replayedStepRef.current = null;
 
       if (autoInsertRef.current && content && insertMode) {
-        const expectedUpdatedAt = pageVersionRef.current;
+        const commitResult = await commitDraftWithRecovery({
+          pageId,
+          content,
+          insertMode,
+          expectedUpdatedAt: pageVersionRef.current,
+          selectionSnapshot,
+          pageSnapshot: pageSnapshotRef.current,
+          editor,
+          titleEditor,
+          commit: creatorCommit,
+          fetchLatestPage: async (targetPageId) =>
+            getPageById({ pageId: targetPageId }),
+        });
 
-        if (!expectedUpdatedAt) {
-          notifications.show({
-            color: "red",
-            message: t("Page version is unavailable. Review the draft and retry."),
-          });
-        } else {
-          try {
-            const result = await creatorCommit({
-              pageId,
-              content,
-              insertMode,
-              expectedUpdatedAt,
-              selectionSnapshot,
+        if (commitResult.ok === true) {
+          pageVersionRef.current = commitResult.result.committedAt;
+
+          if (commitResult.result.fallbackReason === "stale_selection") {
+            notifications.show({
+              color: "yellow",
+              message: t("Selection changed during generation. Content appended to end."),
             });
-
-            pageVersionRef.current = result.committedAt;
-
-            if (result.fallbackReason === "stale_selection") {
-              notifications.show({
-                color: "yellow",
-                message: t("Selection changed during generation. Content appended to end."),
-              });
-            }
-          } catch (error: any) {
+          }
+        } else {
+          if (commitResult.reason === "missing_version") {
+            notifications.show({
+              color: "red",
+              message: t("Page version is unavailable. Review the draft and retry."),
+            });
+          } else {
+            const error = commitResult.error;
             const message =
-              error?.response?.status === 409
+              commitResult.reason === "conflict"
                 ? t("Page changed during generation. Draft kept in chat for retry or manual insert.")
                 : error?.response?.data?.message ||
                   error?.message ||
@@ -449,7 +469,15 @@ export function useAiCreateSession({
         );
       }
     },
-    [clearController, pageId, t, unlockEditor, updateLastAssistant],
+    [
+      clearController,
+      editor,
+      pageId,
+      t,
+      titleEditor,
+      unlockEditor,
+      updateLastAssistant,
+    ],
   );
 
   const updateStep = useCallback(
@@ -495,6 +523,7 @@ export function useAiCreateSession({
       accumulatedContentRef.current = "";
       selectionSnapshotRef.current = selectionSnapshot;
       insertModeRef.current = insertMode;
+      pageSnapshotRef.current = captureAiCreatePageSnapshot(editor, titleEditor);
       threadIdRef.current = null;
       startedAtRef.current = Date.now();
       dispatch({
@@ -513,7 +542,7 @@ export function useAiCreateSession({
 
       setIsStreaming(true);
     },
-    [editor, lockEditor, persistSessionHandle],
+    [editor, lockEditor, persistSessionHandle, titleEditor],
   );
 
   const handleRunEvent = useCallback(
@@ -563,8 +592,11 @@ export function useAiCreateSession({
           return;
         case "draft_patch":
           accumulatedContentRef.current = event.markdown;
-          dispatch({ type: "content_cleared" });
-          dispatch({ type: "content_delta", chunk: event.markdown });
+          dispatch({
+            type: "draft_patch",
+            markdown: event.markdown,
+            sections: event.sections,
+          });
           updateLastAssistant(() => event.markdown);
           return;
         case "await_input":
@@ -843,6 +875,14 @@ export function useAiCreateSession({
     steps,
     isStreaming,
     status: state.status,
+    awaitInput: state.awaitInput,
+    block: state.block,
+    draftMarkdown: state.accumulatedContent,
+    draftSections: state.draftSections,
+    brief: state.brief,
+    blueprint: state.blueprint,
+    reviewReport: state.reviewReport,
+    evidenceSummary: state.evidenceSummary,
     submit,
     resume,
     cancel,

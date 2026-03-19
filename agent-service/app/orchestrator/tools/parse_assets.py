@@ -12,7 +12,8 @@ import hashlib
 from typing import Any
 
 from app.models.asset_map import AssetMap
-from app.workers.asset_parser import parse_document, process_images
+from app.tools.source_image_store import clear_source_image_cache, upgrade_source_image_assets
+from app.workers.asset_parser import parse_document
 
 # Simple in-memory cache: content hash → AssetMap
 _asset_cache: dict[str, AssetMap] = {}
@@ -85,17 +86,8 @@ async def parse_assets_tool(
         for key, count in asset_map.source_section_counts.items():
             combined.source_section_counts[key] = combined.source_section_counts.get(key, 0) + count
 
-    # Process images if page_id available
     if page_id:
-        for file_info in files:
-            images = file_info.get("images")
-            if images:
-                image_assets = process_images(
-                    images,
-                    file_info.get("filename", "unknown"),
-                    page_id,
-                )
-                combined.items.extend(image_assets)
+        combined.items = upgrade_source_image_assets(combined.items, page_id)
 
     return combined
 
@@ -103,3 +95,4 @@ async def parse_assets_tool(
 def clear_asset_cache() -> None:
     """Clear the asset cache (for testing)."""
     _asset_cache.clear()
+    clear_source_image_cache()

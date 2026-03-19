@@ -1,3 +1,4 @@
+import React from 'react';
 import { Paper, Text, Stack, List } from '@mantine/core';
 import type { ReviewIssue } from '../../../types/review.types';
 

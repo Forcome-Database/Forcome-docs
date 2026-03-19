@@ -14,8 +14,10 @@ from app.models.brief import CreationBrief
 from app.utils.text import count_words
 from app.agent.events import emit
 from app.orchestrator.llm_factory import create_pydantic_ai_model
+from app.runtime_logging import get_runtime_logger
 
 ASSET_MARKER_RE = r"<!--asset:([a-zA-Z0-9_-]+)-->"
+logger = get_runtime_logger()
 
 
 SECTION_WRITER_SYSTEM = """You are a professional document section writer. You write ONE section of a larger document using rich Markdown formatting.
@@ -54,6 +56,12 @@ Writing style (anti-AI boilerplate):
 - Headings can use questions or verb phrases — do NOT default to "xxx的xxx" noun-phrase format.
 CRITICAL: Do NOT exceed the target length by more than 10%.
 """
+
+
+def _max_stream_units_for_budget(word_budget: int) -> int:
+    if word_budget <= 0:
+        return 1200
+    return max(word_budget + 80, word_budget * 2)
 
 
 def build_section_context(
@@ -210,11 +218,23 @@ async def generate_section_visuals(
             try:
                 # Use existing image generation tool (sync LangChain Tool — run in executor)
                 from app.tools.nanobana_imggen import nanobana_imggen
+                logger.info(
+                    "thread_id=%s image_generation_start section_id=%s prompt=%s",
+                    thread_id or "-",
+                    section.id,
+                    visual.description,
+                )
                 result = await loop.run_in_executor(
                     None, nanobana_imggen.invoke, {"prompt": visual.description}
                 )
 
                 if result and page_id:
+                    logger.info(
+                        "thread_id=%s image_upload_start section_id=%s page_id=%s",
+                        thread_id or "-",
+                        section.id,
+                        page_id,
+                    )
                     # Upload to Docmost (also sync)
                     from app.tools.docmost_api import docmost_upload
                     url = await loop.run_in_executor(
@@ -225,13 +245,122 @@ async def generate_section_visuals(
                         }
                     )
                     generated_urls.append(url)
+                    logger.info(
+                        "thread_id=%s image_upload_complete section_id=%s url=%s",
+                        thread_id or "-",
+                        section.id,
+                        url,
+                    )
                     await emit(thread_id, {"type": "image", "url": url, "alt": visual.description})
+                elif result:
+                    logger.info(
+                        "thread_id=%s image_upload_skipped section_id=%s reason=no_page_id",
+                        thread_id or "-",
+                        section.id,
+                    )
             except ImportError:
+                logger.warning(
+                    "thread_id=%s image_generation_skipped section_id=%s reason=tool_unavailable",
+                    thread_id or "-",
+                    section.id,
+                )
                 await emit(thread_id, {"type": "step_done", "step": "image_generation", "result_summary": f"Skipped: image generation tool not available"})
             except Exception as e:
+                logger.exception(
+                    "thread_id=%s image_generation_failed section_id=%s error=%s",
+                    thread_id or "-",
+                    section.id,
+                    str(e),
+                )
                 await emit(thread_id, {"type": "step_done", "step": "image_generation", "result_summary": f"Failed: {str(e)[:100]}"})
 
     return generated_urls
+
+
+def _image_markdown(description: str, url: str) -> str:
+    return f"![{description}]({url})"
+
+
+def _insert_visual_markdown(content: str, markdown: str, position: str) -> str:
+    if markdown in content:
+        return content
+
+    stripped = content.strip()
+    if not stripped:
+        return markdown
+    if position == "before_section":
+        return f"{markdown}\n\n{stripped}"
+    return f"{stripped}\n\n{markdown}"
+
+
+async def materialize_section_visuals(
+    *,
+    draft: SectionDraft,
+    section: SectionPlan,
+    asset_map: AssetMap | None,
+    thread_id: str = "",
+    page_id: str | None = None,
+) -> SectionDraft:
+    """Attach stable visual URLs to an already-accepted text draft exactly once."""
+    generated_urls: list[str] = []
+    image_status = "not_requested"
+    source_image_asset_id = draft.source_image_asset_id
+    degraded_reason = draft.degraded_reason
+    if any(visual.type == "ai_image" for visual in section.visuals):
+        generated_urls = await generate_section_visuals(
+            section,
+            asset_map,
+            thread_id,
+            page_id,
+        )
+
+    generated_iter = iter(generated_urls)
+    content = draft.content
+
+    for visual in section.visuals:
+        if visual.type == "reuse_image" and visual.source_asset_id and asset_map:
+            img = next((item for item in asset_map.items if item.id == visual.source_asset_id), None)
+            if img and img.content:
+                content = _insert_visual_markdown(
+                    content,
+                    _image_markdown(visual.description or section.title, img.content),
+                    visual.position,
+                )
+                image_status = "source_reused"
+                source_image_asset_id = visual.source_asset_id
+                degraded_reason = None
+            else:
+                image_status = "missing_source"
+                source_image_asset_id = visual.source_asset_id
+                degraded_reason = "approved source image unavailable"
+        elif visual.type == "ai_image":
+            generated_url = next(generated_iter, None)
+            if generated_url:
+                content = _insert_visual_markdown(
+                    content,
+                    _image_markdown(visual.description or section.title, generated_url),
+                    visual.position,
+                )
+                if visual.source_asset_id and visual.fallback_reason:
+                    image_status = "generated_fallback"
+                    source_image_asset_id = visual.source_asset_id
+                    degraded_reason = visual.fallback_reason
+                else:
+                    image_status = "generated"
+                    source_image_asset_id = None
+                    degraded_reason = None
+            else:
+                image_status = "generation_failed"
+                degraded_reason = "image generation produced no uploadable asset"
+
+    draft.content = content
+    draft.word_count = count_words(content)
+    draft.budget_compliance = draft.word_count / section.word_budget if section.word_budget > 0 else 1.0
+    draft.visuals_generated = generated_urls
+    draft.image_status = image_status
+    draft.source_image_asset_id = source_image_asset_id
+    draft.degraded_reason = degraded_reason
+    return draft
 
 
 async def write_section(
@@ -245,7 +374,7 @@ async def write_section(
     section_index: int = 0,
     total_sections: int = 1,
     thread_id: str = "",
-    max_retries: int = 2,
+    max_retries: int = 0,
     user_message: str = "",
     system_prompt: str = "",
     template_prompt: str = "",
@@ -253,7 +382,10 @@ async def write_section(
     generated_image_urls: list[str] | None = None,
     revision_notes: list[str] | None = None,
 ) -> SectionDraft:
-    """Write a single section with word budget enforcement."""
+    """Write a single section in one model pass.
+
+    Length recovery now happens outside this worker via targeted revision.
+    """
     from pydantic_ai import Agent
 
     context = build_section_context(
@@ -287,13 +419,20 @@ async def write_section(
             elif wc > section.word_budget * 1.3:
                 prompt += f"\n\n[RETRY] You wrote {wc} 字/words but budget is only {section.word_budget}. Please CONDENSE to approximately {section.word_budget} 字/words. Remove redundant details and verbose explanations."
 
-        # Stream content
+        # Stream content with a hard ceiling so a single over-eager model response
+        # does not stall the whole workbench run.
         full_text = ""
+        hard_cap = _max_stream_units_for_budget(section.word_budget)
         await emit(thread_id, {"type": "step_start", "step": f"write_section_{section.id}", "description": f"Writing: {section.title}"})
 
         async with agent.run_stream(prompt) as result:
-            async for chunk in result.stream_text(delta=True):
-                full_text += chunk
+            # Avoid pydantic_ai's debounced grouping path here because we may
+            # stop early once the local hard cap is reached.
+            async for chunk in result.stream_text(delta=True, debounce_by=None):
+                next_text = full_text + chunk
+                if count_words(next_text) > hard_cap:
+                    break
+                full_text = next_text
                 await emit(thread_id, {"type": "content", "chunk": chunk, "section_id": section.id})
 
         wc = count_words(full_text)
@@ -321,4 +460,5 @@ async def write_section(
         word_count=wc,
         budget_compliance=compliance,
         assets_used=assets_used,
+        write_attempts=1,
     )

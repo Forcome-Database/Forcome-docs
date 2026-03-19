@@ -582,7 +582,7 @@ class _FakeRunResult:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    async def stream_text(self, delta: bool = True):
+    async def stream_text(self, delta: bool = True, debounce_by: float | None = 0.1):
         yield "Generated section content"
 
 
@@ -594,7 +594,86 @@ class _FakeAgent:
         return _FakeRunResult()
 
 
+class _LongStreamingRunResult:
+    def __init__(self, chunks: list[str], emitted_chunks: list[str]):
+        self._chunks = chunks
+        self._emitted_chunks = emitted_chunks
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def stream_text(self, delta: bool = True, debounce_by: float | None = 0.1):
+        for chunk in self._chunks:
+            self._emitted_chunks.append(chunk)
+            yield chunk
+
+
+class _CleanupSensitiveRunResult:
+    def __init__(
+        self,
+        chunks: list[str],
+        *,
+        fail_on_debounce_close: bool,
+        captured: dict[str, float | None] | None = None,
+    ):
+        self._chunks = chunks
+        self._fail_on_debounce_close = fail_on_debounce_close
+        self._captured = captured if captured is not None else {}
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def stream_text(self, delta: bool = True, debounce_by: float | None = 0.1):
+        self._captured["debounce_by"] = debounce_by
+        try:
+            for chunk in self._chunks:
+                yield chunk
+        except GeneratorExit:
+            if self._fail_on_debounce_close and debounce_by is not None:
+                raise RuntimeError("anext(): asynchronous generator is already running")
+            raise
+
+
 class TestWriteSection:
+    @pytest.mark.asyncio
+    async def test_write_section_does_not_retry_full_generation_when_budget_misses(self):
+        section = _make_section("s1", title="Intro", word_budget=300)
+        blueprint = _make_blueprint(sections=[section])
+        brief = _make_brief()
+        prompts: list[str] = []
+
+        class _BudgetMissAgent:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def run_stream(self, prompt: str):
+                prompts.append(prompt)
+                return _FakeRunResult()
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("app.workers.section_writer.create_pydantic_ai_model", lambda: object())
+            mp.setattr("pydantic_ai.Agent", _BudgetMissAgent)
+            mp.setattr("app.workers.section_writer.emit", AsyncMock())
+
+            draft = await write_section(
+                section=section,
+                blueprint=blueprint,
+                brief=brief,
+                asset_map=None,
+                section_index=0,
+                total_sections=1,
+                thread_id="thread-1",
+            )
+
+        assert draft.word_count < section.word_budget * 0.8
+        assert len(prompts) == 1
+
     @pytest.mark.asyncio
     async def test_write_section_returns_stable_node_id(self):
         section = _make_section("s1", title="Intro")
@@ -618,3 +697,73 @@ class TestWriteSection:
 
         assert draft.section_id == "s1"
         assert draft.node_id == "section:s1"
+
+    @pytest.mark.asyncio
+    async def test_write_section_stops_consuming_runaway_streams_after_hard_cap(self):
+        section = _make_section("s1", title="Intro", word_budget=10)
+        blueprint = _make_blueprint(sections=[section])
+        brief = _make_brief()
+        emitted_chunks: list[str] = []
+
+        class _LongStreamingAgent:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def run_stream(self, prompt: str):
+                return _LongStreamingRunResult(["word "] * 200, emitted_chunks)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("app.workers.section_writer.create_pydantic_ai_model", lambda: object())
+            mp.setattr("pydantic_ai.Agent", _LongStreamingAgent)
+            mp.setattr("app.workers.section_writer.emit", AsyncMock())
+
+            draft = await write_section(
+                section=section,
+                blueprint=blueprint,
+                brief=brief,
+                asset_map=None,
+                section_index=0,
+                total_sections=1,
+                thread_id="thread-1",
+                max_retries=0,
+            )
+
+        assert draft.word_count <= 90
+        assert len(emitted_chunks) < 200
+
+    @pytest.mark.asyncio
+    async def test_write_section_avoids_debounced_stream_cleanup_error_when_hard_cap_trips(self):
+        section = _make_section("s1", title="Intro", word_budget=10)
+        blueprint = _make_blueprint(sections=[section])
+        brief = _make_brief()
+        captured: dict[str, float | None] = {}
+
+        class _CleanupSensitiveAgent:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def run_stream(self, prompt: str):
+                return _CleanupSensitiveRunResult(
+                    ["word "] * 200,
+                    fail_on_debounce_close=True,
+                    captured=captured,
+                )
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("app.workers.section_writer.create_pydantic_ai_model", lambda: object())
+            mp.setattr("pydantic_ai.Agent", _CleanupSensitiveAgent)
+            mp.setattr("app.workers.section_writer.emit", AsyncMock())
+
+            draft = await write_section(
+                section=section,
+                blueprint=blueprint,
+                brief=brief,
+                asset_map=None,
+                section_index=0,
+                total_sections=1,
+                thread_id="thread-1",
+                max_retries=0,
+            )
+
+        assert captured["debounce_by"] is None
+        assert draft.word_count <= 90

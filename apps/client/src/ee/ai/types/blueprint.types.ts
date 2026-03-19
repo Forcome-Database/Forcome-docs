@@ -1,3 +1,5 @@
+import type { SourceImageCandidate } from './source-assets.types';
+
 export interface VisualPlan {
   type: 'mermaid' | 'ai_image' | 'reuse_image' | 'table';
   description: string;
@@ -13,6 +15,7 @@ export interface SectionPlan {
   description: string;
   assets: string[];
   visuals: VisualPlan[];
+  visual_candidates?: SourceImageCandidate[];
   must_cover: string[];
 }
 

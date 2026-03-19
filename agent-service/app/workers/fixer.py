@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from app.models.draft import SectionDraft
 from app.models.review import ReviewIssue
+from app.orchestrator.llm_result import extract_text_output
 from app.utils.text import count_words
 
 
@@ -144,7 +145,7 @@ Output the fixed section content only, no explanations."""
     })
 
     result = await agent.run(prompt)
-    fixed = result.data if hasattr(result, 'data') else str(result)
+    fixed = extract_text_output(result)
 
     # Warn if fix changed too much (>30% = suspicious)
     original_len = len(section_content)

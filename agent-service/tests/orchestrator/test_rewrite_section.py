@@ -139,6 +139,33 @@ async def test_rewrite_preserves_section_metadata():
 
 
 @pytest.mark.asyncio
+async def test_rewrite_uses_single_pass_generation():
+    blueprint = _make_blueprint()
+    brief = _make_brief()
+    drafts = _make_drafts()
+    expected_draft = SectionDraft(section_id="sec-2", content="Rewritten.", word_count=200, budget_compliance=0.4)
+
+    captured = {}
+
+    async def mock_write_section(**kwargs):
+        captured.update(kwargs)
+        return expected_draft
+
+    with patch("app.orchestrator.tools.rewrite_section.write_section", new=mock_write_section), \
+         patch("app.orchestrator.tools.rewrite_section.emit", new=AsyncMock()):
+        from app.orchestrator.tools.rewrite_section import rewrite_section
+        await rewrite_section(
+            section_id="sec-2",
+            feedback="Tighten the language",
+            blueprint=blueprint,
+            brief=brief,
+            existing_drafts=drafts,
+        )
+
+    assert captured["max_retries"] == 0
+
+
+@pytest.mark.asyncio
 async def test_rewrite_emits_step_events():
     blueprint = _make_blueprint()
     brief = _make_brief()

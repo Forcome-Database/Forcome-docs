@@ -24,6 +24,10 @@ class SessionDraftSection(BaseModel):
     title: str
     level: int = 2
     content: str
+    write_attempts: int = 1
+    image_status: str = "not_requested"
+    source_image_asset_id: str | None = None
+    degraded_reason: str | None = None
 
 
 class CreationSessionSnapshot(BaseModel):

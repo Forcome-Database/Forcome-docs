@@ -53,6 +53,13 @@ export interface AgentAssetSummary {
   source_section_counts: Record<string, number>;
 }
 
+export interface AgentEvidenceSummary {
+  total: number;
+  requiredTotal: number;
+  optionalTotal: number;
+  failedRequired: number;
+}
+
 export interface AgentBriefAwaitInputData {
   type: "brief";
   brief: CreationBrief;
@@ -82,6 +89,10 @@ export interface AgentDraftPatchSection {
   title: string;
   level: number;
   content: string;
+  writeAttempts?: number;
+  imageStatus?: string;
+  sourceImageAssetId?: string | null;
+  degradedReason?: string | null;
 }
 
 export type AgentSessionRunState =
@@ -104,6 +115,10 @@ export interface AgentSessionSnapshot {
   status: AgentSessionRunState;
   awaitInput: AgentSessionAwaitInputState | null;
   block: AgentBlockState | null;
+  brief: CreationBrief | null;
+  blueprint: CreationBlueprint | null;
+  reviewReport: ReviewReport | null;
+  evidenceSummary: AgentEvidenceSummary | null;
   draftMarkdown: string;
   draftSections: AgentDraftPatchSection[];
 }
@@ -135,6 +150,11 @@ export interface AgentFixSelectedIssuesResumeValue {
   feedback?: string;
 }
 
+export interface AgentAcceptReviewResumeValue {
+  type: "accept_review";
+  feedback?: string;
+}
+
 export interface AgentResolveBlockResumeValue {
   type: "resolve_block";
   resolution: string;
@@ -152,6 +172,7 @@ export type AgentResumeValue =
   | AgentConfirmBlueprintResumeValue
   | AgentApplyBlueprintPatchResumeValue
   | AgentFixSelectedIssuesResumeValue
+  | AgentAcceptReviewResumeValue
   | AgentResolveBlockResumeValue
   | AgentSkipIssueResumeValue;
 
@@ -224,7 +245,19 @@ export type AgentSSEEvent =
         title: string;
         level: number;
         content: string;
+        write_attempts?: number;
+        image_status?: string;
+        source_image_asset_id?: string | null;
+        degraded_reason?: string | null;
       }>;
+    }
+  | {
+      type: 'section_state';
+      section_id: string;
+      write_attempts?: number;
+      image_status?: string;
+      source_image_asset_id?: string | null;
+      degraded_reason?: string | null;
     }
   | {
       type: 'cancelled';

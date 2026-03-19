@@ -310,6 +310,32 @@ class TestParseDocument:
         assert isinstance(result, AssetMap)
         assert result.source_word_count == 0
 
+    def test_extracts_images_as_assets_with_provenance(self):
+        images = [
+            {
+                "index": 0,
+                "b64": "YWJj",
+                "desc": "Login flow screenshot",
+                "page": 2,
+                "heading": "User Login",
+            }
+        ]
+        with patch(
+            "app.workers.asset_parser._docling_parser_invoke",
+            return_value=self._make_docling_response("# Title", images=images),
+        ):
+            result = parse_document("abc", "test.pdf", "application/pdf")
+
+        image_items = result.items_by_type("image")
+        assert len(image_items) == 1
+        image_item = image_items[0]
+        assert image_item.content.startswith("data:image/")
+        assert getattr(image_item, "origin", None) == "uploaded_source"
+        assert getattr(image_item, "content_hash", "")
+        assert getattr(image_item, "caption", "") == "Login flow screenshot"
+        assert getattr(image_item, "source_page", None) == 2
+        assert getattr(image_item, "source_heading", "") == "User Login"
+
 
 # ---------------------------------------------------------------------------
 # classify_image

@@ -12,6 +12,7 @@ from app.models.blueprint import CreationBlueprint, SectionPlan
 from app.models.asset_map import AssetMap
 from app.models.brief import CreationBrief
 from app.models.review import ReviewIssue, ReviewReport
+from app.orchestrator.llm_result import extract_text_output
 from app.utils.text import count_words
 
 
@@ -94,6 +95,8 @@ def check_asset_coverage(
 def check_visual_coverage(
     drafts: list[SectionDraft],
     blueprint: CreationBlueprint,
+    brief: CreationBrief,
+    asset_map: AssetMap | None = None,
 ) -> list[ReviewIssue]:
     """Check whether planned visuals were actually realized in the section output."""
     issues: list[ReviewIssue] = []
@@ -101,7 +104,8 @@ def check_visual_coverage(
         if not section.visuals:
             continue
 
-        has_image_markdown = bool(re.search(r'!\[[^\]]*\]\(([^)]+)\)', draft.content))
+        image_urls = re.findall(r'!\[[^\]]*\]\(([^)]+)\)', draft.content)
+        has_image_markdown = bool(image_urls)
         has_mermaid = "```mermaid" in draft.content
         has_table = "|" in draft.content and "\n|" in draft.content
 
@@ -114,6 +118,43 @@ def check_visual_coverage(
                     category="visual",
                     description=f"章节'{section.title}'计划生成图片，但正文中未落图",
                     suggestion=f"为该章节生成并插入图片：{visual.description}",
+                    auto_fixable=False,
+                ))
+            elif (
+                visual.type == "ai_image"
+                and has_image_markdown
+                and visual.source_asset_id
+                and brief.image_strategy == "reuse_source_only"
+            ):
+                issues.append(ReviewIssue(
+                    id=_make_issue_id(),
+                    section_id=draft.section_id,
+                    severity="error",
+                    category="visual",
+                    description=(
+                        f"Section '{section.title}' fell back to a generated image even though "
+                        "image_strategy=reuse_source_only requires source-image reuse."
+                    ),
+                    suggestion=f"Reuse the approved source image asset '{visual.source_asset_id}' instead of a generated fallback.",
+                    auto_fixable=False,
+                ))
+            elif (
+                visual.type == "ai_image"
+                and has_image_markdown
+                and visual.source_asset_id
+                and brief.image_strategy == "prefer_source_then_generate"
+                and visual.fallback_reason
+            ):
+                issues.append(ReviewIssue(
+                    id=_make_issue_id(),
+                    section_id=draft.section_id,
+                    severity="warning",
+                    category="visual",
+                    description=(
+                        f"Section '{section.title}' used a generated fallback for source asset "
+                        f"'{visual.source_asset_id}': {visual.fallback_reason}"
+                    ),
+                    suggestion="Review whether the generated fallback is acceptable or switch back to the approved source image.",
                     auto_fixable=False,
                 ))
             elif visual.type == "reuse_image" and not has_image_markdown:
@@ -261,7 +302,7 @@ def evaluate_deterministic(
     issues = []
     issues.extend(check_word_budgets(drafts, blueprint, brief.length_tolerance))
     issues.extend(check_asset_coverage(drafts, blueprint, asset_map))
-    issues.extend(check_visual_coverage(drafts, blueprint))
+    issues.extend(check_visual_coverage(drafts, blueprint, brief, asset_map))
     issues.extend(check_heading_levels(drafts, blueprint))
     issues.extend(check_mermaid_syntax(drafts))
     issues.extend(check_image_urls(drafts))
@@ -327,7 +368,7 @@ IMPORTANT: For each issue, set "section_title" to the EXACT title of the relevan
     await emit(thread_id, {"type": "step_start", "step": "llm_evaluation", "description": "AI 质量评估"})
 
     result = await agent.run(prompt)
-    text = result.data if hasattr(result, 'data') else str(result)
+    text = extract_text_output(result)
 
     # Parse JSON from response
     try:

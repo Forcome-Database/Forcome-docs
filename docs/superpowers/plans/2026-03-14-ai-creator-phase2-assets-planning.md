@@ -3086,3 +3086,10 @@ Expected: All tests pass
 git add agent-service/tests/orchestrator/test_e2e_level2.py
 git commit -m "test(orchestrator): add Level 2 end-to-end integration tests"
 ```
+## Implementation Status Update (2026-03-19)
+
+- Parser-extracted source images are now preserved as `AssetItem(type="image")` instead of being dropped after document parsing.
+- Extracted images are deduplicated by content hash and rehosted to stable Docmost URLs for downstream reuse.
+- Asset metadata now carries provenance fields needed by planning: origin, caption, source file, source page, source heading, and mime type.
+- Blueprint planning now ranks `visual_candidates` per section and lets the user confirm which source figure to reuse before writing starts.
+- The workbench blueprint UI now renders source-image candidates and sends canonical image policy decisions back through the agent session.

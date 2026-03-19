@@ -70,6 +70,31 @@ def _build_asset_summary(asset_map: object) -> dict:
     }
 
 
+def _should_promote_level2_to_structured_write(
+    *,
+    request: object,
+    asset_map: object | None,
+    brief: CreationBrief,
+) -> bool:
+    if getattr(request, "intent_route", None) != "document_transform":
+        return False
+
+    files = getattr(request, "files", []) or []
+    if len(files) != 1:
+        return False
+
+    if brief.image_strategy not in {
+        "reuse_source_only",
+        "prefer_source_then_generate",
+    }:
+        return False
+
+    if not asset_map or not hasattr(asset_map, "items_by_type"):
+        return False
+
+    return len(asset_map.items_by_type("image")) > 0
+
+
 def _append_blueprint_audit_entry(
     thread_id: str,
     *,
@@ -160,11 +185,10 @@ def _has_blocking_review_issues(
     *,
     allow_visual_skip: bool = False,
 ) -> bool:
-    blocking_categories = {"length", "structure", "asset", "format", "visual"}
     for issue in report.issues:
         if issue.fixed or issue.auto_fixable:
             continue
-        if issue.category not in blocking_categories:
+        if issue.severity != "error":
             continue
         if allow_visual_skip and issue.category == "visual":
             continue
@@ -185,6 +209,10 @@ def _build_draft_snapshot(
             title=section.title,
             level=section.level,
             content=draft.content,
+            write_attempts=getattr(draft, "write_attempts", 1),
+            image_status=getattr(draft, "image_status", "not_requested"),
+            source_image_asset_id=getattr(draft, "source_image_asset_id", None),
+            degraded_reason=getattr(draft, "degraded_reason", None),
         )
         for section, draft in zip(blueprint.sections, section_drafts)
     ]
@@ -587,7 +615,10 @@ class OrchestratorEngine:
         Returns:
             The final content string.
         """
-        asset_map, evidence_items = await self._prepare_evidence(request)
+        asset_map, evidence_items = await self._prepare_evidence(
+            request,
+            page_id_for_assets=request.page_id,
+        )
         if failed_required_evidence(evidence_items):
             return await self._emit_evidence_block(
                 thread_id=request.thread_id,
@@ -622,6 +653,33 @@ class OrchestratorEngine:
         )
         if isinstance(brief_response, dict) and brief_response.get("brief"):
             brief = CreationBrief.model_validate(brief_response["brief"])
+
+        if _should_promote_level2_to_structured_write(
+            request=request,
+            asset_map=asset_map,
+            brief=brief,
+        ):
+            await emit(
+                request.thread_id,
+                {
+                    "type": "step_start",
+                    "step": "upgrade_level2",
+                    "description": "Upgrading to structured write flow to preserve source images…",
+                },
+            )
+            await emit(
+                request.thread_id,
+                {
+                    "type": "step_done",
+                    "step": "upgrade_level2",
+                    "result_summary": "Using blueprint + section writer because source images must be preserved",
+                },
+            )
+            return await self._execute_structured_write_from_brief(
+                request=request,
+                asset_map=asset_map,
+                brief=brief,
+            )
 
         # Step 4: Build asset context for simple_edit
         asset_context = ""
@@ -661,6 +719,199 @@ class OrchestratorEngine:
             thread_id=request.thread_id,
             sections=[edited_content],
             insert_mode=request.insert_mode,
+        )
+
+        return final_content
+
+    async def _execute_structured_write_from_brief(
+        self,
+        *,
+        request: OrchestratorRequest,
+        asset_map: object | None,
+        brief: CreationBrief,
+    ) -> str:
+        session_store.upsert_session(
+            session_id=request.thread_id,
+            thread_id=request.thread_id,
+            phase="brief_confirmed",
+            brief=brief,
+            pending_decision=None,
+        )
+
+        blueprint = await generate_blueprint(
+            user_message=request.user_message,
+            brief=brief,
+            asset_map=asset_map,
+            thread_id=request.thread_id,
+        )
+        session_store.upsert_session(
+            session_id=request.thread_id,
+            thread_id=request.thread_id,
+            phase="blueprint",
+            blueprint=blueprint,
+        )
+
+        blueprint = await self._confirm_blueprint(
+            thread_id=request.thread_id,
+            blueprint=blueprint,
+        )
+
+        section_drafts = await write_all_sections(
+            blueprint=blueprint,
+            brief=brief,
+            asset_map=asset_map,
+            thread_id=request.thread_id,
+            page_id=request.page_id,
+            user_message=request.user_message,
+            system_prompt=request.system_prompt,
+            template_prompt=request.template_prompt,
+            intent_route=request.intent_route,
+        )
+        await self._emit_draft_preview(
+            thread_id=request.thread_id,
+            blueprint=blueprint,
+            section_drafts=section_drafts,
+        )
+
+        draft_store.save_draft(
+            workspace_id=request.workspace_id,
+            page_id=request.page_id or "",
+            task_id=request.thread_id,
+            sections=section_drafts,
+            blueprint_ref=blueprint.title,
+        )
+
+        review_report, section_drafts = await self._build_review_report(
+            section_drafts=section_drafts,
+            blueprint=blueprint,
+            brief=brief,
+            asset_map=asset_map,
+            thread_id=request.thread_id,
+        )
+
+        while review_report.user_decision_needed:
+            review_response = await self._await_user_input(
+                thread_id=request.thread_id,
+                phase="review",
+                data={
+                    "type": "review",
+                    "report": review_report.model_dump(),
+                },
+                timeout_message="绛夊緟璇勫纭瓒呮椂锛?0鍒嗛挓锛夛紝褰撳墠鍐呭浠嶆湭杈炬爣",
+                raise_on_timeout=False,
+            )
+
+            if not isinstance(review_response, dict):
+                if _has_blocking_review_issues(review_report):
+                    raise RuntimeError("璇勫瓒呮椂锛屼粛瀛樺湪鏈В鍐崇殑闃诲闂锛屾棤娉曞畬鎴?")
+                break
+
+            skip_requested = bool(review_response.get("skip"))
+            selected_ids = [
+                issue_id for issue_id in review_response.get("selected_issue_ids", [])
+                if isinstance(issue_id, str)
+            ]
+            feedback = review_response.get("feedback")
+
+            if skip_requested and _has_blocking_review_issues(review_report, allow_visual_skip=True):
+                blocked_event = {
+                    "type": "blocked",
+                    "kind": "review",
+                    "message": "Blocking review issues remain and must be fixed before completion",
+                    "required_action": "Fix the remaining blocking issues before completing",
+                    "allowed_resolutions": ["fix_selected_issues", "update_brief", "update_blueprint"],
+                }
+                session_store.upsert_session(
+                    session_id=request.thread_id,
+                    thread_id=request.thread_id,
+                    run_state="blocked",
+                    phase="review",
+                    blocked={k: v for k, v in blocked_event.items() if k != "type"},
+                )
+                await emit(request.thread_id, blocked_event)
+                continue
+
+            if not selected_ids and not skip_requested:
+                blocked_event = {
+                    "type": "blocked",
+                    "kind": "review",
+                    "message": "Select one or more review issues to fix before continuing",
+                    "required_action": "Choose review issues to fix, or skip visual issues explicitly",
+                    "allowed_resolutions": ["fix_selected_issues", "skip_visual_issues"],
+                }
+                session_store.upsert_session(
+                    session_id=request.thread_id,
+                    thread_id=request.thread_id,
+                    run_state="blocked",
+                    phase="review",
+                    blocked={k: v for k, v in blocked_event.items() if k != "type"},
+                )
+                await emit(request.thread_id, blocked_event)
+                continue
+
+            if skip_requested:
+                if _has_blocking_review_issues(review_report, allow_visual_skip=True):
+                    await emit(
+                        request.thread_id,
+                        {
+                            "type": "blocked",
+                            "message": "浠嶅瓨鍦ㄥ繀椤讳慨澶嶇殑缁撴瀯銆侀暱搴︽垨绱犳潗闂锛屾棤娉曠洿鎺ヨ烦杩囧畬鎴?",
+                        },
+                    )
+                    continue
+                break
+
+            if not selected_ids:
+                await emit(
+                    request.thread_id,
+                    {
+                        "type": "blocked",
+                        "message": "璇烽€夋嫨瑕佷慨澶嶇殑闂锛涘彧鏈夎瑙夐棶棰樻墠鍏佽璺宠繃瀹屾垚",
+                    },
+                )
+                continue
+
+            section_drafts = await fix_selected_issues(
+                drafts=section_drafts,
+                issues=review_report.issues,
+                selected_issue_ids=selected_ids,
+                blueprint=blueprint,
+                thread_id=request.thread_id,
+                feedback=feedback if isinstance(feedback, str) else None,
+            )
+            await self._emit_draft_preview(
+                thread_id=request.thread_id,
+                blueprint=blueprint,
+                section_drafts=section_drafts,
+            )
+            review_report, section_drafts = await self._build_review_report(
+                section_drafts=section_drafts,
+                blueprint=blueprint,
+                brief=brief,
+                asset_map=asset_map,
+                thread_id=request.thread_id,
+            )
+
+        if _build_section_alignment_issues(section_drafts, blueprint):
+            raise RuntimeError("绔犺妭闆嗗悎涓?blueprint 涓嶄竴鑷达紝鏃犳硶 finalize")
+
+        document_tree = build_document_tree(blueprint, section_drafts)
+
+        final_content = await finalize_and_emit(
+            thread_id=request.thread_id,
+            sections=document_tree_to_sections(document_tree),
+            insert_mode=request.insert_mode,
+        )
+        session_store.upsert_session(
+            session_id=request.thread_id,
+            thread_id=request.thread_id,
+            run_state="completed",
+            phase="done",
+            pending_decision=None,
+            blocked=None,
+            final_content=final_content,
+            draft_markdown=final_content,
+            document_tree=document_tree,
         )
 
         return final_content

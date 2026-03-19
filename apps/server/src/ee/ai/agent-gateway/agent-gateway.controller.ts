@@ -56,6 +56,19 @@ function writeSseHeaders(res: FastifyReply, taskId?: string) {
     Connection: 'keep-alive',
     ...(taskId ? { 'X-Task-Id': taskId } : {}),
   });
+  res.raw.flushHeaders?.();
+}
+
+function writeJsonProxyError(res: FastifyReply, statusCode: number, payload: Record<string, unknown>) {
+  if (res.raw.headersSent) {
+    res.raw.end();
+    return;
+  }
+
+  res.raw.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+  });
+  res.raw.end(JSON.stringify(payload));
 }
 
 @Controller('agent')
@@ -68,6 +81,54 @@ export class AgentGatewayController {
     private environmentService: EnvironmentService,
     private aiTemplateService: AiTemplateService,
   ) {}
+
+  private proxyAgentStream(
+    res: FastifyReply,
+    options: http.RequestOptions,
+    payload: string,
+    logContext: string,
+  ): Promise<void> {
+    res.hijack();
+
+    return new Promise<void>((resolve) => {
+      const proxyReq = http.request(options, (proxyRes) => {
+        const taskIdHeader = Array.isArray(proxyRes.headers['x-task-id'])
+          ? proxyRes.headers['x-task-id'][0]
+          : proxyRes.headers['x-task-id'];
+        writeSseHeaders(res, taskIdHeader);
+
+        proxyRes.on('data', (chunk: Buffer) => {
+          res.raw.write(chunk);
+        });
+        proxyRes.on('end', () => {
+          res.raw.end();
+          resolve();
+        });
+        proxyRes.on('error', (err) => {
+          this.logger.error(`${logContext}: ${err.message}`);
+          if (!res.raw.headersSent) {
+            writeJsonProxyError(res, 502, { error: 'Agent service unavailable' });
+          } else {
+            res.raw.end();
+          }
+          resolve();
+        });
+      });
+
+      proxyReq.on('error', (err) => {
+        this.logger.error(`${logContext}: ${err.message}`);
+        if (!res.raw.headersSent) {
+          writeJsonProxyError(res, 502, { error: 'Agent service unavailable' });
+        } else {
+          res.raw.end();
+        }
+        resolve();
+      });
+
+      proxyReq.write(payload);
+      proxyReq.end();
+    });
+  }
 
   private async readRunRequest(req: FastifyRequest): Promise<{
     fields: AgentRunFields;
@@ -182,34 +243,7 @@ export class AgentGatewayController {
       },
     };
 
-    writeSseHeaders(res);
-
-    const proxyReq = http.request(options, (proxyRes) => {
-      const taskIdHeader = Array.isArray(proxyRes.headers['x-task-id'])
-        ? proxyRes.headers['x-task-id'][0]
-        : proxyRes.headers['x-task-id'];
-      if (taskIdHeader && !res.raw.headersSent) {
-        res.raw.setHeader('X-Task-Id', taskIdHeader);
-      }
-      proxyRes.on('data', (chunk: Buffer) => {
-        res.raw.write(chunk);
-      });
-      proxyRes.on('end', () => {
-        res.raw.end();
-      });
-    });
-
-    proxyReq.on('error', (err) => {
-      this.logger.error(`Agent proxy error: ${err.message}`);
-      if (!res.raw.headersSent) {
-        res.status(502).send({ error: 'Agent service unavailable' });
-      } else {
-        res.raw.end();
-      }
-    });
-
-    proxyReq.write(payload);
-    proxyReq.end();
+    await this.proxyAgentStream(res, options, payload, 'Agent proxy error');
   }
 
   @Post('resume')
@@ -239,34 +273,7 @@ export class AgentGatewayController {
       },
     };
 
-    writeSseHeaders(res);
-
-    const proxyReq = http.request(options, (proxyRes) => {
-      const taskIdHeader = Array.isArray(proxyRes.headers['x-task-id'])
-        ? proxyRes.headers['x-task-id'][0]
-        : proxyRes.headers['x-task-id'];
-      if (taskIdHeader && !res.raw.headersSent) {
-        res.raw.setHeader('X-Task-Id', taskIdHeader);
-      }
-      proxyRes.on('data', (chunk: Buffer) => {
-        res.raw.write(chunk);
-      });
-      proxyRes.on('end', () => {
-        res.raw.end();
-      });
-    });
-
-    proxyReq.on('error', (err) => {
-      this.logger.error(`Agent resume proxy error: ${err.message}`);
-      if (!res.raw.headersSent) {
-        res.status(502).send({ error: 'Agent service unavailable' });
-      } else {
-        res.raw.end();
-      }
-    });
-
-    proxyReq.write(payload);
-    proxyReq.end();
+    await this.proxyAgentStream(res, options, payload, 'Agent resume proxy error');
   }
 
   @Get('session/:sessionId')

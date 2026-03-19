@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     # Runtime config
     agent_max_iterations: int = 3
 
+    # MinerU parsing
+    mineru_enabled: bool = False
+    mineru_api_base_url: str = "https://mineru.net"
+    mineru_api_token: str = ""
+    mineru_poll_interval_seconds: float = 2.0
+    mineru_poll_timeout_seconds: float = 300.0
+
     # Role-specific model overrides
     orchestrator_model: str = ""
     writer_model: str = ""

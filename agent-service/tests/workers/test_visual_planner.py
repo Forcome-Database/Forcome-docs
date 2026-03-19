@@ -8,6 +8,7 @@ from app.models.blueprint import SectionPlan, VisualPlan
 from app.models.brief import CreationBrief
 from app.workers.visual_planner import (
     _find_matching_image,
+    _rank_image_candidates,
     _needs_mermaid,
     _needs_table,
     plan_visuals,
@@ -165,6 +166,24 @@ class TestFindMatchingImage:
         assert result is not None
 
 
+class TestRankImageCandidates:
+    def test_returns_candidates_sorted_by_relevance(self):
+        images = [
+            _make_image("img-1", summary="[photo] sunset beach"),
+            _make_image("img-2", summary="[diagram] login workflow architecture"),
+            _make_image("img-3", summary="[diagram] login architecture token workflow"),
+        ]
+
+        candidates = _rank_image_candidates(
+            "Explain the login token workflow architecture",
+            images,
+        )
+
+        assert [candidate.asset_id for candidate in candidates[:2]] == ["img-3", "img-2"]
+        assert candidates[0].score >= candidates[1].score
+        assert candidates[0].caption
+
+
 # ---------------------------------------------------------------------------
 # plan_visuals — "none" strategy
 # ---------------------------------------------------------------------------
@@ -249,6 +268,7 @@ class TestPlanVisualsImageReuse:
         assert len(result[0].visuals) == 1
         assert result[0].visuals[0].type == "reuse_image"
         assert result[0].visuals[0].source_asset_id == "img-arch"
+        assert result[0].visual_candidates[0].asset_id == "img-arch"
 
     def test_image_takes_priority_over_mermaid(self):
         """If both an image matches AND mermaid keywords exist, prefer image."""
@@ -263,6 +283,18 @@ class TestPlanVisualsImageReuse:
         result = plan_visuals(sections, am, brief)
         assert len(result[0].visuals) == 1
         assert result[0].visuals[0].type == "reuse_image"
+
+    def test_candidate_list_preserves_top_matches(self):
+        am = _make_asset_map([
+            _make_image("img-1", summary="[diagram] login screen"),
+            _make_image("img-2", summary="[diagram] login token workflow"),
+            _make_image("img-3", summary="[photo] sunset beach"),
+        ])
+        sections = [_make_section("s1", description="Explain the login token workflow")]
+        brief = _make_brief()
+        result = plan_visuals(sections, am, brief)
+
+        assert [candidate.asset_id for candidate in result[0].visual_candidates[:2]] == ["img-2", "img-1"]
 
 
 # ---------------------------------------------------------------------------

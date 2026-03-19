@@ -52,6 +52,11 @@ test("run_started resets streaming artifacts and clears thread for new runs", ()
     selectionSnapshot: null,
     awaitInput: null,
     block: null,
+    draftSections: [],
+    brief: null,
+    blueprint: null,
+    reviewReport: null,
+    evidenceSummary: null,
     error: null,
   });
 });
@@ -248,4 +253,109 @@ test("hydrate restores blocked state without routing through generic error", () 
     requiredAction: "Retry the source read",
     allowedResolutions: ["retry", "remove_source"],
   });
+});
+
+test("hydrate preserves workbench metadata and document tree sections", () => {
+  const next = aiCreateSessionReducer(
+    createInitialAiCreateSessionState(),
+    {
+      type: "hydrate",
+      threadId: "session-314",
+      taskId: null,
+      status: "running",
+      draftMarkdown: "# Draft\n\n## Intro\n\nBody",
+      draftSections: [
+        {
+          nodeId: "section:intro",
+          sectionId: "intro",
+          title: "Intro",
+          level: 2,
+          content: "Body",
+        },
+      ],
+      brief: {
+        audience: "operators",
+        goal: "Explain deployment",
+        target_length: 900,
+        length_tolerance: 0.1,
+        style: "technical",
+        tone: "direct",
+        structure_strategy: "ai_recommend",
+        image_strategy: "none",
+        constraints: [],
+      },
+      blueprint: {
+        title: "Deployment Guide",
+        sections: [],
+        total_word_budget: 900,
+        style_guide: "Direct",
+        visual_plan_summary: "No visuals",
+      },
+      reviewReport: {
+        overall_score: 81,
+        length_compliance: 0.9,
+        asset_reuse_rate: 0.4,
+        issues: [],
+        auto_fixed_count: 0,
+        user_decision_needed: [],
+      },
+      evidenceSummary: {
+        total: 2,
+        requiredTotal: 1,
+        optionalTotal: 1,
+        failedRequired: 0,
+      },
+      awaitInput: null,
+      block: null,
+    } as any,
+  );
+
+  assert.deepEqual(next.draftSections, [
+    {
+      nodeId: "section:intro",
+      sectionId: "intro",
+      title: "Intro",
+      level: 2,
+      content: "Body",
+    },
+  ]);
+  assert.equal(next.brief?.goal, "Explain deployment");
+  assert.equal(next.blueprint?.title, "Deployment Guide");
+  assert.equal(next.reviewReport?.overall_score, 81);
+  assert.deepEqual(next.evidenceSummary, {
+    total: 2,
+    requiredTotal: 1,
+    optionalTotal: 1,
+    failedRequired: 0,
+  });
+});
+
+test("draft_patch replaces draft markdown and document tree sections together", () => {
+  const next = aiCreateSessionReducer(
+    createInitialAiCreateSessionState(),
+    {
+      type: "draft_patch",
+      markdown: "# Draft\n\n## Intro\n\nUpdated body",
+      sections: [
+        {
+          nodeId: "section:intro",
+          sectionId: "intro",
+          title: "Intro",
+          level: 2,
+          content: "Updated body",
+        },
+      ],
+    } as any,
+  );
+
+  assert.equal(next.accumulatedContent, "# Draft\n\n## Intro\n\nUpdated body");
+  assert.deepEqual(next.draftSections, [
+    {
+      nodeId: "section:intro",
+      sectionId: "intro",
+      title: "Intro",
+      level: 2,
+      content: "Updated body",
+    },
+  ]);
 });

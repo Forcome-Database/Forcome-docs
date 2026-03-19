@@ -157,10 +157,27 @@ class TestParseAssetsTool:
         assert result.source_section_counts["Details"] == 50
 
     @pytest.mark.asyncio
-    async def test_images_processed_when_page_id_and_images_present(self):
+    async def test_parser_extracted_images_materialized_without_file_images_key(self):
         asset_map = _make_asset_map("doc.pdf", word_count=100)
-        images = [{"index": 0, "b64": "abc", "desc": "diagram"}]
-        image_assets = _make_image_assets("doc.pdf", n=2)
+        asset_map.items.append(
+            AssetItem(
+                id="img-doc.pdf-0",
+                type="image",
+                source="doc.pdf",
+                content="data:image/png;base64,YWJj",
+                summary="[diagram] Login flow screenshot",
+            )
+        )
+        upgraded_items = [
+            asset_map.items[0],
+            AssetItem(
+                id="img-doc.pdf-0",
+                type="image",
+                source="doc.pdf",
+                content="https://example.com/doc.pdf/0.png",
+                summary="[diagram] Login flow screenshot",
+            ),
+        ]
 
         with (
             patch(
@@ -168,58 +185,17 @@ class TestParseAssetsTool:
                 return_value=asset_map,
             ),
             patch(
-                "app.orchestrator.tools.parse_assets.process_images",
-                return_value=image_assets,
-            ) as mock_pi,
+                "app.orchestrator.tools.parse_assets.upgrade_source_image_assets",
+                return_value=upgraded_items,
+                create=True,
+            ) as mock_upgrade,
         ):
             result = await parse_assets_tool(
-                files=[_make_file("doc.pdf", images=images)],
+                files=[_make_file("doc.pdf")],
                 page_id="page-abc",
             )
 
-        mock_pi.assert_called_once_with(images, "doc.pdf", "page-abc")
+        mock_upgrade.assert_called_once()
         image_items = result.items_by_type("image")
-        assert len(image_items) == 2
-
-    @pytest.mark.asyncio
-    async def test_images_not_processed_when_no_page_id(self):
-        asset_map = _make_asset_map("doc.pdf", word_count=100)
-        images = [{"index": 0, "b64": "abc", "desc": "diagram"}]
-
-        with (
-            patch(
-                "app.orchestrator.tools.parse_assets.parse_document",
-                return_value=asset_map,
-            ),
-            patch(
-                "app.orchestrator.tools.parse_assets.process_images",
-            ) as mock_pi,
-        ):
-            result = await parse_assets_tool(
-                files=[_make_file("doc.pdf", images=images)],
-                page_id=None,
-            )
-
-        mock_pi.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_images_not_processed_when_no_images_key(self):
-        asset_map = _make_asset_map("doc.pdf", word_count=100)
-        # file_info has no "images" key
-        file_info = _make_file("doc.pdf")  # no images key
-
-        with (
-            patch(
-                "app.orchestrator.tools.parse_assets.parse_document",
-                return_value=asset_map,
-            ),
-            patch(
-                "app.orchestrator.tools.parse_assets.process_images",
-            ) as mock_pi,
-        ):
-            result = await parse_assets_tool(
-                files=[file_info],
-                page_id="page-abc",
-            )
-
-        mock_pi.assert_not_called()
+        assert len(image_items) == 1
+        assert image_items[0].content == "https://example.com/doc.pdf/0.png"

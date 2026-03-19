@@ -8,7 +8,18 @@ class VisualPlan(BaseModel):
     type: Literal["mermaid", "ai_image", "reuse_image", "table"]
     description: str = ""
     source_asset_id: str | None = None
+    fallback_reason: str | None = None
     position: Literal["before_section", "after_paragraph", "end_of_section"] = "end_of_section"
+
+
+class SourceImageCandidate(BaseModel):
+    asset_id: str
+    score: float = 0.0
+    caption: str = ""
+    source: str = ""
+    source_page: int | None = None
+    source_heading: str = ""
+    rationale: str = ""
 
 
 class SectionPlan(BaseModel):
@@ -20,6 +31,7 @@ class SectionPlan(BaseModel):
     description: str = ""
     assets: list[str] = Field(default_factory=list)
     visuals: list[VisualPlan] = Field(default_factory=list)
+    visual_candidates: list[SourceImageCandidate] = Field(default_factory=list)
     must_cover: list[str] = Field(default_factory=list)
 
 

@@ -1980,3 +1980,10 @@ Run: `cd /e/test/Docmost && git add agent-service/tests/test_e2e_review.py && gi
 - Targeted fix operates on single sections with diff-size validation
 - Frontend shows issues as checkboxes — user has full control over what gets fixed
 - ReviewReport is a single structured object flowing through SSE
+## Implementation Status Update (2026-03-19)
+
+- Review now separates blocking vs advisory issues by severity. Error-level issues still block finalize; warning/info issues remain reviewable but can be accepted explicitly.
+- The workbench review modal now exposes `Continue with current draft` for non-blocking reports, preventing infinite fix/re-review loops on subjective warnings.
+- `fix_selected_issues` still rewrites each affected section at most once per review pass, aggregating selected issues by section before calling the fixer.
+- Source-image policy is now enforced in evaluation: missing required visuals and forbidden generated fallbacks raise blocking visual issues.
+- Browser acceptance now covers the review acceptance path that proceeds from `awaiting_input(review)` to `completed` and `insert`.
