@@ -12,6 +12,11 @@ from app.models.document_tree import build_section_node_id
 from app.models.asset_map import AssetMap, AssetItem
 from app.models.brief import CreationBrief
 from app.utils.text import count_words
+from app.utils.markdown_images import (
+    build_asset_image_placeholder,
+    normalize_markdown_image_url,
+    resolve_asset_image_placeholders,
+)
 from app.agent.events import emit
 from app.orchestrator.llm_factory import create_pydantic_ai_model
 from app.runtime_logging import get_runtime_logger
@@ -62,6 +67,11 @@ def _max_stream_units_for_budget(word_budget: int) -> int:
     if word_budget <= 0:
         return 1200
     return max(word_budget + 80, word_budget * 2)
+
+
+def _image_placeholder_markdown(description: str, asset_id: str) -> str:
+    safe_description = (description or "").replace("]", "\\]").replace("\n", " ").strip()
+    return f"![{safe_description}]({build_asset_image_placeholder(asset_id)})"
 
 
 def build_section_context(
@@ -133,7 +143,9 @@ def build_section_context(
             for item in relevant:
                 parts.append(f"--- {item.type}: {item.id} ---")
                 if item.type == "image":
-                    parts.append(f"Image URL: {item.content}")
+                    parts.append(
+                        f"Image placeholder: {_image_placeholder_markdown(item.caption or item.summary or item.id, item.id)}"
+                    )
                     parts.append(f"Description: {item.summary}")
                 else:
                     content_preview = item.content[:2000] if len(item.content) > 2000 else item.content
@@ -161,7 +173,9 @@ def build_section_context(
                 if asset_map:
                     img = next((i for i in asset_map.items if i.id == v.source_asset_id), None)
                     if img:
-                        parts.append(f"- Include image: ![{v.description}]({img.content})")
+                        parts.append(
+                            f"- Include image: {_image_placeholder_markdown(v.description, img.id)}"
+                        )
             elif v.type == "ai_image":
                 parts.append(f"- [AI will generate: {v.description}]")
             elif v.type == "table":
@@ -278,7 +292,23 @@ async def generate_section_visuals(
 
 
 def _image_markdown(description: str, url: str) -> str:
-    return f"![{description}]({url})"
+    safe_description = (description or "").replace("]", "\\]").replace("\n", " ").strip()
+    safe_url = normalize_markdown_image_url(url)
+    return f"![{safe_description}]({safe_url})"
+
+
+def _resolve_asset_image_placeholders(content: str, asset_map: AssetMap | None) -> str:
+    if not content or not asset_map:
+        return content
+
+    return resolve_asset_image_placeholders(
+        content,
+        {
+            item.id: item.content
+            for item in asset_map.items
+            if item.type == "image" and item.content
+        },
+    )
 
 
 def _insert_visual_markdown(content: str, markdown: str, position: str) -> str:
@@ -302,20 +332,25 @@ async def materialize_section_visuals(
     page_id: str | None = None,
 ) -> SectionDraft:
     """Attach stable visual URLs to an already-accepted text draft exactly once."""
-    generated_urls: list[str] = []
+    generated_urls: list[str] = list(draft.visuals_generated)
     image_status = "not_requested"
     source_image_asset_id = draft.source_image_asset_id
     degraded_reason = draft.degraded_reason
-    if any(visual.type == "ai_image" for visual in section.visuals):
-        generated_urls = await generate_section_visuals(
-            section,
-            asset_map,
-            thread_id,
-            page_id,
+    planned_ai_visual_count = sum(
+        1 for visual in section.visuals if visual.type == "ai_image"
+    )
+    if planned_ai_visual_count > len(generated_urls):
+        generated_urls.extend(
+            await generate_section_visuals(
+                section,
+                asset_map,
+                thread_id,
+                page_id,
+            )
         )
 
     generated_iter = iter(generated_urls)
-    content = draft.content
+    content = _resolve_asset_image_placeholders(draft.content, asset_map)
 
     for visual in section.visuals:
         if visual.type == "reuse_image" and visual.source_asset_id and asset_map:

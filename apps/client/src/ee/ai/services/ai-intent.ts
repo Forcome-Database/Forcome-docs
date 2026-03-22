@@ -1,3 +1,8 @@
+import {
+  type DocumentTaskMode,
+  createDocumentTaskIntentDefaults,
+} from "../types/document-task.types";
+
 export type AiIntentRoute =
   | "selection_edit"
   | "document_transform"
@@ -6,6 +11,7 @@ export type AiIntentRoute =
 export type AiIntentScope =
   | "selection"
   | "uploaded_document"
+  | "uploaded_plus_current_page"
   | "current_page"
   | "blank_page";
 
@@ -29,6 +35,7 @@ export interface ResolvedAiIntent {
   scope: AiIntentScope;
   sourcePolicy: AiSourcePolicy;
   lengthPolicy: AiLengthPolicy;
+  documentTask?: ReturnType<typeof createDocumentTaskIntentDefaults>;
   prioritizeUserInstructions: true;
   effectiveMode: "standard" | "agent";
 }
@@ -81,6 +88,50 @@ const EXPAND_KEYWORDS = [
   "\u7ec6\u5316",
 ];
 
+const RELAXED_OPTIMIZATION_KEYWORDS = [
+  "reorganize",
+  "restructure",
+  "rewrite",
+  "redraft",
+  "rework",
+  "重写",
+  "改写",
+  "重组",
+  "重构结构",
+  "重新组织",
+];
+
+const EXPLICIT_CURRENT_PAGE_JOIN_KEYWORDS = [
+  "current page",
+  "this page too",
+  "also use the page",
+  "also use current page",
+  "combine with the current page",
+  "include the current page",
+  "当前页面",
+  "本页",
+  "页面内容也",
+  "结合当前页面",
+  "结合本页",
+];
+
+const EXPLICIT_CURRENT_PAGE_EXCLUSION_PATTERNS = [
+  /\bdo not use (?:the )?current page\b/i,
+  /\bdon't use (?:the )?current page\b/i,
+  /\bwithout (?:the )?current page\b/i,
+  /\bexclude (?:the )?current page\b/i,
+  /\bignore (?:the )?current page\b/i,
+  /\bskip (?:the )?current page\b/i,
+  /\bdo not include (?:the )?current page\b/i,
+  /\bdon't include (?:the )?current page\b/i,
+  /\u4e0d\u8981\u4f7f\u7528(?:\u5f53\u524d\u9875\u9762|\u5f53\u524d\u9875|\u672c\u9875)/,
+  /\u4e0d\u8981\u7528(?:\u5f53\u524d\u9875\u9762|\u5f53\u524d\u9875|\u672c\u9875)/,
+  /\u4e0d\u4f7f\u7528(?:\u5f53\u524d\u9875\u9762|\u5f53\u524d\u9875|\u672c\u9875)/,
+  /\u4e0d\u8981\u5305\u542b(?:\u5f53\u524d\u9875\u9762|\u5f53\u524d\u9875|\u672c\u9875)/,
+  /\u6392\u9664(?:\u5f53\u524d\u9875\u9762|\u5f53\u524d\u9875|\u672c\u9875)/,
+  /\u5ffd\u7565(?:\u5f53\u524d\u9875\u9762|\u5f53\u524d\u9875|\u672c\u9875)/,
+];
+
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"'`)\]]+/i;
 
 function normalizeText(text: string): string {
@@ -112,6 +163,28 @@ function hasReferenceUrl(prompt: string): boolean {
   return URL_PATTERN.test(prompt);
 }
 
+function resolveDocumentTaskMode(prompt: string): DocumentTaskMode {
+  const normalizedPrompt = normalizeText(prompt);
+  return includesAny(normalizedPrompt, RELAXED_OPTIMIZATION_KEYWORDS)
+    ? "relaxed_optimization"
+    : "strict_preservation";
+}
+
+function shouldJoinCurrentPageContext(
+  prompt: string,
+  pageHasContent: boolean,
+): boolean {
+  if (!pageHasContent) {
+    return false;
+  }
+
+  if (EXPLICIT_CURRENT_PAGE_EXCLUSION_PATTERNS.some((pattern) => pattern.test(prompt))) {
+    return false;
+  }
+
+  return includesAny(normalizeText(prompt), EXPLICIT_CURRENT_PAGE_JOIN_KEYWORDS);
+}
+
 export function resolveAiIntent(
   params: ResolveAiIntentParams,
 ): ResolvedAiIntent {
@@ -129,13 +202,21 @@ export function resolveAiIntent(
   }
 
   if (params.files.length > 0) {
+    const scope = shouldJoinCurrentPageContext(params.prompt, params.pageHasContent)
+      ? "uploaded_plus_current_page"
+      : "uploaded_document";
+
     return {
       route: "document_transform",
-      scope: "uploaded_document",
+      scope,
       sourcePolicy: "preserve_source",
       lengthPolicy,
+      documentTask: createDocumentTaskIntentDefaults(
+        resolveDocumentTaskMode(params.prompt),
+        scope,
+      ),
       prioritizeUserInstructions: true,
-      effectiveMode: params.agentMode ? "agent" : "standard",
+      effectiveMode: "agent",
     };
   }
 
@@ -156,6 +237,10 @@ export function resolveAiIntent(
       scope: "current_page",
       sourcePolicy: "preserve_source",
       lengthPolicy,
+      documentTask: createDocumentTaskIntentDefaults(
+        resolveDocumentTaskMode(params.prompt),
+        "current_page",
+      ),
       prioritizeUserInstructions: true,
       effectiveMode: params.agentMode ? "agent" : "standard",
     };

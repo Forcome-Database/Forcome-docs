@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.orchestrator.document_task_engine import DocumentTaskEngine
 from app.models.review import ReviewIssue, ReviewReport
 from app.orchestrator.engine import OrchestratorEngine, OrchestratorRequest
 from app.orchestrator.session_store import session_store
@@ -75,6 +76,103 @@ async def test_level3_full_pipeline():
     mock_blueprint.assert_called_once()
     mock_write.assert_called_once()
     mock_finalize.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_small_blank_page_drafts_directly_without_unnecessary_planning():
+    engine = DocumentTaskEngine()
+    request = OrchestratorRequest(
+        user_message="Write a short release note about the API update.",
+        thread_id="test-small-blank-page",
+        workspace_id="ws-test",
+        intent_route="document_create",
+        page_content="",
+    )
+
+    with patch.object(
+        engine.orchestrator,
+        "_execute_level1",
+        new=AsyncMock(return_value="short draft"),
+    ) as mock_level1, patch.object(
+        engine.orchestrator,
+        "_execute_level3",
+        new=AsyncMock(return_value="planned draft"),
+    ) as mock_level3:
+        result = await engine.run(request)
+
+    mock_level1.assert_called_once_with(request)
+    mock_level3.assert_not_called()
+    assert result == "short draft"
+
+
+@pytest.mark.asyncio
+async def test_large_blank_page_requires_planning_before_drafting():
+    engine = DocumentTaskEngine()
+    request = OrchestratorRequest(
+        user_message="Write a comprehensive system design guide covering architecture, deployment, security, observability, and operations.",
+        thread_id="test-large-blank-page",
+        workspace_id="ws-test",
+        intent_route="document_create",
+        page_content="",
+    )
+
+    with patch.object(
+        engine.orchestrator,
+        "_execute_level1",
+        new=AsyncMock(return_value="short draft"),
+    ) as mock_level1, patch.object(
+        engine.orchestrator,
+        "_execute_level3",
+        new=AsyncMock(return_value="planned draft"),
+    ) as mock_level3:
+        result = await engine.run(request)
+
+    mock_level1.assert_not_called()
+    mock_level3.assert_called_once_with(request)
+    assert result == "planned draft"
+
+
+@pytest.mark.asyncio
+async def test_multi_document_synthesis_surfaces_conflicts_into_collaboration():
+    engine = DocumentTaskEngine()
+    request = OrchestratorRequest(
+        user_message="Synthesize the attached policy documents into one comparison memo.",
+        thread_id="test-multi-document-conflict",
+        workspace_id="ws-test",
+        intent_route="document_create",
+        files=[
+            {"filename": "policy-a.pdf", "mimetype": "application/pdf", "content_b64": "dGVzdA=="},
+            {"filename": "policy-b.pdf", "mimetype": "application/pdf", "content_b64": "dGVzdA=="},
+        ],
+    )
+
+    with patch(
+        "app.orchestrator.document_task_engine.detect_synthesis_conflicts",
+        return_value=[
+            {
+                "conflict_id": "conflict-1",
+                "title": "Deployment order mismatch",
+                "details": "Source A requires database migration before deploy, Source B says deploy first.",
+            }
+        ],
+    ), patch.object(
+        engine.orchestrator,
+        "_await_user_input",
+        new=AsyncMock(return_value={"type": "review", "skip": True}),
+    ) as mock_collab, patch.object(
+        engine.orchestrator,
+        "_execute_level3",
+        new=AsyncMock(return_value="synthesized draft"),
+    ) as mock_level3:
+        result = await engine.run(request)
+
+    assert mock_collab.await_count == 1
+    await_kwargs = mock_collab.await_args.kwargs
+    assert await_kwargs["phase"] == "review"
+    assert await_kwargs["data"]["type"] == "review"
+    assert await_kwargs["data"]["report"]["user_decision_needed"] == ["conflict-1"]
+    mock_level3.assert_called_once_with(request)
+    assert result == "synthesized draft"
 
 
 @pytest.mark.asyncio

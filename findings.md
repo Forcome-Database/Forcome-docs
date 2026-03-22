@@ -1,89 +1,143 @@
-# Findings & Decisions
+# Findings
 
-## Requirements
-- Align implementation to `docs/superpowers/specs/2026-03-14-ai-creator-v2-spec.md` and phase0~5 plans.
-- Close the full chain: upload/material collection -> research -> brief -> blueprint -> sequential section writing -> review -> targeted fixes -> finalize.
-- Restore spec fields and contracts across Python models, frontend TS types, and SSE events.
-- Fix upload propagation, resume streaming, visual planning, image generation, truthful asset coverage, and review fix continuation.
-- Preserve existing dirty user/work-in-progress changes; do not revert unrelated modifications.
+## 2026-03-20 Backend AI Audit
+- Existing planning files belonged to a previous frontend review and were reset for this backend audit.
+- Scope confirmed from user request: `agent-service/app/**/*`, `apps/server/src/ee/ai/**/*`, plus related tests/docs that match real implementation.
+- First pass target is the server-side entry map: run/resume/commit/optimize entrypoints and the boundary between Nest server and `agent-service`.
+- `apps/server/src/ee/ai/ai.controller.ts` still contains the legacy `/ai/creator/generate` SSE path. It builds a prompt and streams directly via `AiService.streamWithContext(...)`; it does not call the agent orchestrator.
+- `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts` is the actual proxy for orchestrated runs. `/agent/run` forwards JSON to `agent-service /agent/run`; `/agent/resume` forwards typed resume payloads to `agent-service /agent/resume`.
+- `agent-service/app/main.py` creates `OrchestratorRequest`, starts `OrchestratorEngine.run(...)` in a background task, and exposes resume/session/stop endpoints around the same thread/session id.
+- `agent-service/app/orchestrator/engine.py` contains a single orchestrator class with four execution paths:
+  - Level 1: `simple_edit -> finalize`
+  - Level 2: `prepare_evidence -> brief confirmation -> simple_edit -> finalize`
+  - Level 2 promoted path: `prepare_evidence -> brief -> blueprint -> write_all_sections -> review/fix -> finalize`
+  - Level 3: `prepare_evidence -> brief -> blueprint -> write_all_sections -> review/fix -> finalize`
+- `agent-service/app/orchestrator/tools/complexity.py` hard-routes all `selection_edit` requests to Level 1.
+- `agent-service/app/orchestrator/tools/simple_edit.py` collects `conversation_history` into `message_history` but never passes it into `agent.run_stream(...)`; the direct edit path is stateless despite accepting history.
+- The backend currently has two parallel creation stacks:
+  - legacy direct generation: `POST /ai/creator/generate` in Nest -> `AiService.streamWithContext(...)`
+  - orchestrated generation: `POST /agent/run` in Nest -> `agent-service /agent/run` -> `OrchestratorEngine.run(...)`
+- `commit` is not part of the agent runtime. The write-back path stays on the Nest side via `POST /ai/creator/commit` -> `PageService.commitAiContent(...)` -> `CollaborationHandler.applyAiCommit(...)` -> `applyAiCommitToDocument(...)`.
+- There is no dedicated backend `optimize` endpoint in the current implementation. In actual runtime behavior, "optimize" is mapped by the client intent resolver to `intentRoute="document_transform"`; blank page creation maps to `document_create`.
+- The agent path currently drops intent metadata that the standard path keeps:
+  - standard path sends `scope`, `sourcePolicy`, `lengthPolicy`
+  - agent path only sends `intentRoute`
+  - `agent-service/app/schemas/request.py::AgentRunRequest` defines these richer fields, but `agent-service/app/main.py` does not validate or use them.
+- Result: inside the orchestrator, `document_transform` requests from uploaded files, current-page optimization, URL-backed transforms, and blank-page transforms are collapsed together except for `intent_route` and raw file count.
+- `agent-service/app/orchestrator/engine.py::_should_promote_level2_to_structured_write(...)` only upgrades `document_transform` to the image-preserving structured flow when all of these are true:
+  - intent is `document_transform`
+  - exactly one file is uploaded
+  - brief image strategy allows source reuse
+  - parsed assets include at least one image
+- Current-page transforms without uploaded files therefore remain on Level 2 `simple_edit`, even when the page already contains images/tables/structured content.
+- `agent-service/app/orchestrator/tools/evidence.py` marks `page_context` as required evidence for `selection_edit` / `document_transform`, but it does not parse page content into an `AssetMap`. For current-page optimization, the agent mostly sees raw page markdown plus brief/page excerpt, not structured assets.
+- `apps/server/src/ee/ai/services/ai-file.service.ts` in the legacy path flattens PDF/DOC files into plain text; it does not preserve source images, tables, or document structure.
+- `agent-service/app/workers/asset_parser.py` does extract headings, text sections, tables, code, mermaid, and images into `AssetMap`, but `section_writer.py` truncates each asset preview to 2000 chars and continuity between sections is only the previous tail plus next header.
+- `agent-service/app/workers/section_writer.py::get_prev_section_tail(...)` only passes up to 500 characters of the previous section into the next section's context.
+- `agent-service/app/orchestrator/tools/fix_tools.py` and `app/workers/fixer.py` repair selected issues one section at a time, with no adjacent-section context. This can reintroduce cross-section drift after review.
+- `agent-service/app/orchestrator/tools/finalize.py::merge_sections(...)` removes `<!--asset:...-->` markers before returning final markdown. That erases source-asset traceability for any later optimize/review pass.
+- `apps/server/src/ee/ai/creator-commit.utils.ts` falls back from `replace` to `append` when `selectionSnapshot` is stale. That avoids hard failure but can create duplicated or out-of-place content during selection edit write-back.
+- `apps/server/src/core/page/services/page.service.ts::commitAiContent(...)` allows `replace` commits to proceed even when page version changed; the final Yjs apply may downgrade to append. Non-replace modes instead throw conflict.
+- Implementation-backed docs:
+  - `agent-service/ARCHITECTURE.md` broadly matches the current orchestrator topology, but it understates the real Level 2 split and still presents some outdated flow wording.
+  - `docs/ai-creator-v2-changelog.md` matches the current Level 1/2/3 architecture better than the v3 redesign docs.
+  - `docs/superpowers/specs/2026-03-20-ai-creator-v3-redesign.md` is not implemented; it describes future `/api/ai/document/optimize` and `/create` endpoints that do not exist in the code.
+- Likely dead or disconnected modules in the current architecture:
+  - `agent-service/app/orchestrator/sse_optimizer.py`
+  - `agent-service/app/orchestrator/model_router.py`
+  - `agent-service/app/orchestrator/prompts.py`
+  - `agent-service/app/orchestrator/tools/rewrite_section.py`
+  - `agent-service/app/orchestrator/tools/merge_proposals.py`
+  - `agent-service/app/workers/style_analyzer.py`
+  - `agent-service/app/schemas/request.py::AgentRunRequest` rich run schema
+  - `apps/server/src/ee/ai/evidence-preflight.ts`
+  - `apps/server/src/ee/ai/document-plan.ts`
+  - `apps/server/src/ee/ai/agent-gateway/agent-gateway.service.ts::forwardToAgent(...)`
 
-## Research Findings
-- Agent-mode frontend currently posts JSON without files, while the legacy creator flow already uses `FormData`; the new agent flow can reuse that transport shape.
-- UI shells for Smart Brief, Blueprint, and Review already exist, but the upstream event payloads and resume protocol do not fully satisfy them.
-- Backend tests currently cover internal orchestrator behavior more than frontend/backend contract continuity, leaving broken resume/upload/image chains undetected.
-- The existing dirty backend work already covered part of L2/L3 orchestration, so implementation could extend that baseline instead of replacing it.
-- Converting `/agent/resume` to SSE required changing both Python endpoint lifecycle and Nest proxy behavior; fixing only one side would still leave the chain broken.
-- Truthful asset usage can be recovered without a larger parser by inserting hidden `<!--asset:id-->` markers during section writing and stripping them at finalize time.
+## 2026-03-20 External Research Requirements
+- 研究范围限于外部最佳实践与架构模式，不修改业务代码。
+- 优先 Anthropic 官方文章与各产品/框架官方文档。
+- 输出必须包含来源链接、明确日期，并区分事实与推断。
+- 目标场景：`selection rewrite`、`document transform`、`blank-page drafting`。
 
-## Technical Decisions
-| Decision | Rationale |
-|----------|-----------|
-| Reuse multipart upload path for `/api/agent/run` | Minimizes frontend churn and matches required file transfer semantics |
-| Keep `parse_assets_tool()` internal JSON shape unchanged | Localizes change to the Nest gateway and frontend transport |
-| Emit typed `await_input.data` payloads | Removes frontend phase-based guessing and matches the requested public contract |
-| Use inline hidden asset markers for truthful reuse tracking | Gives evaluator deterministic evidence without exposing markers to final users |
-| End SSE streams on `await_input` and reopen on `/resume` | Matches interrupt/resume semantics and prevents hanging interactive runs |
-| Add ai-image fallback when `image_strategy` requires generation but blueprint lacks `ai_image` | Prevents requested image generation from never triggering |
+## 2026-03-20 External Research Findings
+- Anthropic 官方公开文章《Building effective agents》发表于 2024-12-19。文中将 agentic systems 区分为两类：`workflows` 是预定义代码路径编排，`agents` 是模型动态决定流程与工具使用；并明确建议先找“最简单可行方案”，很多场景单次 LLM 调用 + retrieval + in-context examples 就够用。
+- Anthropic 给出的基础构件是 `augmented LLM`，即在 LLM 外围加 retrieval、tools、memory，并强调这些能力应为模型提供“易用、文档化良好”的接口；文中还点名 MCP 作为一种集成方式。
+- Anthropic 列出的核心 workflow 模式是：`prompt chaining`、`routing`、`parallelization`、`orchestrator-workers`、`evaluator-optimizer`；其中 evaluator-optimizer 被明确类比为“人类写作者反复润色”的过程，和文档写作/改写高度相关。
+- Anthropic 对 framework 的官方建议是：先直接使用 LLM API 起步，避免过度抽象造成调试困难；如果使用 framework，必须理解底层代码，不要被抽象层误导。
+- Microsoft Word/Copilot 官方支持文档显示其写作与改写能力被明确拆成：`Start a draft`、`Add content to an existing document`、`Rewrite text`、`Convert text to a table`、`Edit with Copilot in Word`。这说明成熟产品通常把“从零起草”“局部改写”“文档级转换”“在位编辑”拆成不同交互入口，而不是混成一个模式。
+- Word 官方文档强调 blank-page drafting 时应提供更多上下文；新文档可基于文件、邮件、会议生成，且可引用至多 20 个来源项。生成后提供 `Keep it / Regenerate / Discard` 与继续细化。
+- Word 的 rewrite/transform 官方交互是：选中文本后触发 `Auto Rewrite`，可 `Replace`、`Insert below`、`Regenerate`，也支持在建议框内直接修改；文本还可 `Visualize as a Table`。这体现出 selection rewrite 与 document transform 应带有可审阅、可替换、可并排插入的显式确认机制。
+- Word `Edit with Copilot in Word` 官方文档表明：在共享文档场景下，Copilot 会先在 chat 中显示建议预览，必须由用户确认后才应用到文档；这是对“高影响文档级改动”增加确认门槛的明确产品实践。
+- Notion 官方帮助文档显示其 AI 能力既有 `Notion AI inline`，也有 `AI blocks`，还有 `Notion Agent`。它们默认上下文层级不同：inline 适合当前页或选区，AI block 适合结构化生成块，Agent 适合更开放的多步任务。
+- Notion 官方帮助文档明确：Agent 默认使用当前页面上下文；如果选中了具体 blocks，则 Agent 聚焦这些 blocks；还可通过 `@` 或 `All sources` 加额外来源。Notion 也明确给出权限与可撤销边界：Agent 与用户同权限，且所有改动都可 undo。
+- Notion `Notion AI inline` 官方能力包括：对选区/页面做 grammar fix、长短调整、语气变化，也可创建 outline、email draft、table，并在生成后允许 `accept / discard / try again`。这与 Docmost 的 selection rewrite 和 blank-page drafting 非常接近。
+- Notion `AI blocks` 官方能力说明其支持 `Specified context` 和额外 `Search` 来源，说明 blank-page drafting 最佳实践不是仅依赖自由提示，而是显式绑定上下文范围与来源集合。
+- Notion 官方的 instructions / skills 文档说明：应把偏好写清楚，`Start with what you want`、`Be specific`；同时支持把可复用 prompt 保存为 skill，例如“Rewrite this for a customer-facing audience in 3 short paragraphs”。这为 rewrite 的产品化提供了“可复用模板/技能”思路。
+- BlockNote 官方 AI 文档强调三个用户体验原则：`Interactive AI Suggestions`（可接受/拒绝）、`Real-time Feedback`（流式反馈）、`Transparent Operations`（明确展示 AI 正在做什么）。技术上还明确支持 `Flexible Command System`、`Human in the Loop` 多步工作流、自定义 prompts。
+- BlockNote AI Reference 暴露了非常贴近产品状态机的能力：`user-input / thinking / ai-writing / user-reviewing` 四个状态，以及 `acceptChanges / rejectChanges / retry / abort` 操作；`invokeAI` 还支持 `useSelection?: boolean`，并会把 `selectedBlocks`、`documentState` 一起发给模型。这对 selection rewrite / blank-page drafting 的状态设计非常有参考价值。
+- Tiptap 官方 AI Toolkit 将能力明确分成 `AI agents` 与 `workflows` 两大类，并直接说明 workflows 只有单一、明确任务，例如 insert content、proofread、tiptap edit；AI agents 更灵活，但更适合复杂任务。
+- Tiptap 官方还将文档 AI 关键能力拆成独立模块：`Review changes`、`Tool streaming`、`Selection awareness`、`Multi-document`、`Schema awareness`。这说明成熟框架倾向把“编辑能力”“审阅能力”“上下文感知”“跨文档能力”解耦，而不是耦成一个黑盒聊天。
+- Tiptap 的 suggestions 官方文档定义了三种编辑模式：默认直接改文档；`preview` 模式先展示建议，用户接受后再改；`review` 模式先改文档，但保留可撤销的 suggestion。还支持 `acceptSuggestion / rejectSuggestion` 与不同 diff mode。这是 selection rewrite 与 document transform 应如何落地 review UX 的直接参考。
+- Tiptap 的 `Insert content workflow` 官方示例说明：对于选区插入/替换，客户端先读取当前 selection，再流式插入 HTML；如果要让用户审阅，则配置 `reviewOptions: { mode: 'review' }`。这和“selection rewrite 默认局部、可流式、可审阅”高度一致。
 
-## Issues Encountered
-| Issue | Resolution |
-|-------|------------|
-| Session-catchup script path in skill instructions does not exist on this machine | Used local template files directly and continued with explicit tracking files |
-| Relevant backend files are already dirty | Treat current file contents as working baseline and diff before edits |
-| `create_blueprint.py` contained mixed partial edits and encoding noise | Rewrote the tool file cleanly around current required behavior |
+## 2026-03-20 External Research Resources
+- Anthropic research/article: https://www.anthropic.com/engineering/building-effective-agents
+- Anthropic ebook landing: https://resources.anthropic.com/building-effective-ai-agents
+- Microsoft Support - Draft and add content with Copilot in Word: https://support.microsoft.com/en-us/office/draft-and-add-content-with-copilot-in-word-069c91f0-9e42-4c9a-bbce-fddf5d581541
+- Microsoft Support - Rewrite text with Copilot in Word: https://support.microsoft.com/en-us/office/rewrite-text-with-copilot-in-word-923d9763-f896-4da7-8a3f-5b12c3bfc475
+- Microsoft Support - Edit with Copilot in Word: https://support.microsoft.com/en-us/office/edit-with-copilot-in-word-647d5d14-eaec-4e8a-a574-7cefffa7f8f0
+- Notion Help - What is Notion AI?: https://www.notion.com/help/notion-ai-faqs
+- Notion Help - Notion Agent: https://www.notion.com/help/notion-agent
+- Notion Help - Customize your Notion Agent with instructions & skills: https://www.notion.com/help/customize-your-notion-agent-with-instructions-and-skills
+- Notion product use case - Write in your style: https://www.notion.com/product/ai/use-cases/write-in-your-style
+- BlockNote Docs - AI Integration: https://www.blocknotejs.org/docs/features/ai
+- BlockNote Docs - AI Reference: https://www.blocknotejs.org/docs/features/ai/reference
+- Tiptap Docs - AI Toolkit overview: https://tiptap.dev/docs/content-ai/capabilities/ai-toolkit/overview
+- Tiptap Docs - AI Agents: https://tiptap.dev/docs/content-ai/capabilities/ai-toolkit/agents
+- Tiptap Docs - Suggestions: https://tiptap.dev/docs/content-ai/capabilities/ai-toolkit/advanced-guides/suggestions
 
-## Session Recovery Notes
-- Resumed on 2026-03-18 with the working tree still dirty from the prior implementation pass.
-- Remaining verification focus is narrower than the original plan: confirm the repair loop actually re-runs review and confirm missing sections now hard-block finalize without breaking existing tests.
-- Current risk is not transport/protocol drift anymore; it is state-machine correctness under fix/re-review and finalize gating.
-
-## Additional Verification Findings
-- `fix_selected_issues()` had one remaining contract mismatch: it only auto-fixed issues included in `selected_issue_ids`, while the review/fix flow and tests require deterministic auto-fixes to run regardless of user selection.
-- The fix was localized to `agent-service/app/orchestrator/tools/fix_tools.py`: auto-fixable issues are now always passed through `apply_auto_fixes()`, while manual targeted fixes remain scoped to the user's selected issue ids.
-- `apps/client/src/ee/ai/services/ai-create-runner.test.ts` is a `node:test` file, not a Jest test. Direct `jest` invocation fails on ESM/TS parsing, but the correct repo-local execution path `pnpm exec tsx --test ...` passes.
-
-## Session: 2026-03-19 MinerU Parser Research
-
-### Official documentation findings
-- MinerU cloud API officially supports `.pdf`, `.doc`, `.docx`, `.ppt`, `.pptx`, `.png`, `.jpg`, `.jpeg`, and `.html`.
-- The practical upload flow for local files is `POST /api/v4/file-urls/batch` -> upload to presigned URLs -> poll extract results -> download ZIP output.
-- The API output includes richer parser artifacts than the current Docling path and is a better fit for preserving source images and layout blocks in AI Creator.
-- MinerU does not clearly cover `xlsx/csv/markdown/xml/audio/video`, so it should not replace Docling outright.
-
-### Local project findings
-- Current Docling-based parsing already works well enough for `docx` image extraction but fails to materialize image assets for at least one real-world PDF fixture that still contains `<!-- image -->` placeholders in extracted markdown.
-- AI Creator's planner/writer stack is already parser-agnostic above `AssetMap`; parser replacement can therefore be isolated to `parse_assets_tool()`, `parse_document()`, and source-image materialization helpers.
-- The right architectural move is `MinerU-first / Docling-fallback`, not `MinerU-only`.
-
-### Decisions
-| Decision | Rationale |
-|----------|-----------|
-| Adopt MinerU as the preferred parser for MinerU-supported formats | Better alignment with current PDF/source-image preservation requirements |
-| Keep Docling fallback for unsupported formats and MinerU failures | Preserves coverage and avoids hard API dependency regressions |
-| Parse MinerU ZIP output into existing `DocumentParseResult` / `AssetMap` contracts | Minimizes upper-layer churn |
-| Add deterministic low-value image filtering before planner consumption | Needed to keep useful SOP screenshots while dropping logos and page chrome |
-| Prefer structure-preserving authoring over flatten-then-rewrite | MinerU carries heading/block/layout information that should directly inform planning and section writing |
-
-### Implementation findings
-- `asset_parser.parse_document()` is the right integration seam for MinerU-first routing because everything above it already consumes `AssetMap` and stays parser-agnostic.
-- Basic structure preservation can start with `DocumentParseResult.structure` and `DocumentParseResult.blocks`; higher layers do not need raw MinerU schemas.
-- The current MinerU client implementation is test-backed, but real cloud verification is still blocked by authentication failure with the provided credential.
-
-### External integration blocker
-- Real calls to MinerU cloud endpoints returned:
-  - `GET /api/v4/quota` -> `401 user authenticate failed`
-  - `POST /api/v4/file-urls/batch` -> `401 Unauthorized`
-- The failure reproduced both with:
-  - `Authorization: Bearer <token>`
-  - `Authorization: Bearer <token>` plus `token: <token>`
-- Conclusion: the current credential is either not a valid API token for MinerU cloud, not bound to the correct tenant/account, or otherwise not authorized for API use. This is not yet a client-shape problem.
-
-## Resources
-- `/e:/test/Docmost/docs/superpowers/specs/2026-03-14-ai-creator-v2-spec.md`
-- `/e:/test/Docmost/docs/superpowers/plans/2026-03-14-ai-creator-phase1-orchestrator.md`
-- `/e:/test/Docmost/docs/superpowers/plans/2026-03-14-ai-creator-phase2-assets-planning.md`
-- `/e:/test/Docmost/docs/superpowers/plans/2026-03-14-ai-creator-phase3-section-writer.md`
-- `/e:/test/Docmost/docs/superpowers/plans/2026-03-14-ai-creator-phase4-review-system.md`
-
-## Visual/Browser Findings
-- None yet.
+## 2026-03-20 Current Docmost Facts Relevant to Mapping
+- 前端 `resolveAiIntent` 已把三类场景显式分流：有选区则 `selection_edit`；有文件或当前页已有内容则 `document_transform`；空白页默认 `document_create`；空白页但 prompt 含 URL 时仍走 `document_transform`。
+- 前端还为每次提交显式计算 `insertMode`：有选区则 `replace`；空白页是 `create`；已有内容默认 `overwrite`，只有 continue/append 意图才走 `append`。这意味着 Docmost 已经在产品层把 selection rewrite、blank-page drafting、document transform 区分成不同写回语义。
+- 后端复杂度分析器把 `selection_edit` 强制归为 Level 1；单文件通常归到 Level 2；多文件、模板创建、明显 create/write/draft 请求归到 Level 3。
+- Level 1 当前路径是 `simple_edit -> finalize`，适合局部改写；Level 2 是 `prepare_evidence -> brief confirm -> simple_edit -> finalize`，但在“单文件 document_transform 且需要保留源图”时会升级为 `brief -> blueprint -> section writer -> review -> finalize`；Level 3 默认走完整 structured write 流。
+- AI Creator 前端会保存 `threadId/taskId`、支持 `await_input`（brief/blueprint/review）、`draft_patch`、`blocked`、hydration 恢复；输入栏也已暴露 `auto-insert` 与 `Deep mode` 两个关键控制项。
+## 2026-03-20 Confirmed Product Requirements
+- Priority order is `document transform > selection rewrite > blank-page drafting`.
+- Document transform must support both strict preservation mode and relaxed optimization mode.
+- Default document-transform mode is strict preservation.
+- Strict preservation means structure, images, tables, and code blocks should be preserved as much as possible.
+- Relaxed optimization may reorder structure, but must not break meaning or image-text correspondence.
+- Default result delivery for document transform is reviewable diffs with per-item accept/reject.
+- Selection rewrite keeps two modes: inline editor-local preview flow, plus panel-assisted flow when needed.
+- Default selection-rewrite path stays inline in the editor.
+- The redesign must prevent selection rewrite from conflicting with long-lived conversation/session context.
+- The right-side AI panel should default to document-level tasks only; ordinary selection rewrite should not enter the main panel.
+- The right-side AI panel should use a dual nature: default document operation center, escalating only for complex tasks into expert/deep collaboration.
+- Uploaded-file optimization and current-page optimization should share one unified document-transform main flow.
+- The unified document-transform flow should use progressive confirmation: small changes can go directly to diff, while larger/high-impact changes should present a plan first and continue after user confirmation.
+- Expert/deep collaboration should be auto-triggerable by system complexity assessment, but the user must be able to turn it off.
+- Document-transform runs should inherit only a structured task summary for the current document task, not the full raw conversation history.
+- Selection rewrite may read selection-local context plus the current document task summary, but that summary must be structured goals/constraints/decisions only, never raw chat history.
+- If strict-preservation mode cannot be safely maintained, the system may downgrade to relaxed optimization only after explicit user confirmation.
+- Blank-page drafting should use progressive complexity: small tasks can draft directly, while larger tasks must go through brief/outline confirmation first.
+- The overall redesign target is both product-boundary correction and agent-capability refactor, with product boundaries taking priority.
+- Repeated optimization on the same document should automatically inherit previously confirmed structured task summaries, constraints, and style choices.
+- Diff review should use mixed granularity: block-level by default, with expandable finer text diffs for plain-text blocks.
+- Accept/reject decisions should default to a pending change set, with final application happening in one explicit apply step.
+- Strict-preservation versus relaxed-optimization should be system-recommended but always user-switchable at a glance.
+- Migration strategy should be hybrid: backend and state layers may migrate incrementally, but the primary frontend entry model should switch to the new interaction model in one visible cutover.
+- Multi-document merge/rewrite remains part of the unified document-transform flow, but should auto-upgrade into a complex-task path.
+- For uploaded-document optimization, uploaded sources should be the default primary input; the current page should participate only when the user explicitly asks for it.
+- Final apply should write accepted changes directly into the current document while automatically creating a rollback snapshot.
+- Current-page optimization should not be treated as text-only rewriting; at minimum, existing images and tables must remain inside the preservation pipeline, even if the full preservation stack is lighter than uploaded-source handling.
+- Among structured-content failure modes, the highest-sensitivity/highest-cost issue is broken image-to-text correspondence.
+- In strict-preservation mode, when image placement is uncertain, the system should keep the original image at its original position and avoid proactive relocation.
+- In relaxed-optimization mode, images should still prefer staying near their original positions, with relocation only suggested when the current placement is clearly unsuitable.
+- In strict-preservation mode, when tables/code blocks/Mermaid cannot be safely transformed, they should remain unchanged in place while AI optimizes only the surrounding content.
+- When a document-transform task is active, any ad hoc selection rewrite should run as an isolated temporary operation and must not pollute the active document task state.
+- The current AI Creator workbench concept can be retired and replaced with a three-part model:
+  - inline editor-local rewrite
+  - right-side document operation center
+  - on-demand expert collaboration layer

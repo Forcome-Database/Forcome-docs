@@ -13,6 +13,38 @@ from app.agent.events import emit  # imported at module level so tests can patch
 from app.models.asset_map import AssetMap
 from app.models.brief import CreationBrief, normalize_image_strategy
 
+_SMALL_BLANK_PAGE_KEYWORDS = {
+    "short",
+    "brief",
+    "quick",
+    "concise",
+    "note",
+    "summary",
+    "announcement",
+    "blurb",
+    "paragraph",
+    "email",
+    "release note",
+    "tweet",
+    "one-pager",
+}
+
+
+def is_small_blank_page_draft_request(
+    user_message: str,
+    *,
+    has_files: bool = False,
+    page_content: str | None = None,
+) -> bool:
+    normalized = user_message.strip().lower()
+    if not normalized or has_files or (page_content or "").strip():
+        return False
+
+    word_count = len(normalized.split())
+    return word_count <= 18 and any(
+        keyword in normalized for keyword in _SMALL_BLANK_PAGE_KEYWORDS
+    )
+
 
 # ---------------------------------------------------------------------------
 # Prompt builders

@@ -20,7 +20,10 @@ jest.mock('../../collaboration/collaboration.util', () => {
   };
 });
 
-import { applyAiCommitToDocument } from './creator-commit.utils';
+import {
+  AiCommitSelectionConflictError,
+  applyAiCommitToDocument,
+} from './creator-commit.utils';
 
 describe('creator-commit utils', () => {
   const createDoc = (content: any[]) => ({
@@ -97,29 +100,22 @@ describe('creator-commit utils', () => {
     expect(result.fallbackReason).toBeNull();
   });
 
-  it('falls back to append when the selection snapshot is stale', () => {
-    const result = applyAiCommitToDocument({
-      currentDocument: createDoc([
-        { type: 'paragraph', content: [{ type: 'text', text: 'before text' }] },
-      ]),
-      incomingDocument: createDoc([
-        { type: 'paragraph', content: [{ type: 'text', text: 'after' }] },
-      ]),
-      insertMode: 'replace',
-      selectionSnapshot: {
-        from: 1,
-        to: 7,
-        text: 'mismatch',
-      },
-    });
-
-    expect(result.prosemirrorJson).toEqual(
-      createDoc([
-        { type: 'paragraph', content: [{ type: 'text', text: 'before text' }] },
-        { type: 'paragraph', content: [{ type: 'text', text: 'after' }] },
-      ]),
-    );
-    expect(result.appliedMode).toBe('append');
-    expect(result.fallbackReason).toBe('stale_selection');
+  it('surfaces a recoverable conflict when the selection snapshot is stale', () => {
+    expect(() =>
+      applyAiCommitToDocument({
+        currentDocument: createDoc([
+          { type: 'paragraph', content: [{ type: 'text', text: 'before text' }] },
+        ]),
+        incomingDocument: createDoc([
+          { type: 'paragraph', content: [{ type: 'text', text: 'after' }] },
+        ]),
+        insertMode: 'replace',
+        selectionSnapshot: {
+          from: 1,
+          to: 7,
+          text: 'mismatch',
+        },
+      }),
+    ).toThrow(AiCommitSelectionConflictError);
   });
 });

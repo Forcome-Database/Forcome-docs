@@ -334,7 +334,7 @@ class TestBuildSectionContextAssets:
         )
         assert "Important source text content" in ctx
 
-    def test_image_asset_shows_url_and_description(self):
+    def test_image_asset_uses_placeholder_and_description(self):
         asset = AssetItem(
             id="img-1",
             type="image",
@@ -351,7 +351,8 @@ class TestBuildSectionContextAssets:
             brief=brief,
             asset_map=asset_map,
         )
-        assert "https://example.com/photo.png" in ctx
+        assert "asset://img-1" in ctx
+        assert "https://example.com/photo.png" not in ctx
         assert "A photo of the system" in ctx
 
     def test_excludes_unreferenced_assets(self):
@@ -405,7 +406,7 @@ class TestBuildSectionContextVisuals:
         assert "Mermaid" in ctx
         assert "deployment flow" in ctx
 
-    def test_reuse_image_visual_generates_markdown_link(self):
+    def test_reuse_image_visual_generates_placeholder_markdown_link(self):
         asset = AssetItem(
             id="img-arch",
             type="image",
@@ -427,7 +428,8 @@ class TestBuildSectionContextVisuals:
             brief=brief,
             asset_map=asset_map,
         )
-        assert "https://cdn.example.com/arch.png" in ctx
+        assert "asset://img-arch" in ctx
+        assert "https://cdn.example.com/arch.png" not in ctx
         assert "![" in ctx  # markdown image syntax
 
     def test_reuse_image_missing_asset_skipped(self):

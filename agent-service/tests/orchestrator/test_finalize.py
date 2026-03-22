@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.orchestrator.tools.finalize import compute_word_count, merge_sections
+from app.models.asset_map import AssetItem, AssetMap
+from app.orchestrator.tools.finalize import (
+    compute_word_count,
+    merge_sections,
+    resolve_final_image_placeholders,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +73,99 @@ class TestMergeSections:
         result = merge_sections(sections)
         parts = result.split("\n\n")
         assert len(parts) == 10
+
+    def test_dict_sections_strip_redundant_leading_heading_matching_section_title(self):
+        sections = [
+            {
+                "title": "Address and Subscription",
+                "level": 2,
+                "content": "## Address and Subscription\n\nKeep the original instructions.",
+            }
+        ]
+        result = merge_sections(sections)
+        assert result == "## Address and Subscription\n\nKeep the original instructions."
+
+    def test_promotes_first_structured_section_title_to_h1_when_root_title_missing(self):
+        sections = [
+            {
+                "title": "",
+                "level": 1,
+                "content": "",
+            },
+            {
+                "title": "采购退货业务标准操作程序 (SOP)",
+                "level": 3,
+                "content": "一、目标单据检索与定位\n\n根据发票号（IV）在系统中检索待处理记录。",
+            },
+            {
+                "title": "附录",
+                "level": 3,
+                "content": "补充说明",
+            },
+        ]
+
+        result = merge_sections(sections)
+
+        assert result.startswith("# 采购退货业务标准操作程序 (SOP)\n\n一、目标单据检索与定位")
+        assert "### 采购退货业务标准操作程序 (SOP)" not in result
+
+    def test_does_not_promote_regular_first_section_title_when_content_is_plain_intro(self):
+        sections = [
+            {
+                "title": "",
+                "level": 1,
+                "content": "",
+            },
+            {
+                "title": "Overview",
+                "level": 2,
+                "content": "This section introduces the topic in plain prose.",
+            },
+        ]
+
+        result = merge_sections(sections)
+
+        assert result == "## Overview\n\nThis section introduces the topic in plain prose."
+
+    def test_uses_explicit_root_title_as_h1_even_when_first_section_is_numbered(self):
+        sections = [
+            {
+                "title": "Purchase Return SOP",
+                "level": 1,
+                "content": "",
+            },
+            {
+                "title": "4. Submit Review",
+                "level": 3,
+                "content": "Look up the pending record before approval.",
+            },
+        ]
+
+        result = merge_sections(sections)
+
+        assert result.startswith("# Purchase Return SOP\n\n### 4. Submit Review")
+        assert result.count("# Purchase Return SOP") == 1
+
+
+class TestResolveFinalImagePlaceholders:
+    def test_rewrites_asset_placeholder_to_exact_attachment_url(self):
+        asset_map = AssetMap(
+            items=[
+                AssetItem(
+                    id="img-1",
+                    type="image",
+                    content="/api/files/file-1/source.png",
+                )
+            ]
+        )
+
+        result = resolve_final_image_placeholders(
+            "正文\n\n![原图](asset://img-1)",
+            asset_map,
+        )
+
+        assert "![原图](/api/files/file-1/source.png)" in result
+        assert "asset://img-1" not in result
 
 
 # ---------------------------------------------------------------------------

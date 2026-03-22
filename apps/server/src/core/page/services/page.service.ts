@@ -25,6 +25,7 @@ import { AttachmentRepo } from '@docmost/db/repos/attachment/attachment.repo';
 import { v7 as uuid7 } from 'uuid';
 import {
   createYdocFromJson,
+  extractTitleAndRemoveHeading,
   getAttachmentIds,
   getProsemirrorContent,
   isAttachmentNode,
@@ -52,7 +53,9 @@ import { WatcherService } from '../../watcher/watcher.service';
 import {
   AiCommitInsertMode,
   AiCommitSelectionSnapshot,
+  AiCommitSelectionConflictError,
 } from '../../../ee/ai/creator-commit.utils';
+import { canonicalizeAttachmentImageNodes } from '../../../ee/ai/attachment-image-canonicalizer';
 
 @Injectable()
 export class PageService {
@@ -311,21 +314,42 @@ export class PageService {
         );
       }
 
-      const prosemirrorJson = await this.parseProsemirrorContent(
+      const parsedProsemirrorJson = await this.parseProsemirrorContent(
         params.content,
         'markdown',
       );
+      const canonicalizedProsemirrorJson =
+        await this.canonicalizeAiAttachmentImageNodes(
+          currentPage.id,
+          parsedProsemirrorJson,
+        );
+      const shouldPromoteTitle = this.shouldPromoteAiTitle(currentPage.title);
+      const { title: extractedTitle, prosemirrorJson } =
+        extractTitleAndRemoveHeading(canonicalizedProsemirrorJson);
 
-      const result = await this.collaborationGateway.handleYjsEvent(
-        'applyAiCommit',
-        documentName,
-        {
-          prosemirrorJson,
-          insertMode: params.insertMode,
-          selectionSnapshot: params.selectionSnapshot,
-          user,
-        },
-      );
+      let result: {
+        appliedMode: 'append' | 'overwrite' | 'replace';
+        fallbackReason: 'stale_selection' | null;
+      };
+
+      try {
+        result = await this.collaborationGateway.handleYjsEvent(
+          'applyAiCommit',
+          documentName,
+          {
+            prosemirrorJson,
+            insertMode: params.insertMode,
+            selectionSnapshot: params.selectionSnapshot,
+            user,
+          },
+        );
+      } catch (error) {
+        if (error instanceof AiCommitSelectionConflictError) {
+          throw new ConflictException(error.message);
+        }
+
+        throw error;
+      }
 
       const contributorIds = Array.from(
         new Set([...(currentPage.contributorIds || []), user.id]),
@@ -334,6 +358,9 @@ export class PageService {
 
       await this.pageRepo.updatePage(
         {
+          ...(shouldPromoteTitle && extractedTitle
+            ? { title: extractedTitle }
+            : {}),
           lastUpdatedById: user.id,
           contributorIds,
           workspaceId: currentPage.workspaceId,
@@ -928,5 +955,22 @@ export class PageService {
     }
 
     return prosemirrorJson;
+  }
+
+  private shouldPromoteAiTitle(title: string | null | undefined): boolean {
+    const normalizedTitle = title?.trim().toLowerCase();
+    return !normalizedTitle || normalizedTitle === 'untitled';
+  }
+
+  private async canonicalizeAiAttachmentImageNodes(
+    pageId: string,
+    prosemirrorJson: any,
+  ): Promise<any> {
+    const attachments = await this.attachmentRepo.findByPageId(pageId);
+    if (!attachments.length) {
+      return prosemirrorJson;
+    }
+    return canonicalizeAttachmentImageNodes(prosemirrorJson, attachments)
+      .document;
   }
 }

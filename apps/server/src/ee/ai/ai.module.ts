@@ -7,18 +7,32 @@ import { AiSearchService } from './services/ai-search.service';
 import { AiTemplateService } from './services/ai-template.service';
 import { AiQueueProcessor } from './ai-queue.processor';
 import { AiFileService } from './services/ai-file.service';
+import { DocumentTasksController } from './document-tasks/document-tasks.controller';
+import { DocumentTasksService } from './document-tasks/document-tasks.service';
+import { AgentGatewayService } from './agent-gateway/agent-gateway.service';
+import { InlineRewriteController } from './inline/inline-rewrite.controller';
+import { InlineRewriteService } from './inline/inline-rewrite.service';
 import { PageModule } from '../../core/page/page.module';
 import { AttachmentModule } from '../../core/attachment/attachment.module';
 
 @Module({
   imports: [PageModule, AttachmentModule],
-  controllers: [AiController, AiInternalController, AiTemplateController],
+  controllers: [
+    AiController,
+    AiInternalController,
+    AiTemplateController,
+    DocumentTasksController,
+    InlineRewriteController,
+  ],
   providers: [
     AiService,
     AiSearchService,
     AiTemplateService,
     AiQueueProcessor,
     AiFileService,
+    DocumentTasksService,
+    AgentGatewayService,
+    InlineRewriteService,
   ],
   exports: [AiService, AiSearchService, AiTemplateService],
 })

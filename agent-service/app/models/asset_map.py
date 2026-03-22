@@ -18,6 +18,7 @@ class AssetItem(BaseModel):
     source_page: int | None = None
     source_heading: str = ""
     mime_type: str = ""
+    source_ref: str = ""
 
 
 class AssetMap(BaseModel):
@@ -26,6 +27,7 @@ class AssetMap(BaseModel):
     source_structure: list[dict] = Field(default_factory=list)
     source_word_count: int = 0
     source_section_counts: dict[str, int] = Field(default_factory=dict)
+    document_title: str = ""
 
     def items_by_type(self, asset_type: str) -> list[AssetItem]:
         return [item for item in self.items if item.type == asset_type]

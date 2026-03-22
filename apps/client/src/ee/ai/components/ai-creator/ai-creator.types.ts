@@ -18,6 +18,7 @@ export interface AiCreatorMessage {
   briefAssetSummary?: AgentAssetSummary;
   blueprintData?: Record<string, unknown>;                 // for blueprint role
   reviewData?: Record<string, unknown>;                    // for review role
+  expertCollabData?: Record<string, unknown>;
 }
 
 export interface SelectionSnapshot {

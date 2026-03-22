@@ -9,7 +9,7 @@ import requests
 from playwright_ai_creator_utils import (
     SERVER_URL,
     build_smoke_context,
-    click_insert_to_editor,
+    click_button_by_text,
     create_authenticated_session,
     fetch_page_markdown,
     open_ai_creator,
@@ -52,20 +52,17 @@ def get_run_state(session) -> dict[str, object]:
       disabled: !!button.disabled,
     }))
     .filter((button) => button.text.length > 0);
-  const actionButtons = document.querySelectorAll('[class*="messageActions"] button').length;
-  const isStreaming = bodyText.includes('AI is writing') || bodyText.includes('AI 正在写作');
+  const isStreaming = bodyText.includes('AI is writing') || bodyText.includes('AI 姝ｅ湪鍐欎綔');
   const status = ['AWAITING_INPUT', 'RUNNING', 'BLOCKED', 'COMPLETED', 'ERROR']
     .find((value) => bodyText.includes(value)) || null;
   return {
     bodyText,
     status,
     allButtons,
-    actionButtons,
     isStreaming,
     hasBriefApproval:
-      bodyText.includes('Brief') &&
-      bodyText.includes('Needs approval') &&
-      allButtons.some((button) => /Confirm and continue|确认开始/.test(button.text)),
+      bodyText.includes('Smart Brief') &&
+      allButtons.some((button) => /Confirm and continue/.test(button.text)),
     hasBlueprintApproval: allButtons.some((button) => button.text === 'Review blueprint'),
     hasReviewApproval: allButtons.some((button) => button.text === 'Open review'),
   };
@@ -79,100 +76,220 @@ def get_run_state(session) -> dict[str, object]:
 
 
 def confirm_brief(session) -> None:
-    session.run_code(
-        """
-async (page) => {
-  const button = page.getByRole('button', { name: /Confirm and continue|确认开始/ }).first();
-  await button.waitFor({ state: 'visible', timeout: 60000 });
-  await button.click();
-}
-        """.strip(),
+    click_button_by_text(
+        session,
+        r"Confirm and continue",
         timeout_seconds=60,
     )
+
+
+def install_workbench_autopilot(session) -> None:
+    state = session.eval_json(
+        """
+(async () => {
+  if (window.__docmostWorkbenchAutopilotInstalled) {
+    return { installed: true, reused: true };
+  }
+  window.__docmostWorkbenchAutopilotState = {
+    briefConfirmed: false,
+    blueprintOpened: false,
+    blueprintConfirmed: false,
+    reviewOpenedCount: 0,
+    reviewResolvedCount: 0,
+  };
+
+  const isVisible = (element) => {
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.visibility !== 'hidden' &&
+      style.display !== 'none'
+    );
+  };
+
+  const fireClick = (button) => {
+    ['mousedown', 'mouseup', 'click'].forEach((type) => {
+      button.dispatchEvent(new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+      }));
+    });
+  };
+
+  const clickMatchingButton = (root, regex) => {
+    const button = Array.from(root.querySelectorAll('button')).find((candidate) => {
+      const text = (candidate.innerText || candidate.textContent || '').trim();
+      return regex.test(text) && isVisible(candidate) && !candidate.disabled;
+    });
+    if (!button) {
+      return null;
+    }
+    fireClick(button);
+    return (button.innerText || button.textContent || '').trim();
+  };
+
+  const tick = () => {
+    const state = window.__docmostWorkbenchAutopilotState;
+
+    if (!state.briefConfirmed && clickMatchingButton(document, /Confirm and continue/i)) {
+      state.briefConfirmed = true;
+      return;
+    }
+
+    if (!state.blueprintOpened && clickMatchingButton(document, /Review blueprint/i)) {
+      state.blueprintOpened = true;
+      return;
+    }
+
+    if (state.reviewOpenedCount === state.reviewResolvedCount && clickMatchingButton(document, /Open review/i)) {
+      state.reviewOpenedCount += 1;
+      return;
+    }
+
+    const dialog = document.querySelector('[role="dialog"]');
+    if (!dialog) {
+      return;
+    }
+
+    if (!state.blueprintConfirmed && clickMatchingButton(dialog, /^Confirm$/i)) {
+      state.blueprintConfirmed = true;
+      return;
+    }
+
+    const continueDraft = clickMatchingButton(dialog, /Continue with current draft/i);
+    if (continueDraft) {
+      state.reviewResolvedCount += 1;
+      return;
+    }
+
+    clickMatchingButton(dialog, /Select all/i);
+    const fixSelected = clickMatchingButton(dialog, /Fix selected/i);
+    if (fixSelected) {
+      state.reviewResolvedCount += 1;
+      return;
+    }
+
+    if (clickMatchingButton(dialog, /Skip visual blockers/i)) {
+      state.reviewResolvedCount += 1;
+    }
+  };
+
+  const observer = new MutationObserver(() => tick());
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    characterData: true,
+  });
+  window.__docmostWorkbenchAutopilotInstalled = true;
+  window.__docmostWorkbenchAutopilotStop = () => observer.disconnect();
+  tick();
+  return { installed: true, reused: false };
+})()
+        """.strip(),
+        timeout_seconds=30,
+    )
+    if not isinstance(state, dict) or not state.get("installed"):
+        raise RuntimeError(f"Failed to install workbench autopilot: {state!r}")
 
 
 def open_blueprint_review(session) -> None:
-    session.run_code(
-        """
-async (page) => {
-  const button = page.getByRole('button', { name: /Review blueprint/i });
-  await button.waitFor({ state: 'visible', timeout: 60000 });
-  await button.click();
-}
-        """.strip(),
-        timeout_seconds=60,
-    )
+    click_button_by_text(session, r"Review blueprint", timeout_seconds=60)
 
 
 def confirm_blueprint(session) -> None:
-    session.run_code(
-        """
-async (page) => {
-  const dialog = page.getByRole('dialog');
-  await dialog.waitFor({ state: 'visible', timeout: 60000 });
-  const button = dialog.getByRole('button').filter({ hasText: /Confirm|确认/ }).last();
-  await button.waitFor({ state: 'visible', timeout: 60000 });
-  await button.click();
-}
-        """.strip(),
+    click_button_by_text(
+        session,
+        r"Confirm",
         timeout_seconds=60,
+        within_dialog=True,
     )
 
 
 def open_review(session) -> None:
-    session.run_code(
-        """
-async (page) => {
-  const button = page.getByRole('button', { name: /Open review/i });
-  await button.waitFor({ state: 'visible', timeout: 60000 });
-  await button.click();
-}
-        """.strip(),
-        timeout_seconds=60,
-    )
+    click_button_by_text(session, r"Open review", timeout_seconds=60)
 
 
 def resolve_review(session) -> None:
-    session.run_code(
+    state = session.eval_json(
         """
-async (page) => {
-  const dialog = page.getByRole('dialog');
-  await dialog.waitFor({ state: 'visible', timeout: 60000 });
+(async () => {
+  const deadline = Date.now() + 60000;
+  const sleep = () => new Promise((resolve) => setTimeout(resolve, 100));
 
-  const continueDraft = dialog.getByRole('button', { name: /Continue with current draft/i });
-  if (await continueDraft.count()) {
-    if (!(await continueDraft.isDisabled())) {
-      await continueDraft.click();
-      return;
+  const isVisible = (element) => {
+    if (!(element instanceof HTMLElement)) {
+      return false;
     }
-  }
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.visibility !== 'hidden' &&
+      style.display !== 'none'
+    );
+  };
 
-  const selectAll = dialog.getByRole('button', { name: /Select all/i });
-  if (await selectAll.count()) {
-    await selectAll.click();
-  }
+  const findButton = (root, regex) =>
+    Array.from(root.querySelectorAll('button')).find((button) => {
+      const text = (button.innerText || button.textContent || '').trim();
+      return regex.test(text) && isVisible(button);
+    });
 
-  const fixSelected = dialog.getByRole('button').filter({ hasText: /Fix selected/i }).first();
-  if (await fixSelected.count()) {
-    if (!(await fixSelected.isDisabled())) {
-      await fixSelected.click();
-      return;
+  while (Date.now() < deadline) {
+    const dialog = document.querySelector('[role="dialog"]');
+    if (!dialog) {
+      await sleep();
+      continue;
     }
-  }
 
-  const skipVisual = dialog.getByRole('button', { name: /Skip visual blockers/i });
-  if (await skipVisual.count()) {
-    if (!(await skipVisual.isDisabled())) {
-      await skipVisual.click();
-      return;
+    const continueDraft = findButton(dialog, /Continue with current draft/i);
+    if (continueDraft && !continueDraft.disabled) {
+      continueDraft.click();
+      return { action: 'continue' };
     }
+
+    const selectAll = findButton(dialog, /Select all/i);
+    if (selectAll && !selectAll.disabled) {
+      selectAll.click();
+      await sleep();
+    }
+
+    const fixSelected = findButton(dialog, /Fix selected/i);
+    if (fixSelected && !fixSelected.disabled) {
+      fixSelected.click();
+      return { action: 'fix_selected' };
+    }
+
+    const skipVisual = findButton(dialog, /Skip visual blockers/i);
+    if (skipVisual && !skipVisual.disabled) {
+      skipVisual.click();
+      return { action: 'skip_visual' };
+    }
+
+    await sleep();
   }
 
-  throw new Error('Review dialog did not expose a usable continue action');
-}
+  return {
+    action: null,
+    bodyText: (document.body?.innerText || '').slice(0, 1600),
+  };
+})()
         """.strip(),
         timeout_seconds=60,
     )
+    if not isinstance(state, dict) or not state.get("action"):
+        raise RuntimeError(
+            "Review dialog did not expose a usable continue action.\n"
+            + json.dumps(state, ensure_ascii=False, indent=2)
+        )
 
 
 def read_session_handle(session, page_id: str) -> dict[str, object] | None:
@@ -245,23 +362,18 @@ def wait_for_final_agent_content(
 
         if (pending_phase == "brief" or state.get("hasBriefApproval")) and not brief_confirmed:
             checkpoint_excerpt = body_text[:1200]
-            confirm_brief(session)
             brief_confirmed = True
             time.sleep(2)
             continue
 
         if (pending_phase == "blueprint" or state.get("hasBlueprintApproval")) and not blueprint_confirmed:
             checkpoint_excerpt = body_text[:1200]
-            open_blueprint_review(session)
-            confirm_blueprint(session)
             blueprint_confirmed = True
             time.sleep(2)
             continue
 
         if (pending_phase == "review" or state.get("hasReviewApproval")) and review_resolution_count < 6:
             checkpoint_excerpt = body_text[:1200]
-            open_review(session)
-            resolve_review(session)
             review_resolution_count += 1
             time.sleep(2)
             continue
@@ -279,11 +391,7 @@ def wait_for_final_agent_content(
                 )
             )
 
-        if (
-            run_state == "completed"
-            and int(state.get("actionButtons") or 0) >= 2
-            and not bool(state.get("isStreaming"))
-        ):
+        if run_state == "completed" and not bool(state.get("isStreaming")):
             return checkpoint_excerpt or body_text[:1200]
 
         time.sleep(2)
@@ -333,12 +441,13 @@ def run_agent_outline_e2e() -> dict[str, object]:
         "docmost-agent-outline",
         context,
         agent_mode=True,
-        auto_insert=False,
+        auto_insert=True,
     )
 
     try:
         wait_for_editor_ready(session)
         open_ai_creator(session)
+        install_workbench_autopilot(session)
         set_prompt_and_send(session, prompt)
 
         workbench_excerpt = wait_for_final_agent_content(
@@ -347,7 +456,6 @@ def run_agent_outline_e2e() -> dict[str, object]:
             context.token,
             marker,
         )
-        click_insert_to_editor(session)
 
         persisted_markdown = wait_for_persisted_markdown(
             context.page_id,

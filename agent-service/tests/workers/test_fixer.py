@@ -55,6 +55,12 @@ def test_fix_heading_levels_h2_in_h2_section():
     assert fixed == "### Same Level\n\nContent"
 
 
+def test_fix_heading_levels_removes_redundant_leading_section_heading():
+    content = "## Intro\n\nContent"
+    fixed = auto_fix_heading_levels(content, section_level=2, section_title="Intro")
+    assert fixed == "Content"
+
+
 def test_fix_heading_levels_deeper_unchanged():
     content = "### Sub heading\n\nContent"
     fixed = auto_fix_heading_levels(content, section_level=2)
@@ -171,15 +177,40 @@ def test_fix_invalid_https_url_unchanged():
     assert fixed == content
 
 
+def test_fix_invalid_docmost_relative_api_files_url_unchanged():
+    content = "![img](/api/files/file-1/source.png)"
+    fixed = auto_fix_invalid_image_urls(content)
+    assert fixed == content
+
+
 # ── apply_auto_fixes ──────────────────────────────────────────────────────────
 
 def test_apply_auto_fixes_heading_issue():
     draft = make_draft("s1", content="# Bad Heading\n\nContent")
     issue = make_issue("i1", "s1", "format", "章节'Intro'中包含 H1 标题，但该章节本身是 H2", auto_fixable=True)
-    drafts, count = apply_auto_fixes([draft], [issue], section_levels={"s1": 2})
+    drafts, count = apply_auto_fixes(
+        [draft],
+        [issue],
+        section_levels={"s1": 2},
+        section_titles={"s1": "Intro"},
+    )
     assert count == 1
     assert issue.fixed is True
     assert "### Bad Heading" in drafts[0].content
+
+
+def test_apply_auto_fixes_heading_issue_removes_duplicate_section_title():
+    draft = make_draft("s1", content="## Intro\n\nContent")
+    issue = make_issue("i1", "s1", "format", "章节'Intro'中包含 H2 标题，且与章节标题重复", auto_fixable=True)
+    drafts, count = apply_auto_fixes(
+        [draft],
+        [issue],
+        section_levels={"s1": 2},
+        section_titles={"s1": "Intro"},
+    )
+    assert count == 1
+    assert issue.fixed is True
+    assert drafts[0].content == "Content"
 
 
 def test_apply_auto_fixes_mermaid_issue():
@@ -220,7 +251,12 @@ def test_apply_auto_fixes_skips_non_auto_fixable():
 def test_apply_auto_fixes_skips_already_fixed():
     draft = make_draft("s1", content="# H1\n\nContent")
     issue = make_issue("i1", "s1", "format", "章节'X'中包含 H1 标题，但该章节本身是 H2", auto_fixable=True, fixed=True)
-    drafts, count = apply_auto_fixes([draft], [issue], section_levels={"s1": 2})
+    drafts, count = apply_auto_fixes(
+        [draft],
+        [issue],
+        section_levels={"s1": 2},
+        section_titles={"s1": "X"},
+    )
     assert count == 0
     assert "# H1" in drafts[0].content  # unchanged
 

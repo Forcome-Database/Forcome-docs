@@ -110,7 +110,7 @@ export function AiCreatorInputV2({ onSubmit, disabled, complexityLevel, placehol
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".pdf,.docx,.doc,.png,.jpg,.jpeg,.gif,.webp"
+          accept=".pdf,.doc,.docx,.ppt,.pptx,.html,.png,.jpg,.jpeg"
           style={{ display: 'none' }}
           onChange={handleFileSelect}
         />

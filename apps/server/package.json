@@ -21,6 +21,7 @@
     "migration:latest": "tsx src/database/migrate.ts latest",
     "migration:redo": "tsx src/database/migrate.ts redo",
     "migration:reset": "tsx src/database/migrate.ts down-to NO_MIGRATIONS",
+    "repair:ai-images": "tsx src/ee/ai/repair-page-image-attachments.ts",
     "migration:codegen": "kysely-codegen --dialect=postgres --camel-case --env-file=../../.env --out-file=./src/database/types/db.d.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",

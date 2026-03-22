@@ -5,13 +5,39 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import re
+from pathlib import Path
 
 from app.models.asset_map import AssetItem, AssetMap
 from app.models.source_assets import DocumentParseResult, SourceImagePayload
 from app.tools.mineru_client import MinerUClient, MinerUConfig
 from app.utils.text import count_words, count_words_by_section
 from app.workers.mineru_parser import parse_mineru_zip
+
+MINERU_SUPPORTED_EXTENSIONS = {
+    "pdf",
+    "doc",
+    "docx",
+    "ppt",
+    "pptx",
+    "png",
+    "jpg",
+    "jpeg",
+    "html",
+}
+
+MINERU_SUPPORTED_MIMETYPES = {
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/html",
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+}
 
 
 def _get_docling_parser():
@@ -32,6 +58,7 @@ def _get_vlm_understand():
 docling_parser = None
 docmost_upload = None
 vlm_understand = None
+logger = logging.getLogger(__name__)
 
 
 def _docling_parser_invoke(args: dict) -> str:
@@ -81,26 +108,17 @@ def _build_source_image_asset(image: SourceImagePayload, filename: str) -> Asset
         source_page=image.resolved_page_number,
         source_heading=image.heading,
         mime_type=image.mime_type,
+        source_ref=image.source_ref,
     )
 
 
 def _supports_mineru(filename: str, mimetype: str) -> bool:
     extension = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
-    if extension in {"pdf", "doc", "docx", "ppt", "pptx", "png", "jpg", "jpeg", "html"}:
+    if extension in MINERU_SUPPORTED_EXTENSIONS:
         return True
 
     normalized_mime = (mimetype or "").lower()
-    return normalized_mime in {
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.ms-powerpoint",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "text/html",
-        "image/png",
-        "image/jpeg",
-        "image/jpg",
-    }
+    return normalized_mime in MINERU_SUPPORTED_MIMETYPES
 
 
 def _extract_headings(text: str) -> list[dict]:
@@ -186,6 +204,10 @@ def _extract_code_blocks(text: str) -> tuple[list[str], list[str]]:
             code_blocks.append(full_block)
 
     return code_blocks, mermaid_blocks
+
+
+def _fallback_document_title(filename: str) -> str:
+    return Path(filename).stem.strip()
 
 
 def _parse_with_docling(file_content_b64: str, filename: str, mimetype: str) -> DocumentParseResult:
@@ -307,22 +329,35 @@ def _asset_map_from_parsed_document(parsed: DocumentParseResult, filename: str) 
         source_structure=headings,
         source_word_count=count_words(text),
         source_section_counts=count_words_by_section(text),
+        document_title=(parsed.document_title or "").strip() or _fallback_document_title(filename),
     )
 
 
 def parse_document(file_content_b64: str, filename: str, mimetype: str) -> AssetMap:
     """Parse a document into the shared AssetMap contract.
 
-    Prefer MinerU for supported formats when enabled, otherwise use Docling.
-    Any MinerU failure falls back to Docling.
+    Use MinerU for all supported attachment formats.
+    Unsupported formats are rejected, and MinerU failures surface directly.
     """
-    if _supports_mineru(filename, mimetype):
-        try:
-            parsed = _parse_with_mineru(file_content_b64, filename, mimetype)
-        except Exception:
-            parsed = _parse_with_docling(file_content_b64, filename, mimetype)
-    else:
-        parsed = _parse_with_docling(file_content_b64, filename, mimetype)
+    if not _supports_mineru(filename, mimetype):
+        raise ValueError(
+            f"Unsupported attachment type for MinerU: {filename} ({mimetype or 'unknown'})"
+        )
+
+    logger.info(
+        "mineru_parse_start",
+        extra={"source_filename": filename, "source_mimetype": mimetype or "unknown"},
+    )
+    parsed = _parse_with_mineru(file_content_b64, filename, mimetype)
+    logger.info(
+        "mineru_parse_complete",
+        extra={
+            "source_filename": filename,
+            "source_mimetype": mimetype or "unknown",
+            "image_count": len(parsed.images),
+            "source_word_count": count_words(parsed.text),
+        },
+    )
 
     return _asset_map_from_parsed_document(parsed, filename)
 

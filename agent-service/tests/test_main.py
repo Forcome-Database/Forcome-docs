@@ -1,7 +1,9 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
+from app import main as main_module
 from app.main import app
 from app.config import settings
+from app.orchestrator.document_task_engine import DocumentTaskEngine
 from app.orchestrator.persistence.postgres_session_store import PostgresSessionStore
 from app.orchestrator.session_store import InMemoryRuntimeStore, SessionStore, session_store
 
@@ -20,6 +22,10 @@ async def test_health():
         resp = await client.get("/health")
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
+
+
+def test_agent_entrypoint_uses_document_task_engine():
+    assert isinstance(main_module._orchestrator, DocumentTaskEngine)
 
 
 @pytest.mark.asyncio

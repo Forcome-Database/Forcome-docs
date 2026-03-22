@@ -85,3 +85,63 @@ def test_parse_mineru_zip_extracts_text_images_and_structure():
     assert result.blocks[0]["type"] == "heading"
     assert result.blocks[1]["type"] == "heading"
     assert result.blocks[2]["type"] == "text"
+
+
+def test_parse_mineru_zip_sets_document_title_from_first_h1():
+    result = parse_mineru_zip(_sample_mineru_zip(), filename="source.pdf")
+
+    assert result.document_title == result.structure[0]["text"]
+
+
+def test_parse_mineru_zip_sets_document_title_from_top_heading_when_no_h1():
+    content_list = [
+        {
+            "type": "text",
+            "text": "Purchase Return SOP",
+            "text_level": 3,
+            "page_idx": 0,
+            "bbox": [30, 20, 900, 90],
+        },
+        {
+            "type": "text",
+            "text": "4. Submit Review",
+            "text_level": 3,
+            "page_idx": 0,
+            "bbox": [30, 180, 420, 240],
+        },
+    ]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("doc/full.md", "### Purchase Return SOP\n\n### 4. Submit Review")
+        zf.writestr("doc/content_list.json", json.dumps(content_list, ensure_ascii=False))
+
+    result = parse_mineru_zip(buf.getvalue(), filename="source.pdf")
+
+    assert result.document_title == "Purchase Return SOP"
+
+
+def test_parse_mineru_zip_does_not_treat_numbered_section_as_document_title():
+    content_list = [
+        {
+            "type": "text",
+            "text": "4. Submit Review",
+            "text_level": 3,
+            "page_idx": 0,
+            "bbox": [30, 20, 420, 80],
+        },
+        {
+            "type": "text",
+            "text": "5. Create Invoice",
+            "text_level": 3,
+            "page_idx": 0,
+            "bbox": [30, 120, 760, 200],
+        },
+    ]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("doc/full.md", "### 4. Submit Review\n\n### 5. Create Invoice")
+        zf.writestr("doc/content_list.json", json.dumps(content_list, ensure_ascii=False))
+
+    result = parse_mineru_zip(buf.getvalue(), filename="source.pdf")
+
+    assert result.document_title == ""

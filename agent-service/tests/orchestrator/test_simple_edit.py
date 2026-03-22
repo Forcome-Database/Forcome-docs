@@ -36,9 +36,20 @@ class TestSimpleEditRequest:
             system_prompt="You are a professional editor.",
             template_prompt="Focus on grammar only.",
             conversation_history=[{"role": "user", "content": "Hello"}],
+            selection_snapshot="This are",
+            local_context="Before. This are. After.",
+            action="fix_spelling_grammar",
+            task_summary_ref={
+                "summary": "Preserve the surrounding technical structure.",
+                "include_raw_history": False,
+            },
         )
         assert req.selected_text == "This are"
         assert len(req.conversation_history) == 1
+        assert req.selection_snapshot == "This are"
+        assert req.local_context == "Before. This are. After."
+        assert req.action == "fix_spelling_grammar"
+        assert req.task_summary_ref["include_raw_history"] is False
 
     def test_thread_id_required(self):
         with pytest.raises(Exception):
@@ -161,3 +172,46 @@ class TestBuildSimpleEditPrompt:
         )
         prompt = build_simple_edit_prompt(req)
         assert "Document Content" not in prompt
+
+    def test_includes_inline_rewrite_contract_sections(self):
+        req = SimpleEditRequest(
+            thread_id="t",
+            user_message="Improve the selected paragraph",
+            selection_snapshot="Original paragraph",
+            local_context="Paragraph before. Original paragraph. Paragraph after.",
+            action="improve_writing",
+            task_summary_ref={
+                "summary": "Preserve the existing structure and image references.",
+                "include_raw_history": False,
+            },
+        )
+
+        prompt = build_simple_edit_prompt(req)
+
+        assert "Inline Rewrite Action" in prompt
+        assert "improve_writing" in prompt
+        assert "Selection Snapshot" in prompt
+        assert "Original paragraph" in prompt
+        assert "Local Context" in prompt
+        assert "Paragraph before. Original paragraph. Paragraph after." in prompt
+        assert "Structured Task Summary" in prompt
+        assert "Preserve the existing structure and image references." in prompt
+
+    def test_structured_task_summary_reference_never_reintroduces_raw_history(self):
+        req = SimpleEditRequest(
+            thread_id="t",
+            user_message="Improve the selected paragraph",
+            selection_snapshot="Original paragraph",
+            task_summary_ref={
+                "summary": "Preserve the surrounding structure.",
+                "include_raw_history": False,
+            },
+            conversation_history=[
+                {"role": "user", "content": "Old chat history should stay out."}
+            ],
+        )
+
+        prompt = build_simple_edit_prompt(req)
+
+        assert "Preserve the surrounding structure." in prompt
+        assert "Old chat history should stay out." not in prompt

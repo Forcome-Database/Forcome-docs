@@ -22,4 +22,31 @@ export class AgentRunDto {
   @IsOptional()
   @IsArray()
   history?: { role: string; content: string }[];
+
+  @IsOptional()
+  @IsString()
+  pageContent?: string;
+
+  @IsOptional()
+  @IsString()
+  selectedText?: string;
+
+  @IsOptional()
+  @IsString()
+  intentRoute?: string;
+
+  @IsOptional()
+  @IsString()
+  threadId?: string;
+
+  @IsOptional()
+  @IsArray()
+  conversationHistory?: { role: string; content: string }[];
+
+  @IsOptional()
+  @IsString()
+  operation?: string;
+
+  @IsOptional()
+  documentTask?: Record<string, unknown>;
 }

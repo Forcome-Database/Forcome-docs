@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useAtom } from "jotai";
 import { IconArrowUp } from "@tabler/icons-react";
 import { showAiMenuAtom } from "@/features/editor/atoms/editor-atoms.ts";
-import { useAiGenerateStreamMutation } from "@/ee/ai/queries/ai-query.ts";
+import { useInlineRewrite } from "@/ee/ai/hooks/use-inline-rewrite";
 import { AiAction } from "@/ee/ai/types/ai.types.ts";
 import { CommandItem, commandItems, CommandSet } from "./command-items.ts";
 import { CommandSelector } from "./command-selector.tsx";
@@ -24,7 +24,7 @@ interface EditorAiMenuProps {
 
 const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
   const { t } = useTranslation();
-  const aiGenerateStreamMutation = useAiGenerateStreamMutation();
+  const inlineRewrite = useInlineRewrite();
   const location = useLocation();
   const isSmBreakpoint = useMediaQuery("(max-width: 48em)");
   const [showAiMenu, setShowAiMenu] = useAtom(showAiMenuAtom);
@@ -71,8 +71,8 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
     setOutput("");
     setActiveCommandSet("main");
     setLastAction(null);
-    aiGenerateStreamMutation.reset();
-  }, [aiGenerateStreamMutation.reset]);
+    inlineRewrite.reset();
+  }, [inlineRewrite]);
   const debouncedUpdateMenuPlacement = useDebouncedCallback(
     updateMenuPlacement,
     60,
@@ -101,32 +101,39 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
       const wrapper = document.createElement("div");
       wrapper.appendChild(fragment);
       const content = htmlToMarkdown(wrapper.innerHTML);
+      const localContext = editor.state.doc.textBetween(
+        0,
+        Math.min(4000, editor.state.doc.content.size),
+      );
 
       setOutput("");
       setIsLoading(true);
-      aiGenerateStreamMutation.mutate({
-        action: command.action,
-        prompt: command.prompt,
-        content,
-        onChunk: (chunk) => {
-          setOutput((output) => output + chunk.content);
-        },
-        onComplete: () => {
+      inlineRewrite
+        .rewriteSelection({
+          selectionSnapshot: content,
+          localContext,
+          action: command.action || AiAction.CUSTOM,
+          taskSummaryRef: {
+            summary: "Use the local document context only and preserve surrounding structure.",
+            includeRawHistory: false,
+          },
+        })
+        .then((result) => {
+          setOutput(result.candidate);
           setIsLoading(false);
           setActiveCommandSet("result");
-        },
-        onError: () => {
+        })
+        .catch(() => {
           setIsLoading(false);
           resetMenu();
-        },
-      });
+        });
       setLastAction(command);
     },
     [
       editor,
       prompt,
       isLoading,
-      aiGenerateStreamMutation.mutateAsync,
+      inlineRewrite,
       resetMenu,
     ],
   );

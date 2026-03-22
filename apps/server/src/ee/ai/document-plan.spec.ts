@@ -1,5 +1,10 @@
 import { normalizeAiDocumentPlan } from './document-plan';
 import { resolveAiDocumentStrategy } from './document-strategy';
+import {
+  createDefaultDocumentTaskApplyPayload,
+  createDefaultDocumentTaskDiffSet,
+  createDefaultDocumentTaskRollbackPayload,
+} from './document-tasks/document-task.types';
 
 describe('document plan contract', () => {
   it('uses strategy defaults when the planner returns no sections', () => {
@@ -45,5 +50,34 @@ describe('document plan contract', () => {
         ],
       },
     ]);
+  });
+
+  it('exposes mixed-granularity diff metadata for document-task review', () => {
+    const diffSet = createDefaultDocumentTaskDiffSet();
+
+    expect(diffSet).toEqual([
+      {
+        diffId: 'diff-1',
+        blockId: 'block-1',
+        granularity: 'block',
+        textDiff: {
+          granularity: 'text',
+          format: 'line',
+        },
+      },
+    ]);
+  });
+
+  it('exposes explicit apply and rollback payload shapes', () => {
+    expect(createDefaultDocumentTaskApplyPayload()).toEqual({
+      taskId: 'task-1',
+      acceptedDiffIds: ['diff-1'],
+      createRollbackSnapshot: true,
+    });
+
+    expect(createDefaultDocumentTaskRollbackPayload()).toEqual({
+      taskId: 'task-1',
+      rollbackRef: 'rollback-1',
+    });
   });
 });

@@ -252,6 +252,12 @@ def test_image_url_valid_https_ok():
     assert issues == []
 
 
+def test_image_url_docmost_relative_api_files_ok():
+    draft = make_draft("s1", content="![photo](/api/files/file-1/source.png)")
+    issues = check_image_urls([draft])
+    assert issues == []
+
+
 def test_image_url_relative_path_flagged():
     draft = make_draft("s1", content="![photo](./images/photo.png)")
     issues = check_image_urls([draft])

@@ -1,3 +1,4 @@
+import React from 'react';
 import { Badge, Button, Card, Divider, Group, NumberInput, Select, Stack, Text } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import type { AgentAssetSummary } from '../../../types/agent.types';

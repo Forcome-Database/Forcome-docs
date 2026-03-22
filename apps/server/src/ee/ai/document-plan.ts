@@ -1,3 +1,5 @@
+import type { DocumentTaskDiffGranularity } from './document-tasks/document-task.types';
+
 export const AI_DOCUMENT_ARTIFACTS = [
   'table',
   'mermaid',
@@ -36,6 +38,11 @@ export interface AiDocumentPlan {
   audience: string;
   required_artifacts: AiDocumentArtifact[];
   sections: AiDocumentPlanSection[];
+  review_defaults: {
+    review_mode: 'diff_first';
+    default_granularity: 'block';
+    supported_granularity: DocumentTaskDiffGranularity[];
+  };
 }
 
 interface AiDocumentPlanStrategyDefaults {
@@ -149,5 +156,10 @@ export function normalizeAiDocumentPlan(
       plan.required_artifacts || strategyArtifacts,
     ),
     sections,
+    review_defaults: {
+      review_mode: 'diff_first',
+      default_granularity: 'block',
+      supported_granularity: ['block', 'text'],
+    },
   };
 }

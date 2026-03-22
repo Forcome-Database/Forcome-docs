@@ -26,6 +26,7 @@ def _make_asset_map(
     source: str = "doc.md",
     word_count: int = 100,
     headings: list | None = None,
+    document_title: str = "",
 ) -> AssetMap:
     items = [
         AssetItem(
@@ -42,6 +43,7 @@ def _make_asset_map(
         source_structure=headings_list,
         source_word_count=word_count,
         source_section_counts={"Intro": word_count},
+        document_title=document_title,
     )
 
 
@@ -131,6 +133,33 @@ class TestParseAssetsTool:
         assert "H2" in texts
 
     @pytest.mark.asyncio
+    async def test_single_source_document_title_is_preserved(self):
+        expected_map = _make_asset_map("a.md", document_title="Source Title")
+
+        with patch(
+            "app.orchestrator.tools.parse_assets.parse_document",
+            return_value=expected_map,
+        ):
+            result = await parse_assets_tool(files=[_make_file("a.md")])
+
+        assert result.document_title == "Source Title"
+
+    @pytest.mark.asyncio
+    async def test_multiple_sources_do_not_pick_an_arbitrary_document_title(self):
+        map_a = _make_asset_map("a.md", document_title="Title A")
+        map_b = _make_asset_map("b.md", document_title="Title B")
+
+        with patch(
+            "app.orchestrator.tools.parse_assets.parse_document",
+            side_effect=[map_a, map_b],
+        ):
+            result = await parse_assets_tool(
+                files=[_make_file("a.md"), _make_file("b.md")]
+            )
+
+        assert result.document_title == ""
+
+    @pytest.mark.asyncio
     async def test_section_counts_accumulated(self):
         map_a = AssetMap(
             items=[],
@@ -199,3 +228,59 @@ class TestParseAssetsTool:
         image_items = result.items_by_type("image")
         assert len(image_items) == 1
         assert image_items[0].content == "https://example.com/doc.pdf/0.png"
+
+    @pytest.mark.asyncio
+    async def test_uploaded_source_text_rewrites_mineru_relative_image_paths_after_upload(self):
+        asset_map = AssetMap(
+            items=[
+                AssetItem(
+                    id="text-doc.pdf",
+                    type="text",
+                    source="doc.pdf",
+                    content="段落一\n\n![采购退货流程](images/figure-1.png)\n\n段落二",
+                    summary="Section with source image",
+                ),
+                AssetItem(
+                    id="img-doc.pdf-0",
+                    type="image",
+                    source="doc.pdf",
+                    content="data:image/png;base64,YWJj",
+                    summary="[diagram] Login flow screenshot",
+                    source_ref="images/figure-1.png",
+                ),
+            ],
+            source_word_count=100,
+        )
+        upgraded_items = [
+            asset_map.items[0],
+            AssetItem(
+                id="img-doc.pdf-0",
+                type="image",
+                source="doc.pdf",
+                content="/api/files/file-1/采购退货流程.png",
+                summary="[diagram] Login flow screenshot",
+                source_ref="images/figure-1.png",
+            ),
+        ]
+
+        with (
+            patch(
+                "app.orchestrator.tools.parse_assets.parse_document",
+                return_value=asset_map,
+            ),
+            patch(
+                "app.orchestrator.tools.parse_assets.upgrade_source_image_assets",
+                return_value=upgraded_items,
+                create=True,
+            ),
+        ):
+            result = await parse_assets_tool(
+                files=[_make_file("doc.pdf")],
+                page_id="page-abc",
+            )
+
+        text_items = result.items_by_type("text")
+        assert len(text_items) == 1
+        assert "![采购退货流程](asset://img-doc.pdf-0)" in text_items[0].content
+        assert "/api/files/file-1/采购退货流程.png" not in text_items[0].content
+        assert "images/figure-1.png" not in text_items[0].content

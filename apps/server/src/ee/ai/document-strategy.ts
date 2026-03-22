@@ -1,4 +1,9 @@
 import type { AiDocumentArtifact } from './document-plan';
+import {
+  type DocumentTaskMode,
+  type DocumentTaskSourceScope,
+  resolveDocumentTaskStrategyDefaults,
+} from './document-tasks/document-task.types';
 
 export type AiIntentRoute =
   | 'selection_edit'
@@ -7,6 +12,7 @@ export type AiIntentRoute =
 export type AiIntentScope =
   | 'selection'
   | 'uploaded_document'
+  | 'uploaded_plus_current_page'
   | 'current_page'
   | 'blank_page';
 export type AiSourcePolicy =
@@ -30,6 +36,14 @@ export interface AiDocumentStrategy {
   sourcePolicy: AiSourcePolicy;
   lengthPolicy: AiLengthPolicy;
   prioritizeUserInstructions: boolean;
+  documentTaskMode: DocumentTaskMode | null;
+  documentSourceScope: DocumentTaskSourceScope | null;
+  taskSummarySource: 'structured_summary';
+  includeRawHistory: false;
+  guardrails: {
+    preserveMeaning: true;
+    preserveImageTextCorrespondence: true;
+  };
 }
 
 const COMMON_EDITOR_HINTS = [
@@ -63,6 +77,14 @@ const DEFAULT_STRATEGY: AiDocumentStrategy = {
   sourcePolicy: 'create_new',
   lengthPolicy: 'preserve',
   prioritizeUserInstructions: true,
+  documentTaskMode: null,
+  documentSourceScope: null,
+  taskSummarySource: 'structured_summary',
+  includeRawHistory: false,
+  guardrails: {
+    preserveMeaning: true,
+    preserveImageTextCorrespondence: true,
+  },
 };
 
 const TEMPLATE_STRATEGIES: Record<string, Partial<AiDocumentStrategy>> = {
@@ -170,11 +192,17 @@ export function resolveAiDocumentStrategy(
       | 'sourcePolicy'
       | 'lengthPolicy'
       | 'prioritizeUserInstructions'
+      | 'documentTaskMode'
     >
   >,
 ): AiDocumentStrategy {
   const key = templateKey || 'general';
   const override = TEMPLATE_STRATEGIES[key] || {};
+  const documentTaskDefaults = resolveDocumentTaskStrategyDefaults({
+    intentRoute: overrides?.intentRoute || DEFAULT_STRATEGY.intentRoute,
+    scope: overrides?.scope || DEFAULT_STRATEGY.scope,
+    documentTaskMode: overrides?.documentTaskMode,
+  });
 
   return {
     ...DEFAULT_STRATEGY,
@@ -198,6 +226,11 @@ export function resolveAiDocumentStrategy(
     prioritizeUserInstructions:
       overrides?.prioritizeUserInstructions ??
       DEFAULT_STRATEGY.prioritizeUserInstructions,
+    documentTaskMode: documentTaskDefaults.documentTaskMode,
+    documentSourceScope: documentTaskDefaults.documentSourceScope,
+    taskSummarySource: documentTaskDefaults.taskSummarySource,
+    includeRawHistory: documentTaskDefaults.includeRawHistory,
+    guardrails: documentTaskDefaults.guardrails,
   };
 }
 
@@ -243,6 +276,16 @@ export function formatDocumentStrategyForPrompt(
   lines.push(`- Scope: ${strategy.scope}`);
   lines.push(`- Source policy: ${strategy.sourcePolicy}`);
   lines.push(`- Length policy: ${strategy.lengthPolicy}`);
+  lines.push(
+    `- Document task mode: ${strategy.documentTaskMode || 'none'}`,
+  );
+  lines.push(
+    `- Document task source scope: ${strategy.documentSourceScope || 'none'}`,
+  );
+  lines.push(`- Task summary source: ${strategy.taskSummarySource}`);
+  lines.push(
+    `- Raw history inheritance allowed: ${strategy.includeRawHistory ? 'yes' : 'no'}`,
+  );
   lines.push(
     `- User instructions have highest priority: ${strategy.prioritizeUserInstructions ? 'yes' : 'no'}`,
   );

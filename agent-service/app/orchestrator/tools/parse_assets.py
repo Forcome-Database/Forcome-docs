@@ -9,20 +9,128 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
+import re
 from typing import Any
 
 from app.models.asset_map import AssetMap
 from app.tools.source_image_store import clear_source_image_cache, upgrade_source_image_assets
+from app.utils.markdown_images import build_asset_image_placeholder
 from app.workers.asset_parser import parse_document
 
 # Simple in-memory cache: content hash → AssetMap
 _asset_cache: dict[str, AssetMap] = {}
+logger = logging.getLogger(__name__)
+MARKDOWN_IMAGE_REF_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+HTML_IMAGE_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc=["\'])([^"\']+)(["\'])', re.IGNORECASE)
 
 
 def _file_hash(file_info: dict) -> str:
     """Hash file content for cache key."""
     content = file_info.get("content_b64", "")
     return hashlib.md5(content.encode()).hexdigest()
+
+
+def _normalize_source_ref(ref: str) -> str:
+    normalized = (ref or "").strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+def _rewrite_text_asset_image_refs(items: list) -> list:
+    source_ref_to_url: dict[str, str] = {}
+    for item in items:
+        if item.type != "image" or not item.source_ref or not item.content:
+            continue
+        normalized_ref = _normalize_source_ref(item.source_ref)
+        if not normalized_ref:
+            continue
+        source_ref_to_url[normalized_ref] = item.content
+
+    if not source_ref_to_url:
+        return items
+
+    rewritten_items = []
+
+    def resolve_url(raw_ref: str) -> str | None:
+        normalized_ref = _normalize_source_ref(raw_ref)
+        if not normalized_ref:
+            return None
+        return source_ref_to_url.get(normalized_ref)
+
+    for item in items:
+        if item.type != "text" or not item.content:
+            rewritten_items.append(item)
+            continue
+
+        content = item.content
+
+        content = MARKDOWN_IMAGE_REF_RE.sub(
+            lambda match: (
+                f"![{match.group(1)}]({resolved})"
+                if (resolved := resolve_url(match.group(2)))
+                else match.group(0)
+            ),
+            content,
+        )
+        content = HTML_IMAGE_SRC_RE.sub(
+            lambda match: (
+                f"{match.group(1)}{resolved}{match.group(3)}"
+                if (resolved := resolve_url(match.group(2)))
+                else match.group(0)
+            ),
+            content,
+        )
+
+        rewritten_items.append(
+            item if content == item.content else item.model_copy(update={"content": content})
+        )
+
+    return rewritten_items
+
+
+def _placeholderize_text_asset_image_refs(items: list) -> list:
+    image_url_to_placeholder: dict[str, str] = {}
+    for item in items:
+        if item.type != "image" or not item.content:
+            continue
+        image_url_to_placeholder[item.content] = build_asset_image_placeholder(item.id)
+
+    if not image_url_to_placeholder:
+        return items
+
+    rewritten_items = []
+
+    for item in items:
+        if item.type != "text" or not item.content:
+            rewritten_items.append(item)
+            continue
+
+        content = item.content
+
+        content = MARKDOWN_IMAGE_REF_RE.sub(
+            lambda match: (
+                f"![{match.group(1)}]({placeholder})"
+                if (placeholder := image_url_to_placeholder.get(match.group(2)))
+                else match.group(0)
+            ),
+            content,
+        )
+        content = HTML_IMAGE_SRC_RE.sub(
+            lambda match: (
+                f"{match.group(1)}{placeholder}{match.group(3)}"
+                if (placeholder := image_url_to_placeholder.get(match.group(2)))
+                else match.group(0)
+            ),
+            content,
+        )
+
+        rewritten_items.append(
+            item if content == item.content else item.model_copy(update={"content": content})
+        )
+
+    return rewritten_items
 
 
 async def parse_assets_tool(
@@ -54,8 +162,11 @@ async def parse_assets_tool(
 
     async def parse_one(file_info: dict) -> AssetMap:
         cache_key = _file_hash(file_info)
+        filename = file_info.get("filename", "unknown")
         if cache_key in _asset_cache:
+            logger.info("asset_parse_cache_hit", extra={"source_filename": filename})
             return _asset_cache[cache_key]
+        logger.info("asset_parse_cache_miss", extra={"source_filename": filename})
 
         # parse_document is sync, run in executor
         loop = asyncio.get_event_loop()
@@ -86,8 +197,13 @@ async def parse_assets_tool(
         for key, count in asset_map.source_section_counts.items():
             combined.source_section_counts[key] = combined.source_section_counts.get(key, 0) + count
 
+    if len(results) == 1:
+        combined.document_title = results[0].document_title
+
     if page_id:
         combined.items = upgrade_source_image_assets(combined.items, page_id)
+        combined.items = _rewrite_text_asset_image_refs(combined.items)
+        combined.items = _placeholderize_text_asset_image_refs(combined.items)
 
     return combined
 

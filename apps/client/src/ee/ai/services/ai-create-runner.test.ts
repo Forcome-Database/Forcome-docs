@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { agentGenerate, getAgentSession, resumeAgent } from "./agent-service";
 import {
+  applyDocumentTaskAcceptedChanges,
+  createDocumentTask,
+  requestDocumentTaskDiff,
+  requestDocumentTaskPlan,
+  runDocumentTaskAgent,
+  rewriteInlineSelection,
+  resolveDocumentTaskCollabDecision,
+  rollbackDocumentTaskAppliedChanges,
+  submitDocumentTaskReview,
+} from "./ai-create-runner";
+import {
   normalizeAgentRunEvent,
   toAwaitInputPhase,
 } from "./ai-create-runner.utils";
@@ -622,4 +633,258 @@ test("getAgentSession preserves workbench metadata for side panels", async (t) =
       },
     ],
   });
+});
+
+test("createDocumentTask posts to the new task-centered API shell", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ input: string; init?: RequestInit }> = [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ input: String(input), init });
+    return {
+      ok: true,
+      json: async () => ({
+        taskId: "task-1",
+        operation: "create_task",
+        task: {
+          mode: "strict_preservation",
+          sourceScope: "uploaded_document",
+        },
+      }),
+    } as Response;
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const result = await createDocumentTask({
+    prompt: "Optimize this uploaded document",
+    pageId: "page-1",
+    pageContent: "Current page",
+    sourceScope: "uploaded_document",
+    mode: "strict_preservation",
+  });
+
+  assert.equal(calls[0]?.input, "/api/ai/document-tasks");
+  assert.equal(calls[0]?.init?.method, "POST");
+  assert.equal(result.task.mode, "strict_preservation");
+});
+
+test("createDocumentTask unwraps the standard API envelope before returning the task shell", async (t) => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async () =>
+    ({
+      ok: true,
+      json: async () => ({
+        data: {
+          taskId: "task-envelope-1",
+          operation: "create_task",
+          task: {
+            taskId: "task-envelope-1",
+            taskType: "document_transform",
+            mode: "strict_preservation",
+            sourceScope: "current_page",
+            status: "analyzing",
+          },
+          adapterRequest: {
+            user_message: "Optimize the current page",
+            document_task: {
+              task_id: "task-envelope-1",
+            },
+          },
+        },
+        success: true,
+        status: 201,
+      }),
+    }) as Response) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const result = await createDocumentTask({
+    prompt: "Optimize the current page",
+    pageId: "page-2",
+    pageContent: "Current page",
+    sourceScope: "current_page",
+    mode: "strict_preservation",
+  });
+
+  assert.equal(result.taskId, "task-envelope-1");
+  assert.match(JSON.stringify(result.adapterRequest), /task-envelope-1/);
+});
+
+test("document-task runner functions call explicit task operation endpoints", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ input: string; init?: RequestInit }> = [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ input: String(input), init });
+    return {
+      ok: true,
+      json: async () => ({ ok: true }),
+    } as Response;
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  await requestDocumentTaskPlan("task-1", { summary: "Need a conservative plan" });
+  await requestDocumentTaskDiff("task-1", { confirmedDecisions: [] });
+  await submitDocumentTaskReview("task-1", { acceptedDiffIds: ["diff-1"] });
+  await applyDocumentTaskAcceptedChanges("task-1", { acceptedDiffIds: ["diff-1"] });
+  await rollbackDocumentTaskAppliedChanges("task-1", { rollbackRef: "rollback-1" });
+  await resolveDocumentTaskCollabDecision("task-1", { decision: "stay_strict" });
+
+  assert.deepEqual(
+    calls.map((entry) => entry.input),
+    [
+      "/api/ai/document-tasks/task-1/plan",
+      "/api/ai/document-tasks/task-1/diff",
+      "/api/ai/document-tasks/task-1/review",
+      "/api/ai/document-tasks/task-1/apply",
+      "/api/ai/document-tasks/task-1/rollback",
+      "/api/ai/document-tasks/task-1/collab",
+    ],
+  );
+});
+
+test("runDocumentTaskAgent reuses the document-task shell adapter request instead of rebuilding form data", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ input: string; init?: RequestInit }> = [];
+  const events: string[] = [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ input: String(input), init });
+    return createStreamingResponse([
+      'data: {"type":"session","session_id":"task-1","thread_id":"task-1"}\n',
+      'data: {"type":"done","final_content":"# Draft"}\n',
+    ]);
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  runDocumentTaskAgent(
+    {
+      user_message: "Optimize this uploaded document",
+      thread_id: "task-1",
+      workspace_id: "workspace-1",
+      page_id: "page-1",
+      page_content: "Current page",
+      intent_route: "document_transform",
+      insert_mode: "overwrite",
+      document_task: {
+        task_id: "task-1",
+        task_type: "document_transform",
+        source_scope: "uploaded_document",
+        mode: "strict_preservation",
+      },
+      files: [],
+      conversation_history: [],
+    },
+    (event) => {
+      events.push(event.type);
+    },
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(calls[0]?.input, "/api/agent/run");
+  assert.equal(calls[0]?.init?.method, "POST");
+  assert.equal(
+    (calls[0]?.init?.headers as Record<string, string>)?.["Content-Type"],
+    "application/json",
+  );
+  assert.match(String(calls[0]?.init?.body), /"document_task"/);
+  assert.deepEqual(events, ["session", "done"]);
+});
+
+test("rewriteInlineSelection posts to the dedicated inline rewrite API", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ input: string; init?: RequestInit }> = [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ input: String(input), init });
+    return {
+      ok: true,
+      json: async () => ({
+        candidate: "Improved selection",
+        riskFlags: [],
+        allowedActions: ["replace_selection", "insert_below"],
+      }),
+    } as Response;
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const result = await rewriteInlineSelection({
+    selectionSnapshot: "Original paragraph",
+    localContext: "Paragraph before. Original paragraph. Paragraph after.",
+    action: "improve_writing",
+    taskSummaryRef: {
+      summary: "Preserve the surrounding document structure.",
+      includeRawHistory: false,
+    },
+  });
+
+  assert.equal(calls[0]?.input, "/api/ai/inline/rewrite");
+  assert.equal(result.candidate, "Improved selection");
+});
+
+test("rewriteInlineSelection strips raw history fields from inline payloads", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ input: string; init?: RequestInit }> = [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ input: String(input), init });
+    return {
+      ok: true,
+      json: async () => ({
+        candidate: "Improved selection",
+        riskFlags: [],
+        allowedActions: ["replace_selection", "insert_below"],
+      }),
+    } as Response;
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  await rewriteInlineSelection({
+    selectionSnapshot: "Original paragraph",
+    localContext: "Paragraph before. Original paragraph. Paragraph after.",
+    action: "improve_writing",
+    taskSummaryRef: {
+      summary: "Preserve the surrounding document structure.",
+      includeRawHistory: false,
+    },
+    history: [
+      { role: "user", content: "Legacy history must stay out of inline rewrite." },
+    ],
+    conversationHistory: [
+      { role: "assistant", content: "This should not leak into the inline request." },
+    ],
+  } as unknown as Parameters<typeof rewriteInlineSelection>[0]);
+
+  const body = JSON.parse(String(calls[0]?.init?.body ?? "{}"));
+  assert.deepEqual(body, {
+    selectionSnapshot: "Original paragraph",
+    localContext: "Paragraph before. Original paragraph. Paragraph after.",
+    action: "improve_writing",
+    taskSummaryRef: {
+      summary: "Preserve the surrounding document structure.",
+      includeRawHistory: false,
+    },
+  });
+  assert.equal("history" in body, false);
+  assert.equal("conversationHistory" in body, false);
 });

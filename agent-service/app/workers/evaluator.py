@@ -13,6 +13,7 @@ from app.models.asset_map import AssetMap
 from app.models.brief import CreationBrief
 from app.models.review import ReviewIssue, ReviewReport
 from app.orchestrator.llm_result import extract_text_output
+from app.utils.markdown_images import is_supported_image_url
 from app.utils.text import count_words
 
 
@@ -252,7 +253,7 @@ def check_image_urls(drafts: list[SectionDraft]) -> list[ReviewIssue]:
     for draft in drafts:
         images = re.findall(r'!\[([^\]]*)\]\(([^)]+)\)', draft.content)
         for alt, url in images:
-            if not url.startswith(('http://', 'https://')):
+            if not is_supported_image_url(url):
                 issues.append(ReviewIssue(
                     id=_make_issue_id(),
                     section_id=draft.section_id,

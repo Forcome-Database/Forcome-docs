@@ -9,13 +9,25 @@ import re
 from app.models.draft import SectionDraft
 from app.models.review import ReviewIssue
 from app.orchestrator.llm_result import extract_text_output
+from app.utils.markdown_images import is_supported_image_url
 from app.utils.text import count_words
 
 
 # ── deterministic auto-fixers ─────────────────────────────────────────────────
 
-def auto_fix_heading_levels(content: str, section_level: int) -> str:
+def auto_fix_heading_levels(
+    content: str,
+    section_level: int,
+    section_title: str | None = None,
+) -> str:
     """Fix heading levels that are same or higher than section level."""
+    normalized = content.strip()
+    normalized_title = (section_title or "").strip().casefold()
+    if normalized and normalized_title:
+        match = re.match(r'^(#{1,6})\s+(.+?)(?:\n+|$)', normalized)
+        if match and match.group(2).strip().casefold() == normalized_title:
+            return normalized[match.end():].lstrip()
+
     lines = content.split('\n')
     fixed = []
     for line in lines:
@@ -52,18 +64,27 @@ def auto_fix_placeholder_images(content: str) -> str:
 
 
 def auto_fix_invalid_image_urls(content: str) -> str:
-    """Remove images with non-http URLs."""
-    return re.sub(r'!\[([^\]]*)\]\((?!https?://)[^)]+\)', '', content)
+    """Remove images with unsupported URLs while preserving Docmost-managed assets."""
+
+    def replace(match: re.Match[str]) -> str:
+        alt_text, url = match.group(1), match.group(2)
+        if is_supported_image_url(url):
+            return match.group(0)
+        return ""
+
+    return re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace, content)
 
 
 def apply_auto_fixes(
     drafts: list[SectionDraft],
     issues: list[ReviewIssue],
     section_levels: dict[str, int] | None = None,
+    section_titles: dict[str, str] | None = None,
 ) -> tuple[list[SectionDraft], int]:
     """Apply all auto-fixable issues. Returns (fixed_drafts, fix_count)."""
     fix_count = 0
     section_levels = section_levels or {}
+    section_titles = section_titles or {}
 
     for draft in drafts:
         original = draft.content
@@ -79,7 +100,11 @@ def apply_auto_fixes(
         for issue in section_issues:
             if issue.category == "format" and "标题" in issue.description:
                 level = section_levels.get(draft.section_id, 2)
-                content = auto_fix_heading_levels(content, level)
+                content = auto_fix_heading_levels(
+                    content,
+                    level,
+                    section_titles.get(draft.section_id or "", ""),
+                )
             elif issue.category == "format" and "Mermaid" in issue.description:
                 content = auto_fix_empty_mermaid(content)
             elif issue.category == "visual" and "占位符" in issue.description:

@@ -28,3 +28,25 @@ test('append commits preserve incoming paragraphs under the real markdown pipeli
   assert.match(resultMarkdown, /Alpha Zeta Gamma/);
   assert.match(resultMarkdown, /OMEGA/);
 });
+
+test('replace commits throw a recoverable conflict when the selection snapshot is stale', async () => {
+  const currentHtml = await markdownToHtml('Alpha Zeta Gamma');
+  const incomingHtml = await markdownToHtml('OMEGA');
+
+  assert.throws(
+    () =>
+      applyAiCommitToDocument({
+        currentDocument: collab.htmlToJson(currentHtml),
+        incomingDocument: collab.htmlToJson(incomingHtml),
+        insertMode: 'replace',
+        selectionSnapshot: {
+          from: 1,
+          to: 6,
+          text: 'Wrong',
+        },
+      }),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.name === 'AiCommitSelectionConflictError',
+  );
+});

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -72,7 +73,7 @@ class TestParseAssetsMineruRouting:
         assert len(result.items_by_type("image")) == 1
 
     @pytest.mark.asyncio
-    async def test_parse_assets_falls_back_to_docling_when_mineru_fails(self, monkeypatch):
+    async def test_parse_assets_raises_when_mineru_fails_for_supported_pdf(self, monkeypatch):
         monkeypatch.setenv("MINERU_ENABLED", "true")
 
         with (
@@ -85,17 +86,16 @@ class TestParseAssetsMineruRouting:
                 return_value=_docling_parse_result(),
             ) as docling_mock,
         ):
-            result = await parse_assets_tool(
-                files=[_make_file("source.pdf", "application/pdf", content_b64="cGRmMg==")]
-            )
+            with pytest.raises(RuntimeError, match="MinerU unavailable"):
+                await parse_assets_tool(
+                    files=[_make_file("source.pdf", "application/pdf", content_b64="cGRmMg==")]
+                )
 
         mineru_mock.assert_called_once()
-        docling_mock.assert_called_once()
-        assert result.source_structure[0]["text"] == "Docling Title"
-        assert result.items_by_type("image") == []
+        docling_mock.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_parse_assets_keeps_docling_for_xlsx_even_when_mineru_enabled(self, monkeypatch):
+    async def test_parse_assets_rejects_formats_outside_mineru_support(self, monkeypatch):
         monkeypatch.setenv("MINERU_ENABLED", "true")
 
         with (
@@ -108,17 +108,44 @@ class TestParseAssetsMineruRouting:
                 return_value=_docling_parse_result(),
             ) as docling_mock,
         ):
-            result = await parse_assets_tool(
-                files=[
-                    _make_file(
-                        "sheet.xlsx",
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        content_b64="eGxzeA==",
-                    )
-                ]
-            )
+            with pytest.raises(ValueError, match="Unsupported attachment type"):
+                await parse_assets_tool(
+                    files=[
+                        _make_file(
+                            "sheet.xlsx",
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            content_b64="eGxzeA==",
+                        )
+                    ]
+                )
 
         mineru_mock.assert_not_called()
-        docling_mock.assert_called_once()
-        heading_items = result.items_by_type("heading_structure")
-        assert heading_items[0].summary.startswith("1 headings")
+        docling_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_parse_assets_logs_cache_miss_then_hit(self, monkeypatch, caplog):
+        monkeypatch.setenv("MINERU_ENABLED", "true")
+        caplog.set_level(logging.INFO)
+
+        with patch(
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=_mineru_parse_result(),
+        ) as mineru_mock:
+            await parse_assets_tool(
+                files=[_make_file("source.pdf", "application/pdf", content_b64="Y2FjaGU=")]
+            )
+            await parse_assets_tool(
+                files=[_make_file("source.pdf", "application/pdf", content_b64="Y2FjaGU=")]
+            )
+
+        mineru_mock.assert_called_once()
+        assert any(
+            record.message == "asset_parse_cache_miss"
+            and getattr(record, "source_filename", None) == "source.pdf"
+            for record in caplog.records
+        )
+        assert any(
+            record.message == "asset_parse_cache_hit"
+            and getattr(record, "source_filename", None) == "source.pdf"
+            for record in caplog.records
+        )

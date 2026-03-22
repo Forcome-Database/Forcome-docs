@@ -151,3 +151,52 @@ export function createYdocFromJson(prosemirrorJson: any): Buffer | null {
   }
   return null;
 }
+
+function extractTextContent(node: any): string {
+  if (!node) {
+    return '';
+  }
+
+  if (typeof node.text === 'string') {
+    return node.text;
+  }
+
+  if (!Array.isArray(node.content)) {
+    return '';
+  }
+
+  return node.content.map((child: any) => extractTextContent(child)).join('');
+}
+
+export function extractTitleAndRemoveHeading(prosemirrorJson: any): {
+  title: string | null;
+  prosemirrorJson: any;
+} {
+  const content = Array.isArray(prosemirrorJson?.content)
+    ? [...prosemirrorJson.content]
+    : [];
+
+  let title: string | null = null;
+  const firstNode = content[0];
+
+  if (firstNode?.type === 'heading' && firstNode.attrs?.level === 1) {
+    const extractedTitle = extractTextContent(firstNode).trim();
+    title = extractedTitle || null;
+    content.shift();
+  }
+
+  if (content.length === 0) {
+    content.push({
+      type: 'paragraph',
+      content: [],
+    });
+  }
+
+  return {
+    title,
+    prosemirrorJson: {
+      ...prosemirrorJson,
+      content,
+    },
+  };
+}

@@ -15,6 +15,7 @@ import {
   sanitizeFileName,
   createByteCountingStream,
 } from '../../../common/helpers';
+import { extractTitleAndRemoveHeading } from '../../../common/helpers/prosemirror/utils';
 import { generateJitteredKeyBetween } from 'fractional-indexing-jittered';
 import { TiptapTransformer } from '@hocuspocus/transformer';
 import * as Y from 'yjs';
@@ -91,7 +92,7 @@ export class ImportService {
     }
 
     const { title, prosemirrorJson } =
-      this.extractTitleAndRemoveHeading(prosemirrorState);
+      extractTitleAndRemoveHeading(prosemirrorState);
 
     const pageTitle = title || fileName;
 
@@ -195,38 +196,6 @@ export class ImportService {
     }
     return null;
   }
-
-  extractTitleAndRemoveHeading(prosemirrorState: any) {
-    let title: string | null = null;
-
-    const content = prosemirrorState.content ?? [];
-
-    if (
-      content.length > 0 &&
-      content[0].type === 'heading' &&
-      content[0].attrs?.level === 1
-    ) {
-      title = content[0].content?.[0]?.text ?? null;
-      content.shift();
-    }
-
-    // ensure at least one paragraph
-    if (content.length === 0) {
-      content.push({
-        type: 'paragraph',
-        content: [],
-      });
-    }
-
-    return {
-      title,
-      prosemirrorJson: {
-        ...prosemirrorState,
-        content,
-      },
-    };
-  }
-
   async getNewPagePosition(
     spaceId: string,
     parentPageId?: string,

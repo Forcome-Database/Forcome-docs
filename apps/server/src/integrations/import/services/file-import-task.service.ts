@@ -19,7 +19,10 @@ import { v7 } from 'uuid';
 import { generateJitteredKeyBetween } from 'fractional-indexing-jittered';
 import { FileTask, InsertablePage } from '@docmost/db/types/entity.types';
 import { markdownToHtml } from '@docmost/editor-ext';
-import { getProsemirrorContent } from '../../../common/helpers/prosemirror/utils';
+import {
+  extractTitleAndRemoveHeading,
+  getProsemirrorContent,
+} from '../../../common/helpers/prosemirror/utils';
 import { formatImportHtml } from '../utils/import-formatter';
 import {
   buildAttachmentCandidates,
@@ -458,7 +461,7 @@ export class FileImportTaskService {
             );
 
             const { title, prosemirrorJson } =
-              this.importService.extractTitleAndRemoveHeading(pmState);
+              extractTitleAndRemoveHeading(pmState);
 
             const insertablePage: InsertablePage = {
               id: page.id,

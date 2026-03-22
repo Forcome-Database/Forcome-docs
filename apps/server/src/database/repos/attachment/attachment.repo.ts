@@ -72,6 +72,22 @@ export class AttachmentRepo {
       .execute();
   }
 
+  async findByPageId(
+    pageId: string,
+    opts?: {
+      trx?: KyselyTransaction;
+    },
+  ): Promise<Attachment[]> {
+    const db = dbOrTx(this.db, opts?.trx);
+
+    return db
+      .selectFrom('attachments')
+      .select(this.baseFields)
+      .where('pageId', '=', pageId)
+      .where('deletedAt', 'is', null)
+      .execute();
+  }
+
   updateAttachmentsByPageId(
     updatableAttachment: UpdatableAttachment,
     pageIds: string[],

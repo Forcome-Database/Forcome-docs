@@ -57,6 +57,42 @@ test("run_started resets streaming artifacts and clears thread for new runs", ()
     blueprint: null,
     reviewReport: null,
     evidenceSummary: null,
+    documentTask: {
+      status: "idle",
+      sourceScope: "current_page",
+      mode: "strict_preservation",
+      deepCollaborationEnabled: true,
+      taskSummary: {
+        summarySource: "structured_summary",
+        includeRawHistory: false,
+        summary: "",
+      },
+      plan: null,
+      diffSet: [],
+      pendingChangeSet: [],
+      rollbackSnapshot: null,
+      draftSections: [],
+      brief: null,
+      blueprint: null,
+      reviewReport: null,
+      evidenceSummary: null,
+    },
+    inlineRewrite: {
+      status: "idle",
+      selectionSnapshot: null,
+      candidateResult: null,
+      actionType: null,
+      taskSummaryRef: null,
+    },
+    expertCollab: {
+      status: "idle",
+      reason: null,
+      question: null,
+      options: [],
+      recommendedOption: null,
+      confirmedDecision: null,
+      genericMessage: null,
+    },
     error: null,
   });
 });
@@ -358,4 +394,177 @@ test("draft_patch replaces draft markdown and document tree sections together", 
       content: "Updated body",
     },
   ]);
+});
+
+test("await_input updates document-task structured summary without inheriting raw message history", () => {
+  const next = aiCreateSessionReducer(createInitialAiCreateSessionState(), {
+    type: "await_input",
+    phase: "brief",
+    data: {
+      type: "brief" as const,
+      brief: {
+        audience: "engineers",
+        goal: "Keep source structure and images intact",
+        target_length: 1200,
+        length_tolerance: 0.1,
+        style: "technical",
+        tone: "direct",
+        structure_strategy: "ai_recommend",
+        image_strategy: "none",
+        constraints: [],
+      },
+      asset_summary: {
+        images: 1,
+        tables: 0,
+        code: 1,
+        text: 4,
+        source_word_count: 900,
+        source_section_counts: { h1: 1, h2: 2 },
+      },
+    },
+  });
+
+  assert.equal(next.documentTask.taskSummary.summarySource, "structured_summary");
+  assert.equal(next.documentTask.taskSummary.includeRawHistory, false);
+  assert.equal(
+    next.documentTask.taskSummary.summary,
+    "Keep source structure and images intact",
+  );
+});
+
+test("document_task_configured stores real source scope and workflow-only preference", () => {
+  const next = aiCreateSessionReducer(createInitialAiCreateSessionState(), {
+    type: "document_task_configured",
+    sourceScope: "uploaded_document",
+    mode: "strict_preservation",
+    deepCollaborationEnabled: false,
+  });
+
+  assert.equal(next.documentTask.sourceScope, "uploaded_document");
+  assert.equal(next.documentTask.mode, "strict_preservation");
+  assert.equal(next.documentTask.deepCollaborationEnabled, false);
+});
+
+test("inline rewrite state stays independent from document-task state", () => {
+  const started = aiCreateSessionReducer(createInitialAiCreateSessionState(), {
+    type: "inline_rewrite_updated",
+    selectionSnapshot: {
+      text: "Original sentence",
+      from: 10,
+      to: 27,
+    },
+    candidateResult: "Rewritten sentence",
+    actionType: "improve_writing",
+    taskSummaryRef: {
+      summary: "Use local context only",
+      includeRawHistory: false,
+    },
+  } as any);
+
+  const next = aiCreateSessionReducer(started, {
+    type: "await_input",
+    phase: "blueprint",
+    data: {
+      type: "blueprint" as const,
+      blueprint: {
+        title: "Document Plan",
+        sections: [],
+        total_word_budget: 1500,
+        style_guide: "Direct",
+        visual_plan_summary: "No visuals",
+      },
+    },
+  });
+
+  assert.equal(next.inlineRewrite.selectionSnapshot?.text, "Original sentence");
+  assert.equal(next.inlineRewrite.candidateResult, "Rewritten sentence");
+  assert.equal(next.documentTask.blueprint?.title, "Document Plan");
+});
+
+test("expert collaboration state stores structured decisions instead of generic messages", () => {
+  const pending = aiCreateSessionReducer(createInitialAiCreateSessionState(), {
+    type: "await_input",
+    phase: "review",
+    data: {
+      type: "review" as const,
+      report: {
+        overall_score: 87,
+        length_compliance: 0.98,
+        asset_reuse_rate: 0.8,
+        issues: [],
+        auto_fixed_count: 0,
+        user_decision_needed: [],
+      },
+    },
+  });
+
+  const next = aiCreateSessionReducer(pending, {
+    type: "expert_collab_confirmed",
+    reason: "review",
+    decision: {
+      resolution: "accept_review",
+      source: "structured_card",
+    },
+  } as any);
+
+  assert.equal(next.expertCollab.reason, "review");
+  assert.deepEqual(next.expertCollab.confirmedDecision, {
+    resolution: "accept_review",
+    source: "structured_card",
+  });
+  assert.equal(next.expertCollab.genericMessage, null);
+});
+
+test("pending_changes_prepared stores reviewed draft changes for later apply", () => {
+  const next = aiCreateSessionReducer(createInitialAiCreateSessionState(), {
+    type: "pending_changes_prepared",
+    pendingChangeSet: [
+      {
+        changeId: "change-1",
+        label: "Apply reviewed article",
+        content: "# Reviewed draft",
+        insertMode: "overwrite",
+        selectionSnapshot: null,
+      },
+    ],
+  } as any);
+
+  assert.deepEqual(next.documentTask.pendingChangeSet, [
+    {
+      changeId: "change-1",
+      label: "Apply reviewed article",
+      content: "# Reviewed draft",
+      insertMode: "overwrite",
+      selectionSnapshot: null,
+    },
+  ]);
+});
+
+test("apply_completed clears pending changes and registers rollback snapshot", () => {
+  const prepared = aiCreateSessionReducer(createInitialAiCreateSessionState(), {
+    type: "pending_changes_prepared",
+    pendingChangeSet: [
+      {
+        changeId: "change-1",
+        label: "Apply reviewed article",
+        content: "# Reviewed draft",
+        insertMode: "overwrite",
+        selectionSnapshot: null,
+      },
+    ],
+  } as any);
+
+  const applied = aiCreateSessionReducer(prepared, {
+    type: "apply_completed",
+    rollbackSnapshot: {
+      title: "Original title",
+      bodyJson: '{"type":"doc","content":[]}',
+    },
+  } as any);
+
+  assert.deepEqual(applied.documentTask.pendingChangeSet, []);
+  assert.deepEqual(applied.documentTask.rollbackSnapshot, {
+    title: "Original title",
+    bodyJson: '{"type":"doc","content":[]}',
+  });
 });

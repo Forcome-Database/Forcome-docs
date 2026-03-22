@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { notifications } from "@mantine/notifications";
 import { useTranslation } from "react-i18next";
 import { getPageById } from "@/features/page/services/page-service";
+import { updatePage } from "@/features/page/services/page-service";
 import type {
   AgentAwaitInputData,
   AgentResumeValue,
@@ -9,7 +10,11 @@ import type {
 } from "../types/agent.types";
 import { creatorCommit } from "../services/ai-service";
 import {
+  applyDocumentTaskAcceptedChanges,
+  createDocumentTask,
+  rollbackDocumentTaskAppliedChanges,
   runAgentAiCreate,
+  runDocumentTaskAgent,
   runStandardAiCreate,
   resumeAgentAiCreate,
   stopAgentAiCreateTask,
@@ -17,6 +22,7 @@ import {
 import { getAgentSession } from "../services/agent-service";
 import type { AiCreateRunEvent } from "../services/ai-create-runner";
 import { resolveAiIntent } from "../services/ai-intent";
+import type { DocumentTaskMode } from "../types/document-task.types";
 import type { SelectionRange } from "../components/ai-creator/ai-creator-atoms";
 import {
   aiCreateSessionReducer,
@@ -32,6 +38,7 @@ import { applyAgentStepEvent } from "../components/ai-creator/ai-create-session.
 import type {
   AiCreateAwaitInputPhase,
   AiCreateInsertMode,
+  AiCreatePendingChange,
   AiCreateSessionMode,
   AiCreateSessionState,
 } from "../components/ai-creator/ai-create-session.types";
@@ -44,6 +51,10 @@ import {
   captureAiCreatePageSnapshot,
   commitDraftWithRecovery,
 } from "./ai-create-session.commit";
+import { useDocumentTask } from "./use-document-task";
+import { useInlineRewriteSession } from "./use-inline-rewrite";
+import { useExpertCollab } from "./use-expert-collab";
+import { useTaskApplyRollback } from "./use-task-apply-rollback";
 
 const CONTINUE_KEYWORDS = ["continue", "append"];
 const SESSION_STORAGE_PREFIX = "docmost.ai.create.session";
@@ -114,6 +125,41 @@ function formatElapsed(startedAt: number | null): string | null {
   return ((Date.now() - startedAt) / 1000).toFixed(1);
 }
 
+function buildAcceptedDraftPendingChange(args: {
+  content: string;
+  insertMode: AiCreateInsertMode;
+  selectionSnapshot: SelectionSnapshot | null;
+}): AiCreatePendingChange {
+  return {
+    changeId: `pending-${Date.now()}`,
+    label:
+      args.insertMode === "replace"
+        ? "Apply reviewed rewrite"
+        : "Apply reviewed article",
+    content: args.content,
+    insertMode: args.insertMode,
+    selectionSnapshot: args.selectionSnapshot,
+  };
+}
+
+export function shouldPreparePendingChangesForCompletedRun(args: {
+  autoInsert: boolean;
+  content: string;
+  insertMode: AiCreateInsertMode | null;
+  pendingReviewAccepted: boolean;
+  sourceScope: AiCreateSessionState["documentTask"]["sourceScope"];
+}): boolean {
+  if (args.autoInsert || !args.content || !args.insertMode) {
+    return false;
+  }
+
+  if (args.pendingReviewAccepted) {
+    return true;
+  }
+
+  return args.sourceScope !== "selection";
+}
+
 function normalizePageVersion(value?: string | Date | null): string | null {
   if (!value) {
     return null;
@@ -121,6 +167,57 @@ function normalizePageVersion(value?: string | Date | null): string | null {
 
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+export function resolveApplyExpectedVersion(
+  currentVersion: string | null,
+  latestPageUpdatedAt?: string | Date | null,
+): string | null {
+  return normalizePageVersion(latestPageUpdatedAt) ?? currentVersion;
+}
+
+function resolveDocumentTaskSourceScope(
+  intent: ReturnType<typeof resolveAiIntent>,
+): AiCreateSessionState["documentTask"]["sourceScope"] {
+  if (intent.documentTask?.sourceScope) {
+    return intent.documentTask.sourceScope;
+  }
+
+  if (intent.scope === "selection") {
+    return "selection";
+  }
+
+  if (intent.scope === "blank_page") {
+    return "blank_page";
+  }
+
+  return intent.scope;
+}
+
+function resolveDocumentTaskMode(
+  intent: ReturnType<typeof resolveAiIntent>,
+): DocumentTaskMode {
+  return intent.documentTask?.mode ?? "strict_preservation";
+}
+
+export type AiCreateSubmitTransport =
+  | "legacy_standard"
+  | "document_task_shell"
+  | "inline_rewrite";
+
+export function resolveAiCreateSubmitTransport(args: {
+  effectiveMode: "standard" | "agent";
+  route: "selection_edit" | "document_transform" | "document_create";
+}): AiCreateSubmitTransport {
+  if (args.effectiveMode !== "agent") {
+    return "legacy_standard";
+  }
+
+  if (args.route === "selection_edit") {
+    return "inline_rewrite";
+  }
+
+  return "document_task_shell";
 }
 
 function getSessionStorageKey(pageId: string): string {
@@ -196,6 +293,10 @@ export function useAiCreateSession({
   const [messages, setMessages] = useState<AiCreatorMessage[]>([]);
   const [steps, setSteps] = useState<AgentStepInfo[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const documentTask = useDocumentTask(state);
+  const inlineRewrite = useInlineRewriteSession(state);
+  const expertCollab = useExpertCollab(state);
+  const applyRollback = useTaskApplyRollback(state);
   const stateRef = useRef<AiCreateSessionState>(state);
   const controllerRef = useRef<AbortController | null>(null);
   const accumulatedContentRef = useRef("");
@@ -206,6 +307,7 @@ export function useAiCreateSession({
   const startedAtRef = useRef<number | null>(null);
   const autoInsertRef = useRef(false);
   const awaitInputRef = useRef(false);
+  const pendingReviewAcceptRef = useRef(false);
   const replayedStepRef = useRef<string | null>(null);
   const pageSnapshotRef = useRef(
     captureAiCreatePageSnapshot(editor, titleEditor),
@@ -287,6 +389,7 @@ export function useAiCreateSession({
     selectionSnapshotRef.current = null;
     insertModeRef.current = null;
     threadIdRef.current = null;
+    pendingReviewAcceptRef.current = false;
     startedAtRef.current = null;
     replayedStepRef.current = null;
     clearController();
@@ -370,6 +473,7 @@ export function useAiCreateSession({
       unlockEditor();
       setIsStreaming(false);
       awaitInputRef.current = true;
+      pendingReviewAcceptRef.current = false;
       dispatch({ type: "await_input", phase, data });
     },
     [appendMessage, clearController, removeLastEmptyAssistant, unlockEditor],
@@ -387,6 +491,7 @@ export function useAiCreateSession({
       }
       unlockEditor();
       accumulatedContentRef.current = "";
+      pendingReviewAcceptRef.current = false;
       replayedStepRef.current = null;
       dispatch({ type: "error", message });
       setIsStreaming(false);
@@ -411,6 +516,32 @@ export function useAiCreateSession({
       dispatch({ type: "done" });
       setIsStreaming(false);
       replayedStepRef.current = null;
+
+      if (
+        shouldPreparePendingChangesForCompletedRun({
+          autoInsert: autoInsertRef.current,
+          content,
+          insertMode,
+          pendingReviewAccepted: pendingReviewAcceptRef.current,
+          sourceScope: stateRef.current.documentTask.sourceScope,
+        })
+      ) {
+        dispatch({
+          type: "pending_changes_prepared",
+          pendingChangeSet: [
+            buildAcceptedDraftPendingChange({
+              content,
+              insertMode,
+              selectionSnapshot,
+            }),
+          ],
+        });
+        notifications.show({
+          color: "green",
+          message: t("Draft is ready. Apply it from Pending Changes."),
+        });
+      }
+      pendingReviewAcceptRef.current = false;
 
       if (autoInsertRef.current && content && insertMode) {
         const commitResult = await commitDraftWithRecovery({
@@ -520,6 +651,7 @@ export function useAiCreateSession({
 
       autoInsertRef.current = autoInsert;
       awaitInputRef.current = false;
+      pendingReviewAcceptRef.current = false;
       accumulatedContentRef.current = "";
       selectionSnapshotRef.current = selectionSnapshot;
       insertModeRef.current = insertMode;
@@ -618,6 +750,7 @@ export function useAiCreateSession({
             });
           }
           unlockEditor();
+          pendingReviewAcceptRef.current = false;
           dispatch({
             type: "blocked",
             block: {
@@ -723,6 +856,9 @@ export function useAiCreateSession({
       history: { role: "user" | "assistant"; content: string }[],
       insertMode: AiCreateInsertMode,
       intent: ReturnType<typeof resolveAiIntent>,
+      sourceScope: AiCreateSessionState["documentTask"]["sourceScope"],
+      mode: DocumentTaskMode,
+      deepCollaborationEnabled: boolean,
     ) => {
       setSteps([]);
       controllerRef.current = runAgentAiCreate(
@@ -742,11 +878,75 @@ export function useAiCreateSession({
           selectedText: params.selection || undefined,
           conversationHistory: history.length > 0 ? history : undefined,
           intentRoute: intent.route,
+          documentTask:
+            intent.route === "selection_edit"
+              ? undefined
+              : {
+                  task_type:
+                    intent.route === "document_create"
+                      ? "document_create"
+                      : "document_transform",
+                  source_scope: sourceScope,
+                  mode,
+                  deep_collaboration_enabled: deepCollaborationEnabled,
+                },
         },
         handleRunEvent,
       );
     },
     [editor, handleRunEvent, pageId],
+  );
+
+  const startDocumentTaskRun = useCallback(
+    async (
+      params: AiCreateSessionSubmitParams,
+      intent: ReturnType<typeof resolveAiIntent>,
+      sourceScope: AiCreateSessionState["documentTask"]["sourceScope"],
+      mode: DocumentTaskMode,
+    ) => {
+      setSteps([]);
+
+      const normalizedSourceScope =
+        sourceScope === "uploaded_document" ||
+        sourceScope === "uploaded_plus_current_page" ||
+        sourceScope === "current_page"
+          ? sourceScope
+          : "current_page";
+
+      const shell = await createDocumentTask({
+        prompt: params.prompt.trim(),
+        pageId,
+        pageTitle: params.pageTitle,
+        pageContent: editor
+          ? editor.state.doc.textBetween(
+              0,
+              Math.min(5000, editor.state.doc.content.size),
+            )
+          : undefined,
+        sourceScope: normalizedSourceScope,
+        mode,
+        files: params.files,
+        taskType:
+          intent.route === "document_create"
+            ? "document_create"
+            : "document_transform",
+      });
+
+      taskIdRef.current = shell.taskId;
+      threadIdRef.current = shell.taskId;
+      dispatch({ type: "task_received", taskId: shell.taskId });
+      dispatch({ type: "session_received", threadId: shell.taskId });
+      persistSessionHandle({
+        sessionId: shell.taskId,
+        taskId: shell.taskId,
+      });
+
+      controllerRef.current = runDocumentTaskAgent(
+        shell.adapterRequest ?? {},
+        handleRunEvent,
+      );
+    },
+    [editor, handleRunEvent, pageId, persistSessionHandle],
   );
 
   const submit = useCallback(
@@ -770,6 +970,14 @@ export function useAiCreateSession({
         pageHasContent: params.pageHasContent,
         agentMode: params.agentMode,
       });
+      const sourceScope = resolveDocumentTaskSourceScope(intent);
+      const mode = resolveDocumentTaskMode(intent);
+      const submitTransport = resolveAiCreateSubmitTransport({
+        effectiveMode: intent.effectiveMode,
+        route: intent.route,
+      });
+      const deepCollaborationEnabled =
+        stateRef.current.documentTask.deepCollaborationEnabled;
       setSteps([]);
 
       const [userMessage, assistantMessage] = createPendingRunMessages({
@@ -786,10 +994,49 @@ export function useAiCreateSession({
         params.selectionRange,
         params.autoInsert,
       );
+      dispatch({
+        type: "document_task_configured",
+        sourceScope,
+        mode,
+        deepCollaborationEnabled,
+      });
+
+      if (intent.route === "selection_edit") {
+        dispatch({
+          type: "inline_rewrite_updated",
+          selectionSnapshot: params.selectionRange
+            ? {
+                text: params.selection,
+                from: params.selectionRange.from,
+                to: params.selectionRange.to,
+              }
+            : null,
+          candidateResult: null,
+          actionType: "selection_edit",
+          taskSummaryRef: {
+            summary: "Use local selection context only",
+            includeRawHistory: false,
+          },
+        });
+      }
 
       try {
-        if (intent.effectiveMode === "agent") {
-          startAgentRun(params, fullPrompt, history, insertMode, intent);
+        if (submitTransport === "document_task_shell") {
+          await startDocumentTaskRun(params, intent, sourceScope, mode);
+          return;
+        }
+
+        if (submitTransport === "inline_rewrite") {
+          startAgentRun(
+            params,
+            fullPrompt,
+            history,
+            insertMode,
+            intent,
+            sourceScope,
+            mode,
+            deepCollaborationEnabled,
+          );
           return;
         }
 
@@ -805,6 +1052,7 @@ export function useAiCreateSession({
       messages,
       prepareRun,
       startAgentRun,
+      startDocumentTaskRun,
       startStandardRun,
       t,
     ],
@@ -817,6 +1065,7 @@ export function useAiCreateSession({
         return;
       }
 
+      pendingReviewAcceptRef.current = resumeValue.type === "accept_review";
       awaitInputRef.current = false;
       const startedAt = Date.now();
       appendMessage(createAssistantPlaceholderMessage());
@@ -865,10 +1114,222 @@ export function useAiCreateSession({
     unlockEditor();
     removeLastEmptyAssistant();
     awaitInputRef.current = false;
+    pendingReviewAcceptRef.current = false;
     accumulatedContentRef.current = "";
     dispatch({ type: "cancelled" });
     setIsStreaming(false);
   }, [removeLastEmptyAssistant, unlockEditor, persistSessionHandle]);
+
+  const applyAcceptedChanges = useCallback(async () => {
+    const pendingChange = stateRef.current.documentTask.pendingChangeSet[0];
+    if (!pendingChange) {
+      return;
+    }
+
+    const currentSnapshot = captureAiCreatePageSnapshot(editor, titleEditor);
+    if (!currentSnapshot) {
+      notifications.show({
+        color: "red",
+        message: t("Current page snapshot is unavailable. Reload and try again."),
+      });
+      return;
+    }
+
+    const sessionTaskId = stateRef.current.threadId || taskIdRef.current;
+
+    if (!pageVersionRef.current) {
+      notifications.show({
+        color: "red",
+        message: t("Page version is unavailable. Reload and try again."),
+      });
+      return;
+    }
+
+    const latestPage = await getPageById({ pageId });
+    const expectedApplyVersion = resolveApplyExpectedVersion(
+      pageVersionRef.current,
+      latestPage?.updatedAt,
+    );
+
+    if (!expectedApplyVersion) {
+      notifications.show({
+        color: "red",
+        message: t("Page version is unavailable. Reload and try again."),
+      });
+      return;
+    }
+
+    pageVersionRef.current = expectedApplyVersion;
+
+    if (!sessionTaskId) {
+      const commitResult = await commitDraftWithRecovery({
+        pageId,
+        content: pendingChange.content,
+        insertMode: pendingChange.insertMode,
+        expectedUpdatedAt: expectedApplyVersion,
+        selectionSnapshot: pendingChange.selectionSnapshot,
+        pageSnapshot: currentSnapshot,
+        editor,
+        titleEditor,
+        commit: creatorCommit,
+        fetchLatestPage: async (targetPageId) =>
+          getPageById({ pageId: targetPageId }),
+      });
+
+      if (commitResult.ok) {
+        pageVersionRef.current = commitResult.result.committedAt;
+        dispatch({
+          type: "apply_completed",
+          rollbackSnapshot: {
+            title: currentSnapshot.title,
+            bodyJson: currentSnapshot.bodyJson,
+          },
+        });
+        notifications.show({
+          color: "green",
+          message: t("Accepted draft applied to the page."),
+        });
+        return;
+      }
+
+      const failedCommitResult = commitResult as Extract<
+        typeof commitResult,
+        { ok: false }
+      >;
+      const message =
+        failedCommitResult.reason === "missing_version"
+          ? t("Page version is unavailable. Reload and try again.")
+          : failedCommitResult.reason === "conflict"
+            ? t("Page changed before apply. Review the draft and retry.")
+            : failedCommitResult.error?.response?.data?.message ||
+              failedCommitResult.error?.message ||
+              t("Failed to apply the accepted draft.");
+
+      notifications.show({
+        color: "red",
+        message,
+      });
+      return;
+    }
+
+    try {
+      const result = await applyDocumentTaskAcceptedChanges(sessionTaskId, {
+        pageId,
+        content: pendingChange.content,
+        insertMode: pendingChange.insertMode,
+        expectedUpdatedAt: expectedApplyVersion,
+        selectionSnapshot: pendingChange.selectionSnapshot,
+      });
+
+      pageVersionRef.current =
+        typeof result.committedAt === "string"
+          ? result.committedAt
+          : pageVersionRef.current;
+      dispatch({
+        type: "apply_completed",
+        rollbackSnapshot:
+          result.rollbackSnapshot && typeof result.rollbackSnapshot === "object"
+            ? {
+                title: String(
+                  (result.rollbackSnapshot as { title?: unknown }).title || "",
+                ),
+                bodyJson: String(
+                  (result.rollbackSnapshot as { bodyJson?: unknown }).bodyJson ||
+                    currentSnapshot.bodyJson,
+                ),
+              }
+            : {
+                title: currentSnapshot.title,
+                bodyJson: currentSnapshot.bodyJson,
+              },
+      });
+      notifications.show({
+        color: "green",
+        message: t("Accepted draft applied to the page."),
+      });
+    } catch (error: any) {
+      notifications.show({
+        color: "red",
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          t("Failed to apply the accepted draft."),
+      });
+    }
+  }, [editor, pageId, t, titleEditor]);
+
+  const rollbackAcceptedChanges = useCallback(async () => {
+    const rollbackSnapshot = stateRef.current.documentTask.rollbackSnapshot;
+    if (!rollbackSnapshot) {
+      return;
+    }
+
+    const sessionTaskId = stateRef.current.threadId || taskIdRef.current;
+
+    if (sessionTaskId) {
+      try {
+        const result = await rollbackDocumentTaskAppliedChanges(sessionTaskId, {
+          pageId,
+          rollbackSnapshot,
+        });
+
+        pageVersionRef.current =
+          typeof result.restoredAt === "string"
+            ? result.restoredAt
+            : pageVersionRef.current;
+        dispatch({ type: "rollback_completed" });
+        notifications.show({
+          color: "green",
+          message: t("Rollback snapshot restored."),
+        });
+        return;
+      } catch (error: any) {
+        notifications.show({
+          color: "red",
+          message:
+            error?.response?.data?.message ||
+            error?.message ||
+            t("Failed to restore the rollback snapshot."),
+        });
+        return;
+      }
+    }
+
+    try {
+      const updatedPage = await updatePage({
+        pageId,
+        title: rollbackSnapshot.title,
+        content: JSON.parse(rollbackSnapshot.bodyJson),
+        operation: "replace",
+        format: "json",
+      } as any);
+
+      pageVersionRef.current = normalizePageVersion(updatedPage.updatedAt);
+      dispatch({ type: "rollback_completed" });
+      notifications.show({
+        color: "green",
+        message: t("Rollback snapshot restored."),
+      });
+    } catch (error: any) {
+      notifications.show({
+        color: "red",
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          t("Failed to restore the rollback snapshot."),
+      });
+    }
+  }, [pageId, t]);
+
+  const toggleDeepCollaboration = useCallback(() => {
+    dispatch({
+      type: "document_task_configured",
+      sourceScope: stateRef.current.documentTask.sourceScope,
+      mode: stateRef.current.documentTask.mode,
+      deepCollaborationEnabled:
+        !stateRef.current.documentTask.deepCollaborationEnabled,
+    });
+  }, []);
 
   return {
     messages,
@@ -883,6 +1344,13 @@ export function useAiCreateSession({
     blueprint: state.blueprint,
     reviewReport: state.reviewReport,
     evidenceSummary: state.evidenceSummary,
+    documentTask,
+    inlineRewrite,
+    expertCollab,
+    applyRollback,
+    applyAcceptedChanges,
+    rollbackAcceptedChanges,
+    toggleDeepCollaboration,
     submit,
     resume,
     cancel,

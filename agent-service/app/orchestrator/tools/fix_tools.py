@@ -1,14 +1,19 @@
 """Selective issue repair helpers."""
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 from app.agent.events import emit
+from app.models.asset_map import AssetMap
 from app.models.blueprint import CreationBlueprint
 from app.models.draft import SectionDraft
 from app.models.review import ReviewIssue
 from app.utils.text import count_words
+from app.workers.section_writer import materialize_section_visuals
 from app.workers.fixer import apply_auto_fixes, fix_targeted
+
+ASSET_MARKER_RE = re.compile(r"<!--asset:([a-zA-Z0-9_-]+)-->")
 
 
 async def fix_selected_issues(
@@ -16,19 +21,27 @@ async def fix_selected_issues(
     issues: list[ReviewIssue],
     selected_issue_ids: list[str],
     blueprint: CreationBlueprint,
+    asset_map: AssetMap | None = None,
+    page_id: str | None = None,
     thread_id: str = "",
     feedback: str | None = None,
 ) -> list[SectionDraft]:
     """Fix only the user-selected issues."""
 
     section_levels = {section.id: section.level for section in blueprint.sections}
+    section_titles = {section.id: section.title for section in blueprint.sections}
     auto_fixable_issues = [
         issue
         for issue in issues
         if issue.auto_fixable and not issue.fixed
     ]
     if auto_fixable_issues:
-        drafts, auto_count = apply_auto_fixes(drafts, auto_fixable_issues, section_levels)
+        drafts, auto_count = apply_auto_fixes(
+            drafts,
+            auto_fixable_issues,
+            section_levels,
+            section_titles,
+        )
         for issue in auto_fixable_issues:
             if not issue.fixed:
                 continue
@@ -91,6 +104,19 @@ async def fix_selected_issues(
         )
         draft.content = fixed_content
         draft.word_count = count_words(fixed_content)
+        draft.assets_used = sorted(set(ASSET_MARKER_RE.findall(fixed_content)))
+
+        section = blueprint.section_by_id(section_id)
+        if section:
+            rematerialized_draft = await materialize_section_visuals(
+                draft=draft,
+                section=section,
+                asset_map=asset_map,
+                thread_id=thread_id,
+                page_id=page_id,
+            )
+            drafts[drafts.index(draft)] = rematerialized_draft
+            draft = rematerialized_draft
 
         for issue in section_issues:
             issue.fixed = True

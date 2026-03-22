@@ -23,6 +23,7 @@ class SourceImagePayload(BaseModel):
     confidence: float = 0.0
     parser: str = "docling"
     is_fallback: bool = False
+    source_ref: str = ""
 
     @property
     def resolved_page_number(self) -> int | None:
@@ -37,3 +38,4 @@ class DocumentParseResult(BaseModel):
     images: list[SourceImagePayload] = Field(default_factory=list)
     structure: list[dict] = Field(default_factory=list)
     blocks: list[dict] = Field(default_factory=list)
+    document_title: str = ""

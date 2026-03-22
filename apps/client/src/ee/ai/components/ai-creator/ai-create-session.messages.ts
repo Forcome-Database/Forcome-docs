@@ -42,6 +42,13 @@ export function createInteractiveMessage(
       ...baseMessage,
       reviewData:
         "report" in data ? (data.report as unknown as Record<string, unknown>) : undefined,
+      expertCollabData:
+        "report" in data
+          ? {
+              reason: "review",
+              payload: data.report as unknown as Record<string, unknown>,
+            }
+          : undefined,
     };
   }
 

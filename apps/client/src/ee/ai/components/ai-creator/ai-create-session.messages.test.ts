@@ -77,3 +77,31 @@ test("createAssistantPlaceholderMessage creates an empty assistant message for r
   assert.equal(message.content, "");
   assert.equal(typeof message.id, "string");
 });
+
+test("createInteractiveMessage stores review decisions as structured expert-collab data instead of generic content", () => {
+  const message = createInteractiveMessage("review", {
+    type: "review",
+    report: {
+      overall_score: 91,
+      length_compliance: 1,
+      asset_reuse_rate: 0.75,
+      issues: [],
+      auto_fixed_count: 0,
+      user_decision_needed: [],
+    },
+  });
+
+  assert.equal(message.role, "review");
+  assert.equal(message.content, "");
+  assert.deepEqual(message.expertCollabData, {
+    reason: "review",
+    payload: {
+      overall_score: 91,
+      length_compliance: 1,
+      asset_reuse_rate: 0.75,
+      issues: [],
+      auto_fixed_count: 0,
+      user_decision_needed: [],
+    },
+  });
+});

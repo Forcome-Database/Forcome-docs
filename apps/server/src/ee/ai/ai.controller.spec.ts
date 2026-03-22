@@ -1,4 +1,8 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 
 jest.mock('./services/ai.service', () => ({
   AiService: class AiService {},
@@ -158,5 +162,83 @@ describe('AiController.creatorCommit', () => {
       },
       user,
     );
+  });
+});
+
+describe('AiController.creatorGenerate', () => {
+  const workspace = {
+    id: 'workspace-1',
+    settings: {
+      ai: {
+        generative: true,
+      },
+    },
+  } as any;
+
+  const user = {
+    id: 'user-1',
+  } as any;
+
+  function createController() {
+    const aiService = {
+      streamWithContext: jest.fn(),
+    };
+    const aiFileService = {
+      processBufferedFiles: jest.fn(),
+    };
+    const aiTemplateService = {
+      getSystemPrompt: jest.fn().mockResolvedValue(''),
+      getTemplatePrompt: jest.fn().mockResolvedValue(''),
+    };
+
+    const controller = new AiController(
+      aiService as any,
+      {} as any,
+      aiFileService as any,
+      aiTemplateService as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    return {
+      controller,
+      aiService,
+      aiFileService,
+    };
+  }
+
+  it('rejects file attachments on the standard creator endpoint so uploads must use the MinerU-backed agent flow', async () => {
+    const { controller, aiFileService, aiService } = createController();
+    const req = {
+      parts: async function* () {
+        yield {
+          type: 'file',
+          mimetype: 'application/pdf',
+          filename: 'spec.pdf',
+          toBuffer: async () => Buffer.from('pdf'),
+        };
+        yield {
+          type: 'field',
+          fieldname: 'prompt',
+          value: 'summarize this',
+        };
+      },
+    } as any;
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+      raw: {
+        writeHead: jest.fn(),
+        write: jest.fn(),
+        end: jest.fn(),
+      },
+    } as any;
+
+    await expect(
+      controller.creatorGenerate(req, workspace, user, res),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(aiFileService.processBufferedFiles).not.toHaveBeenCalled();
+    expect(aiService.streamWithContext).not.toHaveBeenCalled();
   });
 });

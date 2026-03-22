@@ -1,8 +1,13 @@
 import pytest
 from pydantic import ValidationError
 
+from app.models.document_task import (
+    DocumentTaskApplyPayload,
+    DocumentTaskEnvelope,
+    DocumentTaskRollbackPayload,
+)
 from app.models.session import CreationSessionSnapshot
-from app.schemas.request import AgentResumeRequest
+from app.schemas.request import AgentResumeRequest, AgentRunRequest
 from app.schemas.response import AwaitInputEvent, BlockedEvent, CancelledEvent, DraftPatchEvent, SessionEvent
 
 
@@ -42,6 +47,43 @@ def test_agent_resume_request_accepts_typed_chunk2_resume_commands():
     assert fix_selected.resume_value.selected_issue_ids == ["issue-1"]
 
 
+def test_agent_run_request_accepts_document_task_contract_without_raw_history_inheritance():
+    request = AgentRunRequest.model_validate(
+        {
+            "user_message": "Optimize this uploaded document",
+            "files": [
+                {
+                    "filename": "guide.md",
+                    "mimetype": "text/markdown",
+                    "content_b64": "Z3VpZGU=",
+                }
+            ],
+            "intent_route": "document_transform",
+            "scope": "uploaded_document",
+            "source_policy": "preserve_source",
+            "document_task": {
+                "task_id": "task-1",
+                "task_type": "document_transform",
+                "source_scope": "uploaded_document",
+                "mode": "strict_preservation",
+                "deep_collaboration_enabled": False,
+                "status": "awaiting_review",
+                "task_summary": {
+                    "summary_source": "structured_summary",
+                    "include_raw_history": False,
+                    "summary": "Optimize formatting while preserving structure.",
+                },
+            },
+        }
+    )
+
+    assert request.document_task is not None
+    assert request.document_task.mode == "strict_preservation"
+    assert request.document_task.deep_collaboration_enabled is False
+    assert request.document_task.task_summary.summary_source == "structured_summary"
+    assert request.document_task.task_summary.include_raw_history is False
+
+
 def test_agent_resume_request_rejects_legacy_resume_payloads():
     with pytest.raises(ValidationError):
         AgentResumeRequest.model_validate(
@@ -50,6 +92,70 @@ def test_agent_resume_request_rejects_legacy_resume_payloads():
                 "resume_value": {"answers": "Focus on rollback and retries."},
             }
         )
+
+
+def test_document_task_contract_accepts_mixed_granularity_diff_and_explicit_apply_rollback_payloads():
+    envelope = DocumentTaskEnvelope.model_validate(
+        {
+            "task": {
+                "task_id": "task-1",
+                "task_type": "document_transform",
+                "source_scope": "uploaded_document",
+                "mode": "strict_preservation",
+                "status": "ready_to_apply",
+                "task_summary": {
+                    "summary_source": "structured_summary",
+                    "include_raw_history": False,
+                    "summary": "Optimize the source document conservatively.",
+                },
+                "diff_set": [
+                    {
+                        "diff_id": "diff-1",
+                        "block_id": "block-1",
+                        "granularity": "block",
+                        "text_diff": {
+                            "granularity": "text",
+                            "format": "line",
+                        },
+                    }
+                ],
+            },
+            "apply": {
+                "task_id": "task-1",
+                "accepted_diff_ids": ["diff-1"],
+                "create_rollback_snapshot": True,
+            },
+            "rollback": {
+                "task_id": "task-1",
+                "rollback_ref": "rollback-1",
+            },
+        }
+    )
+
+    assert envelope.task.diff_set[0].granularity == "block"
+    assert envelope.task.diff_set[0].text_diff is not None
+    assert envelope.task.diff_set[0].text_diff.granularity == "text"
+    assert envelope.apply.create_rollback_snapshot is True
+    assert envelope.rollback.rollback_ref == "rollback-1"
+
+
+def test_explicit_apply_and_rollback_payload_models_exist():
+    apply_payload = DocumentTaskApplyPayload.model_validate(
+        {
+            "task_id": "task-1",
+            "accepted_diff_ids": ["diff-1"],
+            "create_rollback_snapshot": True,
+        }
+    )
+    rollback_payload = DocumentTaskRollbackPayload.model_validate(
+        {
+            "task_id": "task-1",
+            "rollback_ref": "rollback-1",
+        }
+    )
+
+    assert apply_payload.accepted_diff_ids == ["diff-1"]
+    assert rollback_payload.rollback_ref == "rollback-1"
 
     with pytest.raises(ValidationError):
         AgentResumeRequest.model_validate(

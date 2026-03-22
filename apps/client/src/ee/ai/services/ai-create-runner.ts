@@ -1,11 +1,25 @@
 import type { CreatorGenerateParams } from "./ai-service";
 import { creatorGenerate } from "./ai-service";
-import type { AgentGenerateParams } from "./agent-service";
+import type {
+  AgentGenerateParams,
+  AgentLegacyRunPayload,
+} from "./agent-service";
 import {
   agentGenerate,
+  agentGenerateFromShellRequest,
   resumeAgent,
   stopAgentTask,
 } from "./agent-service";
+import {
+  applyDocumentTaskAcceptedChanges as applyDocumentTaskAcceptedChangesRequest,
+  createDocumentTask as createDocumentTaskRequest,
+  requestDocumentTaskDiff as requestDocumentTaskDiffRequest,
+  requestDocumentTaskPlan as requestDocumentTaskPlanRequest,
+  resolveDocumentTaskCollabDecision as resolveDocumentTaskCollabDecisionRequest,
+  rollbackDocumentTaskAppliedChanges as rollbackDocumentTaskAppliedChangesRequest,
+  submitDocumentTaskReview as submitDocumentTaskReviewRequest,
+} from "./document-task-service";
+import { rewriteInlineSelection as rewriteInlineSelectionRequest } from "./inline-rewrite-service";
 import type { AgentResumeValue } from "../types/agent.types";
 import {
   type AiCreateRunEvent,
@@ -66,6 +80,28 @@ export function runAgentAiCreate(
   );
 }
 
+export function runDocumentTaskAgent(
+  payload: AgentLegacyRunPayload,
+  onEvent: (event: AiCreateRunEvent) => void,
+): AbortController {
+  return agentGenerateFromShellRequest(
+    payload,
+    (event) => {
+      const normalized = normalizeAgentRunEvent(event);
+      if (normalized) {
+        onEvent(normalized);
+      }
+    },
+    (message) => {
+      onEvent({ type: "error", message });
+    },
+    () => {},
+    (taskId) => {
+      onEvent({ type: "task", taskId });
+    },
+  );
+}
+
 export function resumeAgentAiCreate(
   sessionId: string,
   resumeValue: AgentResumeValue,
@@ -93,3 +129,15 @@ export function resumeAgentAiCreate(
 export async function stopAgentAiCreateTask(taskId: string): Promise<void> {
   await stopAgentTask(taskId);
 }
+
+export const createDocumentTask = createDocumentTaskRequest;
+export const requestDocumentTaskPlan = requestDocumentTaskPlanRequest;
+export const requestDocumentTaskDiff = requestDocumentTaskDiffRequest;
+export const submitDocumentTaskReview = submitDocumentTaskReviewRequest;
+export const applyDocumentTaskAcceptedChanges =
+  applyDocumentTaskAcceptedChangesRequest;
+export const rollbackDocumentTaskAppliedChanges =
+  rollbackDocumentTaskAppliedChangesRequest;
+export const resolveDocumentTaskCollabDecision =
+  resolveDocumentTaskCollabDecisionRequest;
+export const rewriteInlineSelection = rewriteInlineSelectionRequest;

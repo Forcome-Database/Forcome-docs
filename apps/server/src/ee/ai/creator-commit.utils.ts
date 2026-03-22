@@ -28,6 +28,15 @@ export interface ApplyAiCommitResult {
   fallbackReason: 'stale_selection' | null;
 }
 
+export class AiCommitSelectionConflictError extends Error {
+  constructor(
+    message = 'Selection changed during generation. Review the draft and retry replacing the selection.',
+  ) {
+    super(message);
+    this.name = 'AiCommitSelectionConflictError';
+  }
+}
+
 export function applyAiCommitToDocument({
   currentDocument,
   incomingDocument,
@@ -47,11 +56,7 @@ export function applyAiCommitToDocument({
 
   if (insertMode === 'replace') {
     if (!isSelectionSnapshotValid(currentDoc, selectionSnapshot)) {
-      return {
-        prosemirrorJson: appendDocumentContent(currentDoc, incomingDoc),
-        appliedMode: 'append',
-        fallbackReason: 'stale_selection',
-      };
+      throw new AiCommitSelectionConflictError();
     }
 
     const replacementSlice = createReplacementSlice(

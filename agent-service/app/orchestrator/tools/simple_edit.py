@@ -29,6 +29,10 @@ class SimpleEditRequest(BaseModel):
     conversation_history: list[dict] = []
     intent_route: str = "document_create"
     asset_context: str = ""
+    selection_snapshot: str = ""
+    local_context: str = ""
+    action: str = ""
+    task_summary_ref: dict | None = None
 
 
 def build_simple_edit_prompt(request: SimpleEditRequest) -> str:
@@ -51,6 +55,29 @@ def build_simple_edit_prompt(request: SimpleEditRequest) -> str:
 
     if request.template_prompt:
         parts.append(f"[Template Instructions]\n{request.template_prompt.strip()}")
+
+    if request.action:
+        parts.append(f"[Inline Rewrite Action]\n{request.action.strip()}")
+
+    if request.selection_snapshot:
+        parts.append(
+            f"[Selection Snapshot]\n{request.selection_snapshot.strip()}"
+        )
+
+    if request.local_context:
+        parts.append(f"[Local Context]\n{request.local_context.strip()}")
+
+    if request.task_summary_ref:
+        summary = str(request.task_summary_ref.get("summary", "")).strip()
+        include_raw_history = bool(
+            request.task_summary_ref.get("include_raw_history", False)
+        )
+        if summary:
+            parts.append(f"[Structured Task Summary]\n{summary}")
+        if not include_raw_history:
+            parts.append(
+                "[Task Summary Rules]\nUse the structured summary only; do not inherit raw document-task history."
+            )
 
     # Context: prefer selected text over full page content
     if request.selected_text:

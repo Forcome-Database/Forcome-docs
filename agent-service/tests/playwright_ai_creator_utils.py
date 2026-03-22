@@ -377,17 +377,103 @@ def wait_for_editor_ready(session: PlaywrightCliSession, timeout_seconds: int = 
 
 
 def open_ai_creator(session: PlaywrightCliSession, timeout_seconds: int = 30) -> None:
-    session.run_code(
-        """
-async (page) => {
-  const button = page.locator('main button:has(svg.tabler-icon-sparkles)').first();
-  await button.waitFor({ state: 'visible', timeout: 30000 });
-  await button.click();
-  await page.locator('textarea[data-ai-input]').waitFor({ state: 'visible', timeout: 30000 });
-}
+    state = session.eval_json(
+        f"""
+(async () => {{
+  const button = document.querySelector('main button:has(svg.tabler-icon-sparkles)');
+  if (!button) {{
+    return {{ opened: false, reason: 'button_not_found' }};
+  }}
+
+  button.click();
+  const deadline = Date.now() + {timeout_seconds * 1000};
+  while (Date.now() < deadline) {{
+    if (document.querySelector('textarea[data-ai-input]')) {{
+      return {{ opened: true }};
+    }}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }}
+
+  return {{
+    opened: false,
+    reason: 'textarea_not_visible',
+    bodyText: (document.body?.innerText || '').slice(0, 1200),
+  }};
+}})()
         """.strip(),
         timeout_seconds=timeout_seconds,
     )
+    if not isinstance(state, dict) or not state.get("opened"):
+        raise RuntimeError(f"Failed to open AI Creator: {state!r}")
+
+
+def click_button_by_text(
+    session: PlaywrightCliSession,
+    pattern: str,
+    *,
+    timeout_seconds: int = 60,
+    within_dialog: bool = False,
+) -> None:
+    scope_expr = "document.querySelector('[role=\"dialog\"]') || document" if within_dialog else "document"
+    state = session.eval_json(
+        f"""
+(async () => {{
+  const regex = new RegExp({json.dumps(pattern)}, 'i');
+  const deadline = Date.now() + {timeout_seconds * 1000};
+
+  const isVisible = (element) => {{
+    if (!(element instanceof HTMLElement)) {{
+      return false;
+    }}
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.visibility !== 'hidden' &&
+      style.display !== 'none'
+    );
+  }};
+
+  const fireClick = (button) => {{
+    ['mousedown', 'mouseup', 'click'].forEach((type) => {{
+      button.dispatchEvent(new MouseEvent(type, {{
+        bubbles: true,
+        cancelable: true,
+        view: window,
+      }}));
+    }});
+  }};
+
+  while (Date.now() < deadline) {{
+    const scope = {scope_expr};
+    const buttons = Array.from(scope.querySelectorAll('button'));
+    const button = buttons.find((candidate) => {{
+      const text = (candidate.innerText || candidate.textContent || '').trim();
+      return regex.test(text) && isVisible(candidate) && !candidate.disabled;
+    }});
+
+    if (button) {{
+      fireClick(button);
+      return {{
+        clicked: true,
+        text: (button.innerText || button.textContent || '').trim(),
+      }};
+    }}
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }}
+
+  return {{
+    clicked: false,
+    bodyText: (document.body?.innerText || '').slice(0, 1600),
+  }};
+}})()
+        """.strip(),
+        timeout_seconds=timeout_seconds,
+    )
+    if not isinstance(state, dict) or not state.get("clicked"):
+        raise RuntimeError(f"Failed to click button matching /{pattern}/: {state!r}")
 
 
 def set_prompt_and_send(session: PlaywrightCliSession, prompt: str) -> None:
@@ -449,25 +535,28 @@ async (page) => {{
 
 
 def click_insert_to_editor(session: PlaywrightCliSession) -> None:
-    session.run_code(
+    state = session.eval_json(
         """
-async (page) => {
-  await page.evaluate(() => {
-    const groups = Array.from(document.querySelectorAll('[class*="messageActions"]'));
-    const lastGroup = groups.at(-1);
-    if (!lastGroup) {
-      throw new Error('Message action group not found');
-    }
-    const buttons = Array.from(lastGroup.querySelectorAll('button'));
-    if (buttons.length < 2) {
-      throw new Error('Insert action not found');
-    }
-    buttons[1].click();
-  });
-}
+(async () => {
+  const groups = Array.from(document.querySelectorAll('[class*="messageActions"]'));
+  const lastGroup = groups.at(-1);
+  if (!lastGroup) {
+    return { clicked: false, reason: 'message_action_group_not_found' };
+  }
+
+  const buttons = Array.from(lastGroup.querySelectorAll('button'));
+  if (buttons.length < 2) {
+    return { clicked: false, reason: 'insert_action_not_found' };
+  }
+
+  buttons[1].click();
+  return { clicked: true };
+})()
         """.strip(),
         timeout_seconds=30,
     )
+    if not isinstance(state, dict) or not state.get("clicked"):
+        raise RuntimeError(f"Failed to click insert-to-editor action: {state!r}")
 
 
 def wait_for_editor_artifacts(

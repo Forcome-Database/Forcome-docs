@@ -41,8 +41,8 @@ import { AiCreatorFileList } from "./ai-creator-file-list";
 import { AI_TEMPLATE_OPTIONS } from "./ai-creator.types";
 import classes from "./ai-creator.module.css";
 
-const ACCEPTED_FILES = ".pdf,.docx,.doc,.png,.jpg,.jpeg,.gif,.webp";
-const IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const ACCEPTED_FILES = ".pdf,.doc,.docx,.ppt,.pptx,.html,.png,.jpg,.jpeg";
+const IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg"]);
 const MAX_FILES = 5;
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 

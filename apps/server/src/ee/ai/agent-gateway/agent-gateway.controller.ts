@@ -43,7 +43,63 @@ type AgentRunFields = {
   intentRoute?: string;
   threadId?: string;
   conversationHistory?: unknown;
+  operation?: string;
+  documentTask?: unknown;
 };
+
+type LegacyAgentRunBody = {
+  user_message?: unknown;
+  thread_id?: unknown;
+  workspace_id?: unknown;
+  page_id?: unknown;
+  page_title?: unknown;
+  page_content?: unknown;
+  selected_text?: unknown;
+  intent_route?: unknown;
+  insert_mode?: unknown;
+  files?: unknown;
+  template_id?: unknown;
+  system_prompt?: unknown;
+  template_prompt?: unknown;
+  conversation_history?: unknown;
+  operation?: unknown;
+  document_task?: unknown;
+};
+
+function isMultipartContentType(req: FastifyRequest): boolean {
+  const contentType = req.headers?.['content-type'];
+  if (Array.isArray(contentType)) {
+    return contentType.some((value) => value.includes('multipart/form-data'));
+  }
+
+  return typeof contentType === 'string' && contentType.includes('multipart/form-data');
+}
+
+function isLegacyAgentRunBody(value: unknown): value is LegacyAgentRunBody {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const body = value as Record<string, unknown>;
+  return (
+    'user_message' in body ||
+    'document_task' in body ||
+    'thread_id' in body ||
+    'intent_route' in body
+  );
+}
+
+function parseJsonField(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
 
 function writeSseHeaders(res: FastifyReply, taskId?: string) {
   if (res.raw.headersSent) {
@@ -138,7 +194,7 @@ export class AgentGatewayController {
       parts?: () => AsyncIterable<MultipartLikePart>;
     };
 
-    if (typeof multipartReq.parts === 'function') {
+    if (typeof multipartReq.parts === 'function' && isMultipartContentType(req)) {
       const fields: Record<string, unknown> = {};
       const files: Array<{ filename: string; mimetype: string; content_b64: string }> = [];
 
@@ -167,6 +223,8 @@ export class AgentGatewayController {
           selectedText: typeof fields.selectedText === 'string' ? fields.selectedText : undefined,
           intentRoute: typeof fields.intentRoute === 'string' ? fields.intentRoute : undefined,
           threadId: typeof fields.threadId === 'string' ? fields.threadId : undefined,
+          operation: typeof fields.operation === 'string' ? fields.operation : undefined,
+          documentTask: parseJsonField(fields.documentTask),
           conversationHistory:
             typeof fields.conversationHistory === 'string'
               ? JSON.parse(fields.conversationHistory)
@@ -177,7 +235,13 @@ export class AgentGatewayController {
     }
 
     const body = (req.body as AgentRunFields | undefined) ?? {};
-    return { fields: body, files: [] };
+    return {
+      fields: {
+        ...body,
+        documentTask: parseJsonField(body.documentTask),
+      },
+      files: [],
+    };
   }
 
   @Post('run')
@@ -188,6 +252,7 @@ export class AgentGatewayController {
     @AuthWorkspace() workspace: any,
   ) {
     const { fields, files } = await this.readRunRequest(req);
+    const legacyBody = isLegacyAgentRunBody(req.body) ? req.body : null;
 
     const agentUrl = this.environmentService.getAgentServiceUrl();
     if (!agentUrl) {
@@ -197,9 +262,12 @@ export class AgentGatewayController {
 
     // Resolve template prompt if provided
     let templatePrompt: string | undefined;
-    if (fields.templateId) {
+    const requestedTemplateId =
+      fields.templateId ||
+      (typeof legacyBody?.template_id === 'string' ? legacyBody.template_id : undefined);
+    if (requestedTemplateId) {
       const prompt = await this.aiTemplateService.getTemplatePrompt(
-        fields.templateId,
+        requestedTemplateId,
         workspace.id,
         user.id,
       );
@@ -210,24 +278,45 @@ export class AgentGatewayController {
     const wsSettings = workspace.settings?.ai;
     const systemPrompt: string | undefined = wsSettings?.systemPrompt || undefined;
 
-    const payload = JSON.stringify({
-      user_message: fields.prompt || '',
-      thread_id: fields.threadId || undefined,
-      workspace_id: workspace.id,
-      page_id: fields.pageId || undefined,
-      page_title: fields.pageTitle || undefined,
-      page_content: fields.pageContent || undefined,
-      selected_text: fields.selectedText || undefined,
-      intent_route: fields.intentRoute || 'document_create',
-      insert_mode: fields.insertMode || 'create',
-      files,
-      template_id: fields.templateId || undefined,
-      system_prompt: systemPrompt,
-      template_prompt: templatePrompt,
-      conversation_history: Array.isArray(fields.conversationHistory)
-        ? fields.conversationHistory
-        : [],
-    });
+    const payload = JSON.stringify(
+      legacyBody
+        ? {
+            ...legacyBody,
+            workspace_id:
+              typeof legacyBody.workspace_id === 'string'
+                ? legacyBody.workspace_id
+                : workspace.id,
+            ...(systemPrompt && typeof legacyBody.system_prompt !== 'string'
+              ? { system_prompt: systemPrompt }
+              : {}),
+            ...(templatePrompt && typeof legacyBody.template_prompt !== 'string'
+              ? { template_prompt: templatePrompt }
+              : {}),
+          }
+        : this.agentGatewayService.buildLegacyRunPayload({
+            prompt: fields.prompt || '',
+            threadId: fields.threadId,
+            workspaceId: workspace.id,
+            pageId: fields.pageId,
+            pageTitle: fields.pageTitle,
+            pageContent: fields.pageContent,
+            selectedText: fields.selectedText,
+            intentRoute: fields.intentRoute || 'document_create',
+            insertMode: fields.insertMode || 'create',
+            files,
+            templateId: fields.templateId,
+            systemPrompt,
+            templatePrompt,
+            conversationHistory: Array.isArray(fields.conversationHistory)
+              ? fields.conversationHistory
+              : [],
+            operation: fields.operation,
+            documentTask:
+              fields.documentTask && typeof fields.documentTask === 'object'
+                ? (fields.documentTask as Record<string, unknown>)
+                : null,
+          }),
+    );
 
     const url = new URL('/agent/run', agentUrl);
     const secret = this.environmentService.getAgentInternalSecret();

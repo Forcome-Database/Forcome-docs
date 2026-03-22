@@ -16,6 +16,41 @@ from app.models.blueprint import (
 from app.models.brief import CreationBrief
 from app.workers.visual_planner import plan_visuals
 
+_PLANNED_DRAFT_KEYWORDS = {
+    "comprehensive",
+    "detailed",
+    "guide",
+    "manual",
+    "playbook",
+    "proposal",
+    "report",
+    "strategy",
+    "design doc",
+    "architecture",
+    "operations",
+    "deployment",
+    "security",
+    "observability",
+    "section",
+    "outline",
+}
+
+
+def requires_outline_confirmation_for_blank_page(
+    user_message: str,
+    *,
+    has_files: bool = False,
+    page_content: str | None = None,
+) -> bool:
+    normalized = user_message.strip().lower()
+    if not normalized or has_files or (page_content or "").strip():
+        return False
+
+    word_count = len(normalized.split())
+    return word_count > 18 or any(
+        keyword in normalized for keyword in _PLANNED_DRAFT_KEYWORDS
+    )
+
 
 def _summarize_brief(brief: CreationBrief) -> str:
     parts: list[str] = []
@@ -67,6 +102,13 @@ def _source_structure_hint(asset_map: AssetMap) -> str:
     return "\n".join(lines)
 
 
+def _source_title_hint(asset_map: AssetMap) -> str:
+    title = (asset_map.document_title or "").strip()
+    if not title:
+        return ""
+    return f"Source document title: {title}"
+
+
 def build_blueprint_prompt(
     user_message: str,
     brief: CreationBrief,
@@ -83,6 +125,8 @@ def build_blueprint_prompt(
 
     if asset_map and asset_map.items:
         parts.append(f"[Available Assets]\n{_summarize_assets_for_blueprint(asset_map)}")
+        if asset_map.document_title:
+            parts.append(_source_title_hint(asset_map))
         if brief.structure_strategy == "copy_source" and asset_map.source_structure:
             parts.append(_source_structure_hint(asset_map))
 
@@ -436,7 +480,8 @@ async def generate_blueprint(
     except (TypeError, ValueError):
         pass
 
-    title = str(llm_data.get("title", "")) or user_message[:60]
+    source_title = (asset_map.document_title or "").strip() if asset_map else ""
+    title = source_title or str(llm_data.get("title", "")).strip() or user_message[:60]
     style_guide = str(llm_data.get("style_guide", "") or brief.style or "")
 
     sections = plan_visuals(sections, asset_map, brief)

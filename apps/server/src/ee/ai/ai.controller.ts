@@ -56,10 +56,11 @@ const ALLOWED_MIMETYPES = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/msword',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/html',
   'image/png',
   'image/jpeg',
-  'image/gif',
-  'image/webp',
 ]);
 
 function parseBooleanField(value?: string): boolean | undefined {
@@ -221,6 +222,12 @@ export class AiController {
     if (!prompt) {
       res.status(400).send({ message: 'prompt is required' });
       return;
+    }
+
+    if (bufferedFiles.length > 0) {
+      throw new BadRequestException(
+        'File attachments must use the MinerU-backed agent document task flow.',
+      );
     }
 
     const history = parseCreatorHistory(historyRaw);

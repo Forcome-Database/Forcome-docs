@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.models.blueprint import CreationBlueprint
 from app.models.brief import CreationBrief
+from app.models.document_task import DocumentTaskEnvelope
 from app.models.review import ReviewReport
 
 
@@ -148,4 +149,10 @@ class SessionEvent(BaseModel):
 class CancelledEvent(BaseModel):
     type: Literal["cancelled"] = "cancelled"
 
-SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ContentClearEvent | ImageEvent | DraftPatchEvent | ToolCallEvent | ErrorEvent | BlockedEvent | DoneEvent | AwaitInputEvent | SectionProgressEvent | SectionStateEvent | ComplexityAnalyzedEvent | FixAppliedEvent | SessionEvent | CancelledEvent
+
+class DocumentTaskEvent(BaseModel):
+    type: Literal["document_task"] = "document_task"
+    payload: DocumentTaskEnvelope
+
+
+SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ContentClearEvent | ImageEvent | DraftPatchEvent | ToolCallEvent | ErrorEvent | BlockedEvent | DoneEvent | AwaitInputEvent | SectionProgressEvent | SectionStateEvent | ComplexityAnalyzedEvent | FixAppliedEvent | SessionEvent | CancelledEvent | DocumentTaskEvent

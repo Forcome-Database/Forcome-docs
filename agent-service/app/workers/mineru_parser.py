@@ -4,7 +4,7 @@ import base64
 import io
 import json
 import mimetypes
-from pathlib import Path
+import re
 import zipfile
 
 from app.models.source_assets import DocumentParseResult, SourceImagePayload
@@ -56,6 +56,56 @@ def _image_member_name(zf: zipfile.ZipFile, img_path: str) -> str | None:
 
 def _mime_type_for_name(name: str) -> str:
     return mimetypes.guess_type(name)[0] or "image/png"
+
+
+SECTION_HEADING_PATTERNS = (
+    r"^\d+(?:\.\d+)*[.)]\s+",
+    r"^\d+[、.．]\s*",
+    r"^[IVXLCM]+[.)]\s+",
+    r"^[A-Z][.)]\s+",
+    r"^Chapter\s+\d+\b",
+    r"^Section\s+\d+(?:\.\d+)*\b",
+    r"^Part\s+\d+\b",
+    r"^Step\s+\d+\b",
+    r"^第[一二三四五六七八九十百千万\d]+[章节部分条步]\s*",
+)
+
+
+def _clean_title_candidate(raw: object) -> str:
+    return str(raw or "").strip().strip("#").strip()
+
+
+def _looks_like_section_heading(text: str) -> bool:
+    candidate = _clean_title_candidate(text)
+    if not candidate:
+        return False
+    return any(re.match(pattern, candidate, re.IGNORECASE) for pattern in SECTION_HEADING_PATTERNS)
+
+
+def _extract_document_title(structure: list[dict], blocks: list[dict]) -> str:
+    for heading in structure:
+        text = _clean_title_candidate(heading.get("text") or heading.get("title"))
+        if int(heading.get("level", 0) or 0) == 1 and text and not _looks_like_section_heading(text):
+            return text
+
+    for block in blocks:
+        if block.get("type") != "heading":
+            continue
+        if block.get("page_number") not in (None, 1):
+            continue
+
+        text = _clean_title_candidate(block.get("text"))
+        bbox = block.get("bbox") or []
+        top = float(bbox[1]) if len(bbox) >= 2 else 0.0
+
+        if not text or _looks_like_section_heading(text):
+            continue
+        if top > 140:
+            continue
+
+        return text
+
+    return ""
 
 
 def parse_mineru_zip(zip_bytes: bytes, filename: str) -> DocumentParseResult:
@@ -143,6 +193,7 @@ def parse_mineru_zip(zip_bytes: bytes, filename: str) -> DocumentParseResult:
                     nearby_text=nearby_text,
                     confidence=1.0,
                     parser="mineru",
+                    source_ref=img_path,
                 )
             )
             blocks.append(
@@ -172,4 +223,5 @@ def parse_mineru_zip(zip_bytes: bytes, filename: str) -> DocumentParseResult:
             images=images,
             structure=structure,
             blocks=blocks,
+            document_title=_extract_document_title(structure, blocks),
         )

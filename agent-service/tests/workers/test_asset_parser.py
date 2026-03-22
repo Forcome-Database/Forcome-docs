@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.models.asset_map import AssetItem, AssetMap
+from app.models.source_assets import DocumentParseResult, SourceImagePayload
 from app.workers.asset_parser import (
     _extract_code_blocks,
     _extract_headings,
@@ -205,27 +207,29 @@ graph TD; A-->B
 
 
 class TestParseDocument:
-    def _make_docling_response(self, text: str, images: list | None = None):
-        return json.dumps({
-            "text": text,
-            "images": images or [],
-            "image_count": len(images or []),
-        })
+    def _make_parse_result(self, text: str, images: list[dict] | None = None):
+        payloads = [
+            SourceImagePayload.model_validate(image)
+            if not isinstance(image, SourceImagePayload)
+            else image
+            for image in (images or [])
+        ]
+        return DocumentParseResult(text=text, images=payloads)
 
     def test_returns_asset_map(self):
         with patch(
-            "app.workers.asset_parser._docling_parser_invoke",
-            return_value=self._make_docling_response(SAMPLE_MARKDOWN),
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result(SAMPLE_MARKDOWN),
         ):
-            result = parse_document("abc", "test.md", "text/markdown")
+            result = parse_document("YWJj", "test.pdf", "application/pdf")
         assert isinstance(result, AssetMap)
 
     def test_extracts_headings(self):
         with patch(
-            "app.workers.asset_parser._docling_parser_invoke",
-            return_value=self._make_docling_response(SAMPLE_MARKDOWN),
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result(SAMPLE_MARKDOWN),
         ):
-            result = parse_document("abc", "test.md", "text/markdown")
+            result = parse_document("YWJj", "test.pdf", "application/pdf")
         heading_items = result.items_by_type("heading_structure")
         assert len(heading_items) == 1
         content = json.loads(heading_items[0].content)
@@ -235,10 +239,10 @@ class TestParseDocument:
 
     def test_extracts_text_sections(self):
         with patch(
-            "app.workers.asset_parser._docling_parser_invoke",
-            return_value=self._make_docling_response(SAMPLE_MARKDOWN),
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result(SAMPLE_MARKDOWN),
         ):
-            result = parse_document("abc", "test.md", "text/markdown")
+            result = parse_document("YWJj", "test.pdf", "application/pdf")
         text_items = result.items_by_type("text")
         assert len(text_items) >= 2
         # Check word counts in summaries
@@ -247,68 +251,93 @@ class TestParseDocument:
 
     def test_extracts_table(self):
         with patch(
-            "app.workers.asset_parser._docling_parser_invoke",
-            return_value=self._make_docling_response(SAMPLE_MARKDOWN),
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result(SAMPLE_MARKDOWN),
         ):
-            result = parse_document("abc", "test.md", "text/markdown")
+            result = parse_document("YWJj", "test.pdf", "application/pdf")
         table_items = result.items_by_type("table")
         assert len(table_items) == 1
         assert "Col A" in table_items[0].content
 
     def test_extracts_code_block(self):
         with patch(
-            "app.workers.asset_parser._docling_parser_invoke",
-            return_value=self._make_docling_response(SAMPLE_MARKDOWN),
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result(SAMPLE_MARKDOWN),
         ):
-            result = parse_document("abc", "test.md", "text/markdown")
+            result = parse_document("YWJj", "test.pdf", "application/pdf")
         code_items = result.items_by_type("code")
         assert len(code_items) == 1
         assert "print" in code_items[0].content
 
     def test_extracts_mermaid_block(self):
         with patch(
-            "app.workers.asset_parser._docling_parser_invoke",
-            return_value=self._make_docling_response(SAMPLE_MARKDOWN),
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result(SAMPLE_MARKDOWN),
         ):
-            result = parse_document("abc", "test.md", "text/markdown")
+            result = parse_document("YWJj", "test.pdf", "application/pdf")
         mermaid_items = result.items_by_type("mermaid")
         assert len(mermaid_items) == 1
         assert "graph TD" in mermaid_items[0].content
 
     def test_source_word_count_positive(self):
         with patch(
-            "app.workers.asset_parser._docling_parser_invoke",
-            return_value=self._make_docling_response(SAMPLE_MARKDOWN),
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result(SAMPLE_MARKDOWN),
         ):
-            result = parse_document("abc", "test.md", "text/markdown")
+            result = parse_document("YWJj", "test.pdf", "application/pdf")
         assert result.source_word_count > 0
 
     def test_source_section_counts(self):
         with patch(
-            "app.workers.asset_parser._docling_parser_invoke",
-            return_value=self._make_docling_response(SAMPLE_MARKDOWN),
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result(SAMPLE_MARKDOWN),
         ):
-            result = parse_document("abc", "test.md", "text/markdown")
+            result = parse_document("YWJj", "test.pdf", "application/pdf")
         assert isinstance(result.source_section_counts, dict)
         assert len(result.source_section_counts) > 0
 
     def test_source_label_set(self):
         with patch(
-            "app.workers.asset_parser._docling_parser_invoke",
-            return_value=self._make_docling_response(SAMPLE_MARKDOWN),
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result(SAMPLE_MARKDOWN),
         ):
-            result = parse_document("abc", "test.md", "text/markdown")
+            result = parse_document("YWJj", "test.pdf", "application/pdf")
         for item in result.items:
-            assert item.source == "test.md"
+            assert item.source == "test.pdf"
+
+    def test_carries_document_title_from_parser_result(self):
+        parse_result = self._make_parse_result(SAMPLE_MARKDOWN)
+        parse_result.document_title = "Source Document Title"
+
+        with patch(
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=parse_result,
+        ):
+            result = parse_document("YWJj", "test.pdf", "application/pdf")
+
+        assert result.document_title == "Source Document Title"
+
+    def test_falls_back_to_filename_when_parser_cannot_identify_title(self):
+        with patch(
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result("### 4. Step One\n\nDetails"),
+        ):
+            result = parse_document("YWJj", "purchase-return-sop.pdf", "application/pdf")
+
+        assert result.document_title == "purchase-return-sop"
 
     def test_empty_document(self):
         with patch(
-            "app.workers.asset_parser._docling_parser_invoke",
-            return_value=self._make_docling_response(""),
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result(""),
         ):
-            result = parse_document("abc", "empty.md", "text/markdown")
+            result = parse_document("YWJj", "empty.pdf", "application/pdf")
         assert isinstance(result, AssetMap)
         assert result.source_word_count == 0
+
+    def test_rejects_unsupported_markdown_attachment(self):
+        with pytest.raises(ValueError, match="Unsupported attachment type"):
+            parse_document("YWJj", "test.md", "text/markdown")
 
     def test_extracts_images_as_assets_with_provenance(self):
         images = [
@@ -318,13 +347,14 @@ class TestParseDocument:
                 "desc": "Login flow screenshot",
                 "page": 2,
                 "heading": "User Login",
+                "source_ref": "images/figure-1.png",
             }
         ]
         with patch(
-            "app.workers.asset_parser._docling_parser_invoke",
-            return_value=self._make_docling_response("# Title", images=images),
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result("# Title", images=images),
         ):
-            result = parse_document("abc", "test.pdf", "application/pdf")
+            result = parse_document("YWJj", "test.pdf", "application/pdf")
 
         image_items = result.items_by_type("image")
         assert len(image_items) == 1
@@ -335,6 +365,26 @@ class TestParseDocument:
         assert getattr(image_item, "caption", "") == "Login flow screenshot"
         assert getattr(image_item, "source_page", None) == 2
         assert getattr(image_item, "source_heading", "") == "User Login"
+        assert getattr(image_item, "source_ref", "") == "images/figure-1.png"
+
+    def test_logs_mineru_parse_boundaries(self, caplog):
+        caplog.set_level(logging.INFO)
+        with patch(
+            "app.workers.asset_parser._parse_with_mineru",
+            return_value=self._make_parse_result(SAMPLE_MARKDOWN),
+        ):
+            parse_document("YWJj", "logged.pdf", "application/pdf")
+
+        assert any(
+            record.message == "mineru_parse_start"
+            and getattr(record, "source_filename", None) == "logged.pdf"
+            for record in caplog.records
+        )
+        assert any(
+            record.message == "mineru_parse_complete"
+            and getattr(record, "source_filename", None) == "logged.pdf"
+            for record in caplog.records
+        )
 
 
 # ---------------------------------------------------------------------------

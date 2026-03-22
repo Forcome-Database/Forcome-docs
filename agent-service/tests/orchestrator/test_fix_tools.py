@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, patch
 
+from app.models.asset_map import AssetItem, AssetMap
 from app.models.blueprint import CreationBlueprint, SectionPlan
 from app.models.draft import SectionDraft
 from app.models.review import ReviewIssue
@@ -221,3 +222,58 @@ async def test_fix_selected_rewrites_each_affected_section_only_once():
     assert fix_targeted_mock.await_count == 1
     assert result[0].content == "Section one rewritten once."
     assert result[1].content == "Section two."
+
+
+@pytest.mark.asyncio
+async def test_fix_selected_re_materializes_planned_source_images_after_targeted_fix():
+    from app.models.blueprint import VisualPlan
+    from app.orchestrator.tools.fix_tools import fix_selected_issues
+
+    blueprint = make_blueprint(
+        SectionPlan(
+            id="s1",
+            title="Section s1",
+            level=2,
+            visuals=[
+                VisualPlan(
+                    type="reuse_image",
+                    description="Reuse uploaded source image",
+                    source_asset_id="img-source-1",
+                    position="before_section",
+                )
+            ],
+        )
+    )
+    asset_map = AssetMap(
+        items=[
+            AssetItem(
+                id="img-source-1",
+                type="image",
+                content="/api/files/file-1/source.png",
+                summary="Uploaded source image",
+            )
+        ]
+    )
+    draft = make_draft(
+        "s1",
+        content="![Old image](/api/files/file-1/source.png)\n\nSection content.",
+    )
+    issue = make_issue("i1", "s1", auto_fixable=False, category="style")
+
+    with patch("app.orchestrator.tools.fix_tools.apply_auto_fixes", return_value=([draft], 0)), \
+         patch(
+             "app.orchestrator.tools.fix_tools.fix_targeted",
+             new_callable=AsyncMock,
+             return_value="Section content without the image.",
+         ), \
+         patch("app.orchestrator.tools.fix_tools.emit", new_callable=AsyncMock):
+        result = await fix_selected_issues(
+            drafts=[draft],
+            issues=[issue],
+            selected_issue_ids=["i1"],
+            blueprint=blueprint,
+            asset_map=asset_map,
+            thread_id="t1",
+        )
+
+    assert result[0].content.startswith("![Reuse uploaded source image](/api/files/file-1/source.png)")

@@ -42,6 +42,7 @@ from app.models.blueprint import CreationBlueprint
 from app.models.document_tree import DocumentTree
 from app.models.review import ReviewIssue
 from app.models.session import SessionDraftSection
+from app.models.document_task import DocumentTask
 
 # Phase 4 tools
 from app.orchestrator.tools.evaluate import evaluate_quality
@@ -70,29 +71,41 @@ def _build_asset_summary(asset_map: object) -> dict:
     }
 
 
+def _build_text_asset_context(asset_map: object | None) -> str:
+    if not asset_map:
+        return ""
+
+    text_items = [item for item in asset_map.items if item.type == "text"]
+    if not text_items:
+        return ""
+
+    parts: list[str] = []
+    for item in text_items:
+        parts.append(f"--- Source: {item.source or item.id} ---\n{item.content}")
+    return "\n\n".join(parts)
+
+
 def _should_promote_level2_to_structured_write(
     *,
     request: object,
     asset_map: object | None,
     brief: CreationBrief,
 ) -> bool:
-    if getattr(request, "intent_route", None) != "document_transform":
+    return False
+
+
+def _should_require_brief_confirmation(request: "OrchestratorRequest") -> bool:
+    document_task = request.document_task
+    if (
+        request.intent_route == "document_transform"
+        and (
+            document_task is None
+            or document_task.mode == "strict_preservation"
+        )
+    ):
         return False
 
-    files = getattr(request, "files", []) or []
-    if len(files) != 1:
-        return False
-
-    if brief.image_strategy not in {
-        "reuse_source_only",
-        "prefer_source_then_generate",
-    }:
-        return False
-
-    if not asset_map or not hasattr(asset_map, "items_by_type"):
-        return False
-
-    return len(asset_map.items_by_type("image")) > 0
+    return True
 
 
 def _append_blueprint_audit_entry(
@@ -259,6 +272,7 @@ class OrchestratorRequest(BaseModel):
     intent_route: Literal[
         "selection_edit", "document_transform", "document_create"
     ] = "document_create"
+    document_task: DocumentTask | None = None
     template_id: str | None = None
     insert_mode: str = "create"
 
@@ -497,6 +511,7 @@ class OrchestratorEngine:
             review_report.issues.extend(alignment_issues)
 
         section_levels = {section.id: section.level for section in blueprint.sections}
+        section_titles = {section.id: section.title for section in blueprint.sections}
         auto_fixable = [issue for issue in review_report.issues if issue.auto_fixable and not issue.fixed]
         auto_count = 0
         if auto_fixable:
@@ -504,6 +519,7 @@ class OrchestratorEngine:
                 section_drafts,
                 review_report.issues,
                 section_levels,
+                section_titles,
             )
 
         review_report.auto_fixed_count = auto_count
@@ -595,6 +611,63 @@ class OrchestratorEngine:
             thread_id=request.thread_id,
             sections=[edited_content],
             insert_mode=request.insert_mode,
+            asset_map=None,
+        )
+
+        return final_content
+
+    async def _execute_preservation_patch(self, request: OrchestratorRequest) -> str:
+        """Execute strict-preservation document transforms without brief/blueprint steps."""
+        asset_map, evidence_items = await self._prepare_evidence(
+            request,
+            page_id_for_assets=request.page_id,
+        )
+        if failed_required_evidence(evidence_items):
+            return await self._emit_evidence_block(
+                thread_id=request.thread_id,
+                evidence_items=evidence_items,
+            )
+
+        session_store.upsert_session(
+            session_id=request.thread_id,
+            thread_id=request.thread_id,
+            phase="preservation_patch",
+            pending_decision=None,
+            blocked=None,
+        )
+
+        asset_context = _build_text_asset_context(asset_map)
+        preservation_instructions = (
+            "[Preservation Patch]\n"
+            "Preserve structure, factual meaning, images, tables, links, and code blocks.\n"
+            "Use uploaded sources as the primary input when files are present.\n"
+            "Do not introduce brief confirmation, blueprint planning, or section-by-section rewriting."
+        )
+        merged_asset_context = (
+            f"{asset_context}\n\n{preservation_instructions}"
+            if asset_context
+            else preservation_instructions
+        )
+
+        edit_request = SimpleEditRequest(
+            thread_id=request.thread_id,
+            user_message=request.user_message,
+            page_content=request.page_content,
+            selected_text=request.selected_text,
+            system_prompt=request.system_prompt,
+            template_prompt=request.template_prompt,
+            conversation_history=request.conversation_history,
+            intent_route=request.intent_route,
+            asset_context=merged_asset_context,
+        )
+
+        edited_content = await execute_simple_edit(edit_request)
+
+        final_content = await finalize_and_emit(
+            thread_id=request.thread_id,
+            sections=[edited_content],
+            insert_mode=request.insert_mode,
+            asset_map=asset_map,
         )
 
         return final_content
@@ -639,20 +712,27 @@ class OrchestratorEngine:
             phase="brief",
             brief=brief,
         )
-
-        # Step 3: Emit brief for user confirmation and wait
-        brief_response = await self._await_user_input(
-            thread_id=request.thread_id,
-            phase="brief",
-            data={
-                "type": "brief",
-                "brief": brief.model_dump(),
-                "asset_summary": _build_asset_summary(asset_map),
-            },
-            timeout_message="等待 Brief 确认超时（10分钟），任务已取消",
-        )
-        if isinstance(brief_response, dict) and brief_response.get("brief"):
-            brief = CreationBrief.model_validate(brief_response["brief"])
+        if _should_require_brief_confirmation(request):
+            brief_response = await self._await_user_input(
+                thread_id=request.thread_id,
+                phase="brief",
+                data={
+                    "type": "brief",
+                    "brief": brief.model_dump(),
+                    "asset_summary": _build_asset_summary(asset_map),
+                },
+                timeout_message="Timed out waiting for brief confirmation.",
+            )
+            if isinstance(brief_response, dict) and brief_response.get("brief"):
+                brief = CreationBrief.model_validate(brief_response["brief"])
+        else:
+            session_store.upsert_session(
+                session_id=request.thread_id,
+                thread_id=request.thread_id,
+                phase="brief_confirmed",
+                brief=brief,
+                pending_decision=None,
+            )
 
         if _should_promote_level2_to_structured_write(
             request=request,
@@ -682,14 +762,7 @@ class OrchestratorEngine:
             )
 
         # Step 4: Build asset context for simple_edit
-        asset_context = ""
-        if asset_map:
-            text_items = [item for item in asset_map.items if item.type == "text"]
-            if text_items:
-                parts = []
-                for item in text_items:
-                    parts.append(f"--- Source: {item.source or item.id} ---\n{item.content}")
-                asset_context = "\n\n".join(parts)
+        asset_context = _build_text_asset_context(asset_map)
 
         brief_summary = (
             f"[Smart Brief]\n"
@@ -719,6 +792,7 @@ class OrchestratorEngine:
             thread_id=request.thread_id,
             sections=[edited_content],
             insert_mode=request.insert_mode,
+            asset_map=asset_map,
         )
 
         return final_content
@@ -876,6 +950,8 @@ class OrchestratorEngine:
                 issues=review_report.issues,
                 selected_issue_ids=selected_ids,
                 blueprint=blueprint,
+                asset_map=asset_map,
+                page_id=request.page_id,
                 thread_id=request.thread_id,
                 feedback=feedback if isinstance(feedback, str) else None,
             )
@@ -901,6 +977,7 @@ class OrchestratorEngine:
             thread_id=request.thread_id,
             sections=document_tree_to_sections(document_tree),
             insert_mode=request.insert_mode,
+            asset_map=asset_map,
         )
         session_store.upsert_session(
             session_id=request.thread_id,
@@ -1192,6 +1269,8 @@ class OrchestratorEngine:
                 issues=review_report.issues,
                 selected_issue_ids=selected_ids,
                 blueprint=blueprint,
+                asset_map=asset_map,
+                page_id=request.page_id,
                 thread_id=request.thread_id,
                 feedback=feedback if isinstance(feedback, str) else None,
             )
@@ -1218,6 +1297,7 @@ class OrchestratorEngine:
             thread_id=request.thread_id,
             sections=document_tree_to_sections(document_tree),
             insert_mode=request.insert_mode,
+            asset_map=asset_map,
         )
         session_store.upsert_session(
             session_id=request.thread_id,

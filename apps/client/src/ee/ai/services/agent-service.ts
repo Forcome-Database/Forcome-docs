@@ -21,7 +21,11 @@ export interface AgentGenerateParams {
   intentRoute?: "selection_edit" | "document_transform" | "document_create";
   threadId?: string;
   conversationHistory?: { role: string; content: string }[];
+  operation?: string;
+  documentTask?: Record<string, unknown>;
 }
+
+export type AgentLegacyRunPayload = Record<string, unknown>;
 
 function createReaderErrorMessage(): string {
   return 'Unable to read agent response stream';
@@ -273,6 +277,10 @@ export function agentGenerate(
   if (params.selectedText) formData.append('selectedText', params.selectedText);
   if (params.intentRoute) formData.append('intentRoute', params.intentRoute);
   if (params.threadId) formData.append('threadId', params.threadId);
+  if (params.operation) formData.append('operation', params.operation);
+  if (params.documentTask) {
+    formData.append('documentTask', JSON.stringify(params.documentTask));
+  }
   const history = params.conversationHistory ?? params.history ?? [];
   if (history.length > 0) {
     formData.append('conversationHistory', JSON.stringify(history));
@@ -281,6 +289,61 @@ export function agentGenerate(
   fetch('/api/agent/run', {
     method: 'POST',
     body: formData,
+    signal: controller.signal,
+  })
+    .then(async (resp) => {
+      if (!resp.ok) {
+        onError(`Agent request failed: ${resp.status}`);
+        return;
+      }
+
+      const taskId = resp.headers.get('X-Task-Id');
+      if (taskId) {
+        onTaskId?.(taskId);
+      }
+
+      const reader = resp.body?.getReader();
+      if (!reader) {
+        onError(createReaderErrorMessage());
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        buffer = consumeAgentSseBuffer(buffer, onEvent);
+      }
+
+      flushFinalAgentSseBuffer(buffer + decoder.decode(), onEvent);
+      onComplete();
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        onError(err.message || 'Agent request failed');
+      }
+    });
+
+  return controller;
+}
+
+export function agentGenerateFromShellRequest(
+  payload: AgentLegacyRunPayload,
+  onEvent: (event: AgentSSEEvent) => void,
+  onError: (error: string) => void,
+  onComplete: () => void,
+  onTaskId?: (taskId: string) => void,
+): AbortController {
+  const controller = new AbortController();
+
+  fetch('/api/agent/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
     signal: controller.signal,
   })
     .then(async (resp) => {

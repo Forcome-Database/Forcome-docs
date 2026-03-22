@@ -19,6 +19,8 @@ import asyncio
 from enum import StrEnum
 from typing import Any
 
+from app.models.review import ReviewIssue, ReviewReport
+
 
 class InteractionPhase(StrEnum):
     """Phases at which the orchestrator may pause for user input."""
@@ -122,3 +124,36 @@ class InteractionRegistry:
 
 # Module-level singleton
 interaction_registry = InteractionRegistry()
+
+
+def build_synthesis_conflict_review(conflicts: list[dict[str, str]]) -> dict:
+    issues = [
+        ReviewIssue(
+            id=str(conflict.get("conflict_id") or f"conflict-{index + 1}"),
+            section_id=None,
+            severity="warning",
+            category="content",
+            description=str(
+                conflict.get("details")
+                or conflict.get("title")
+                or "Sources disagree and need a structured resolution."
+            ),
+            suggestion="Choose which source to prioritize or describe how to reconcile the disagreement.",
+            auto_fixable=False,
+            fixed=False,
+        )
+        for index, conflict in enumerate(conflicts)
+    ]
+    report = ReviewReport(
+        overall_score=0,
+        length_compliance=1.0,
+        asset_reuse_rate=1.0,
+        issues=issues,
+        auto_fixed_count=0,
+        user_decision_needed=[issue.id for issue in issues],
+    )
+
+    return {
+        "type": "review",
+        "report": report.model_dump(),
+    }

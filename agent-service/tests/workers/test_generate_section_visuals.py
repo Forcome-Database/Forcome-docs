@@ -17,11 +17,13 @@ from app.models.blueprint import SectionPlan, VisualPlan
 def _make_section(
     sid: str = "s1",
     visuals: list[VisualPlan] | None = None,
+    assets: list[str] | None = None,
 ) -> SectionPlan:
     return SectionPlan(
         id=sid,
         title="Test Section",
         visuals=visuals or [],
+        assets=assets or [],
         word_budget=300,
     )
 
@@ -250,3 +252,118 @@ class TestGenerateSectionVisuals:
         mock_generate.assert_not_awaited()
         assert result.visuals_generated == []
         assert "https://cdn.example.com/source.png" in result.content
+
+    @pytest.mark.asyncio
+    async def test_materialize_section_visuals_preserves_docmost_internal_image_paths(self):
+        from app.models.draft import SectionDraft
+        from app.workers.section_writer import materialize_section_visuals
+
+        section = _make_section(
+            visuals=[VisualPlan(type="reuse_image", description="reference screenshot", source_asset_id="img-1")]
+        )
+        draft = SectionDraft(section_id="s1", content="Stable content.", word_count=2)
+        asset_map = _make_asset_map([
+            AssetItem(
+                id="img-1",
+                type="image",
+                content="/api/files/file-1/采购退货单sop_a507a453.jpg",
+                summary="Source screenshot",
+            )
+        ])
+
+        result = await materialize_section_visuals(
+            draft=draft,
+            section=section,
+            asset_map=asset_map,
+            thread_id="thread-1",
+            page_id="page-1",
+        )
+
+        assert "/api/files/file-1/采购退货单sop_a507a453.jpg" in result.content
+
+    @pytest.mark.asyncio
+    async def test_materialize_section_visuals_still_encodes_external_image_urls(self):
+        from app.models.draft import SectionDraft
+        from app.workers.section_writer import materialize_section_visuals
+
+        section = _make_section(
+            visuals=[VisualPlan(type="reuse_image", description="reference screenshot", source_asset_id="img-1")]
+        )
+        draft = SectionDraft(section_id="s1", content="Stable content.", word_count=2)
+        asset_map = _make_asset_map([
+            AssetItem(
+                id="img-1",
+                type="image",
+                content="https://cdn.example.com/采购退货单 sop.jpg",
+                summary="Source screenshot",
+            )
+        ])
+
+        result = await materialize_section_visuals(
+            draft=draft,
+            section=section,
+            asset_map=asset_map,
+            thread_id="thread-1",
+            page_id="page-1",
+        )
+
+        assert "https://cdn.example.com/%E9%87%87%E8%B4%AD%E9%80%80%E8%B4%A7%E5%8D%95%20sop.jpg" in result.content
+
+    @pytest.mark.asyncio
+    async def test_materialize_section_visuals_resolves_asset_placeholders_to_exact_urls(self):
+        from app.models.draft import SectionDraft
+        from app.workers.section_writer import materialize_section_visuals
+
+        section = _make_section(assets=["img-1"])
+        draft = SectionDraft(
+            section_id="s1",
+            content="正文段落\n\n![采购退货流程](asset://img-1)",
+            word_count=2,
+        )
+        asset_map = _make_asset_map([
+            AssetItem(
+                id="img-1",
+                type="image",
+                content="/api/files/file-1/采购退货流程.png",
+                summary="Source screenshot",
+            )
+        ])
+
+        result = await materialize_section_visuals(
+            draft=draft,
+            section=section,
+            asset_map=asset_map,
+            thread_id="thread-1",
+            page_id="page-1",
+        )
+
+        assert "![采购退货流程](/api/files/file-1/采购退货流程.png)" in result.content
+        assert "asset://img-1" not in result.content
+
+    @pytest.mark.asyncio
+    async def test_materialize_section_visuals_reuses_existing_generated_image_without_regeneration(self):
+        from app.models.draft import SectionDraft
+        from app.workers.section_writer import materialize_section_visuals
+
+        section = _make_section(
+            visuals=[VisualPlan(type="ai_image", description="generated architecture", position="before_section")]
+        )
+        draft = SectionDraft(
+            section_id="s1",
+            content="Stable content without the image.",
+            word_count=5,
+            visuals_generated=["https://cdn.example.com/generated-1.png"],
+        )
+
+        with patch("app.workers.section_writer.generate_section_visuals", new=AsyncMock(return_value=["https://cdn.example.com/generated-2.png"])) as mock_generate:
+            result = await materialize_section_visuals(
+                draft=draft,
+                section=section,
+                asset_map=None,
+                thread_id="thread-1",
+                page_id="page-1",
+            )
+
+        mock_generate.assert_not_awaited()
+        assert result.visuals_generated == ["https://cdn.example.com/generated-1.png"]
+        assert "https://cdn.example.com/generated-1.png" in result.content

@@ -34,8 +34,25 @@ DOCUMENT_INTENT_ROUTES = (
 DOCUMENT_SCOPES = (
     "selection",
     "uploaded_document",
+    "uploaded_plus_current_page",
     "current_page",
     "blank_page",
+)
+
+DOCUMENT_TASK_MODES = (
+    "strict_preservation",
+    "relaxed_optimization",
+)
+
+DOCUMENT_TASK_STATUSES = (
+    "idle",
+    "analyzing",
+    "awaiting_plan_confirmation",
+    "generating_diff",
+    "awaiting_review",
+    "ready_to_apply",
+    "applied",
+    "error",
 )
 
 DOCUMENT_SOURCE_POLICIES = (
@@ -79,8 +96,25 @@ DocumentIntentRoute: TypeAlias = Literal[
 DocumentScope: TypeAlias = Literal[
     "selection",
     "uploaded_document",
+    "uploaded_plus_current_page",
     "current_page",
     "blank_page",
+]
+
+DocumentTaskMode: TypeAlias = Literal[
+    "strict_preservation",
+    "relaxed_optimization",
+]
+
+DocumentTaskStatus: TypeAlias = Literal[
+    "idle",
+    "analyzing",
+    "awaiting_plan_confirmation",
+    "generating_diff",
+    "awaiting_review",
+    "ready_to_apply",
+    "applied",
+    "error",
 ]
 
 DocumentSourcePolicy: TypeAlias = Literal[
@@ -111,6 +145,15 @@ class AiDocumentStrategy(TypedDict, total=False):
     sourcePolicy: DocumentSourcePolicy
     lengthPolicy: DocumentLengthPolicy
     prioritizeUserInstructions: bool
+    documentTaskMode: DocumentTaskMode | None
+    documentSourceScope: Literal[
+        "uploaded_document",
+        "current_page",
+        "uploaded_plus_current_page",
+    ] | None
+    taskSummarySource: Literal["structured_summary"]
+    includeRawHistory: bool
+    guardrails: DocumentTaskGuardrails
 
 
 class AiDocumentPlanSection(TypedDict):
@@ -127,3 +170,43 @@ class AiDocumentPlan(TypedDict):
     audience: str
     required_artifacts: list[DocumentArtifact]
     sections: list[AiDocumentPlanSection]
+    review_defaults: dict[str, object]
+
+
+class DocumentTaskGuardrails(TypedDict):
+    preserve_meaning: bool
+    preserve_image_text_correspondence: bool
+
+
+class DocumentTaskSummary(TypedDict, total=False):
+    summary_source: Literal["structured_summary"]
+    include_raw_history: bool
+    summary: str
+
+
+class DocumentTaskTextDiff(TypedDict):
+    granularity: Literal["text"]
+    format: Literal["line"]
+
+
+class DocumentTaskDiffEntry(TypedDict, total=False):
+    diff_id: str
+    block_id: str
+    granularity: Literal["block"]
+    text_diff: DocumentTaskTextDiff
+
+
+class DocumentTaskContract(TypedDict, total=False):
+    task_id: str
+    task_type: DocumentIntentRoute
+    source_scope: Literal[
+        "uploaded_document",
+        "current_page",
+        "uploaded_plus_current_page",
+    ]
+    mode: DocumentTaskMode
+    deep_collaboration_enabled: bool
+    status: DocumentTaskStatus
+    task_summary: DocumentTaskSummary
+    diff_set: list[DocumentTaskDiffEntry]
+    guardrails: DocumentTaskGuardrails

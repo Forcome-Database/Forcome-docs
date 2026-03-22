@@ -49,11 +49,12 @@ async def health():
 
 # ── Orchestrator Endpoints ────────────────────────────────────────────
 
-from app.orchestrator.engine import OrchestratorEngine, OrchestratorRequest
+from app.orchestrator.document_task_engine import DocumentTaskEngine
+from app.orchestrator.engine import OrchestratorRequest
 from app.orchestrator.session_store import session_store
 from app.orchestrator.tools.user_interaction import interaction_registry
 
-_orchestrator = OrchestratorEngine()
+_orchestrator = DocumentTaskEngine()
 
 
 async def _event_generator(thread_id: str, queue: asyncio.Queue):
@@ -190,6 +191,7 @@ async def run_agent(request: dict):
         page_content=request.get("page_content"),
         selected_text=request.get("selected_text"),
         intent_route=request.get("intent_route", "document_create"),
+        document_task=request.get("document_task"),
         insert_mode=request.get("insert_mode", "create"),
         files=request.get("files", []),
         template_id=request.get("template_id"),

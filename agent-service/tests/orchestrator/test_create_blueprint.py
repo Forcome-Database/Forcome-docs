@@ -274,6 +274,16 @@ class TestBuildBlueprintPrompt:
         # Should still include the JSON spec
         assert "sections" in prompt
 
+    def test_includes_source_document_title_hint_when_available(self):
+        brief = _make_brief()
+        am = _make_asset_map()
+        am.document_title = "Purchase Return SOP"
+
+        prompt = build_blueprint_prompt("Write", brief, am)
+
+        assert "Source document title" in prompt
+        assert "Purchase Return SOP" in prompt
+
 
 # ---------------------------------------------------------------------------
 # _normalize_word_budgets
@@ -609,6 +619,30 @@ class TestGenerateBlueprint:
 
         assert result.title != ""
         assert "Write" in result.title
+
+    @pytest.mark.asyncio
+    async def test_prefers_single_source_document_title_over_user_message_fallback(self):
+        sections_data = _make_sections_data(1, 500)
+        llm_data = {"sections": sections_data, "total_word_budget": 500}
+        asset_map = _make_asset_map()
+        asset_map.document_title = "Purchase Return SOP"
+
+        with (
+            patch(
+                "app.orchestrator.tools.create_blueprint._call_llm_for_blueprint",
+                new_callable=AsyncMock,
+                return_value=llm_data,
+            ),
+            patch("app.orchestrator.tools.create_blueprint.emit", new_callable=AsyncMock),
+        ):
+            result = await generate_blueprint(
+                user_message="Write a comprehensive technical guide for new engineers",
+                brief=_make_brief(target_length=500),
+                asset_map=asset_map,
+                thread_id="t1",
+            )
+
+        assert result.title == "Purchase Return SOP"
 
     @pytest.mark.asyncio
     async def test_generate_new_image_strategy_adds_ai_image_fallback(self):

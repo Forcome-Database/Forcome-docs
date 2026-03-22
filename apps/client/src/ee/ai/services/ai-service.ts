@@ -24,7 +24,12 @@ export interface CreatorGenerateParams {
   planningEnabled?: boolean;
   confirmedOutline?: string;
   intentRoute?: "selection_edit" | "document_transform" | "document_create";
-  scope?: "selection" | "uploaded_document" | "current_page" | "blank_page";
+  scope?:
+    | "selection"
+    | "uploaded_document"
+    | "uploaded_plus_current_page"
+    | "current_page"
+    | "blank_page";
   sourcePolicy?: "preserve_source" | "transform_source" | "create_new";
   lengthPolicy?: "preserve" | "compress" | "expand";
   prioritizeUserInstructions?: boolean;

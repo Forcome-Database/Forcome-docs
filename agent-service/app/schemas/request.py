@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.schemas.document_contracts import AiDocumentStrategy
+from app.models.document_task import DocumentTask
 
 class FileInfo(BaseModel):
     filename: str
@@ -44,12 +45,19 @@ class AgentRunRequest(BaseModel):
     system_prompt: str | None = None
     template_prompt: str | None = None
     document_strategy: AiDocumentStrategy = Field(default_factory=dict)
+    document_task: DocumentTask | None = None
     conversation_history: list[dict] = Field(default_factory=list)
     workspace_id: str = ""
     config: dict = Field(default_factory=dict)
     thread_id: str | None = None
     intent_route: Literal["selection_edit", "document_transform", "document_create"] = "document_create"
-    scope: Literal["selection", "uploaded_document", "current_page", "blank_page"] = "blank_page"
+    scope: Literal[
+        "selection",
+        "uploaded_document",
+        "uploaded_plus_current_page",
+        "current_page",
+        "blank_page",
+    ] = "blank_page"
     source_policy: Literal["preserve_source", "transform_source", "create_new"] = "create_new"
     length_policy: Literal["preserve", "compress", "expand"] = "preserve"
     prioritize_user_instructions: bool = True
