@@ -3,6 +3,7 @@
 .env.prod
 data
 .worktrees
+.pnpm-store/
 # compiled output
 /dist
 /node_modules
