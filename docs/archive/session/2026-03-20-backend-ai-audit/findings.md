@@ -1,0 +1,143 @@
+# 调查结果
+
+## 2026-03-20 后端AI审核
+- 现有计划文件属于之前的前端审核，并针对本次后端审核进行了重置。
+- 根据用户请求确认的范围：`agent-service/app/**/*`、`apps/server/src/ee/ai/**/*`，以及与实际实现相匹配的相关测试/文档。
+- 第一遍目标是服务器端入口映射：运行/恢复/提交/优化入口点以及 Nest 服务器和 `agent-service` 之间的边界。
+- `apps/server/src/ee/ai/ai.controller.ts` 仍然包含旧的 `/ai/creator/generate` SSE 路径。它构建提示并直接通过 `AiService.streamWithContext(...)` 进行流式传输；它不会调用代理协调器。
+- `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts` 是编排运行的实际代理。 `/agent/run` 将 JSON 转发到 `agent-service /agent/run`； `/agent/resume` 将键入的恢复有效负载转发到 `agent-service /agent/resume`。
+- `agent-service/app/main.py` 创建 `OrchestratorRequest`，在后台任务中启动 `OrchestratorEngine.run(...)`，并公开同一线程/会话 ID 周围的恢复/会话/停止端点。
+- `agent-service/app/orchestrator/engine.py` 包含一个具有四个执行路径的协调器类：
+  - Level 1: `simple_edit -> finalize`
+  - Level 2: `prepare_evidence -> brief confirmation -> simple_edit -> finalize`
+  - 2级晋升路径：`prepare_evidence -> brief -> blueprint -> write_all_sections -> review/fix -> finalize`
+  - Level 3: `prepare_evidence -> brief -> blueprint -> write_all_sections -> review/fix -> finalize`
+- `agent-service/app/orchestrator/tools/complexity.py` 将所有 `selection_edit` 请求硬路由到级别 1。
+- `agent-service/app/orchestrator/tools/simple_edit.py` 将 `conversation_history` 收集到 `message_history` 中，但从不将其传递到 `agent.run_stream(...)` 中；尽管接受历史记录，直接编辑路径还是无状态的。
+- 后端当前有两个并行创建堆栈：
+  - 传统直接生成：Nest 中的 `POST /ai/creator/generate` -> `AiService.streamWithContext(...)`
+  - 编排式生成：Nest 中的 `POST /agent/run` -> `agent-service /agent/run` -> `OrchestratorEngine.run(...)`
+- `commit` 不是代理运行时的一部分。写回路径通过 `POST /ai/creator/commit` -> `PageService.commitAiContent(...)` -> `CollaborationHandler.applyAiCommit(...)` -> `applyAiCommitToDocument(...)` 保留在 Nest 侧。
+- 当前实现中没有专用后端 `optimize` 端点。在实际的运行时行为中，“优化”由客户端意图解析器映射到`intentRoute="document_transform"`；空白页创建映射到 `document_create`。
+- 代理路径当前会删除标准路径保留的意图元数据：
+  - 标准路径发送 `scope`、`sourcePolicy`、`lengthPolicy`
+  - 代理路径仅发送 `intentRoute`
+  - `agent-service/app/schemas/request.py::AgentRunRequest` 定义了这些更丰富的字段，但 `agent-service/app/main.py` 不验证或使用它们。
+- 结果：在协调器内部，来自上传文件的 `document_transform` 请求、当前页面优化、URL 支持的转换和空白页面转换都折叠在一起，但 `intent_route` 和原始文件计数除外。
+- 当所有这些都为真时，`agent-service/app/orchestrator/engine.py::_should_promote_level2_to_structured_write(...)` 仅将 `document_transform` 升级到图像保留结构化流：
+  - 意图是`document_transform`
+  - 恰好上传了一个文件
+  - 简短的图像策略允许源重用
+  - 解析的资产至少包含一张图像
+- 因此，即使页面已包含图像/表格/结构化内容，没有上传文件的当前页面转换仍保留在级别 2 `simple_edit`。
+- `agent-service/app/orchestrator/tools/evidence.py` 将 `page_context` 标记为 `selection_edit` / `document_transform` 所需的证据，但它不会将页面内容解析为 `AssetMap`。对于当前页面优化，代理主要看到原始页面 Markdown加上摘要/页面摘录，而不是结构化资产。
+- 旧路径中的`apps/server/src/ee/ai/services/ai-file.service.ts`将PDF/DOC文件扁平化为纯文本；它不保留源图像、表格或文档结构。
+- `agent-service/app/workers/asset_parser.py` 确实将标题、文本部分、表格、代码、Mermaid和图像提取到 `AssetMap` 中，但 `section_writer.py` 将每个资源预览截断为 2000 个字符，各部分之间的连续性仅是上一个尾部加上下一个标题。
+- `agent-service/app/workers/section_writer.py::get_prev_section_tail(...)` 仅将上一节的最多 500 个字符传递到下一节的上下文中。
+- `agent-service/app/orchestrator/tools/fix_tools.py` 和 `app/workers/fixer.py` 一次修复选定问题的一个部分，没有相邻部分的上下文。这可能会在检查后重新引入横截面漂移。
+- `agent-service/app/orchestrator/tools/finalize.py::merge_sections(...)` 在返回最终 Markdown之前删除 `<!--asset:...-->` 标记。这会消除任何后续优化/审查过程中的源资产可追溯性。
+- 当 `selectionSnapshot` 过时时，`apps/server/src/ee/ai/creator-commit.utils.ts` 从 `replace` 回退到 `append`。这可以避免硬故障，但可能会在选择编辑回写期间创建重复或不合适的内容。
+- `apps/server/src/core/page/services/page.service.ts::commitAiContent(...)` 允许 `replace` 提交继续进行，即使页面版本发生更改；最终的 Yjs 申请可能会降级为追加。非替换模式反而会引发冲突。
+- 实施支持的文档：
+  - `agent-service/ARCHITECTURE.md` 大致匹配当前的协调器拓扑，但它低估了真正的 2 级分割，并且仍然呈现一些过时的流程措辞。
+  - `docs/ai-creator-v2-changelog.md` 比 v3 重新设计文档更匹配当前的 1/2/3 级架构。
+  - `docs/superpowers/specs/2026-03-20-ai-creator-v3-redesign.md` 未实施；它描述了代码中不存在的未来 `/api/ai/document/optimize` 和 `/create` 端点。
+- 当前架构中可能失效或断开连接的模块：
+  - `agent-service/app/orchestrator/sse_optimizer.py`
+  - `agent-service/app/orchestrator/model_router.py`
+  - `agent-service/app/orchestrator/prompts.py`
+  - `agent-service/app/orchestrator/tools/rewrite_section.py`
+  - `agent-service/app/orchestrator/tools/merge_proposals.py`
+  - `agent-service/app/workers/style_analyzer.py`
+  - `agent-service/app/schemas/request.py::AgentRunRequest` 丰富的运行模式
+  - `apps/server/src/ee/ai/evidence-preflight.ts`
+  - `apps/server/src/ee/ai/document-plan.ts`
+  - `apps/server/src/ee/ai/agent-gateway/agent-gateway.service.ts::forwardToAgent(...)`
+
+## 2026-03-20 外部研究要求
+- 研究范围限于外部最佳实践与架构模式，不修改业务代码。
+- 优先 Anthropic 官方文章与各产品/框架官方文档。
+- 输出必须包含来源链接、明确日期，并区分事实与推断。
+- 目标场景：`selection rewrite`、`document transform`、`blank-page drafting`。
+
+## 2026-03-20 外部研究结果
+- Anthropic 官方公开文章《Building effective agents》发表于 2024-12-19。文中将 agentic systems 区分为两类：`workflows` 是预定义代码路径编排，`agents` 是模型动态决定流程与工具使用；并明确建议先找“最简单可行方案”，很多场景单次 LLM 调用 + retrieval + in-context examples 就够用。
+- Anthropic 给出的基础构件是 `augmented LLM`，即在 LLM 外围加 retrieval、tools、memory，并强调这些能力应为模型提供“易用、文档化良好”的接口；文中还点名 MCP 作为一种集成方式。
+- Anthropic 列出的核心 workflow 模式是：`prompt chaining`、`routing`、`parallelization`、`orchestrator-workers`、`evaluator-optimizer`；其中 evaluator-optimizer 被明确类比为“人类写作者反复润色”的过程，和文档写作/改写高度相关。
+- Anthropic 对 framework 的官方建议是：先直接使用 LLM API 起步，避免过度抽象造成调试困难；如果使用 framework，必须理解底层代码，不要被抽象层误导。
+- Microsoft Word/Copilot 官方支持文档显示其写作与改写能力被明确拆成：`Start a draft`、`Add content to an existing document`、`Rewrite text`、`Convert text to a table`、`Edit with Copilot in Word`。这说明成熟产品通常把“从零起草”“局部改写”“文档级转换”“在位编辑”拆成不同交互入口，而不是混成一个模式。
+- Word 官方文档强调 blank-page drafting 时应提供更多上下文；新文档可基于文件、邮件、会议生成，且可引用至多 20 个来源项。生成后提供 `Keep it / Regenerate / Discard` 与继续细化。
+- Word 的 rewrite/transform 官方交互是：选中文本后触发 `Auto Rewrite`，可 `Replace`、`Insert below`、`Regenerate`，也支持在建议框内直接修改；文本还可 `Visualize as a Table`。这体现出 selection rewrite 与 document transform 应带有可审阅、可替换、可并排插入的显式确认机制。
+- Word `Edit with Copilot in Word` 官方文档表明：在共享文档场景下，Copilot 会先在 chat 中显示建议预览，必须由用户确认后才应用到文档；这是对“高影响文档级改动”增加确认门槛的明确产品实践。
+- Notion 官方帮助文档显示其 AI 能力既有 `Notion AI inline`，也有 `AI blocks`，还有 `Notion Agent`。它们默认上下文层级不同：inline 适合当前页或选区，AI block 适合结构化生成块，Agent 适合更开放的多步任务。
+- Notion 官方帮助文档明确：Agent 默认使用当前页面上下文；如果选中了具体 blocks，则 Agent 聚焦这些 blocks；还可通过 `@` 或 `All sources` 加额外来源。Notion 也明确给出权限与可撤销边界：Agent 与用户同权限，且所有改动都可 undo。
+- 概念 `Notion AI inline` 官方能力包括：对选区/页面做语法修复、长短调整、语气变化，也可创建大纲、电子邮件草稿、表格，并在生成后允许 `accept / discard / try again`。这与 Docmost 的选择重写和空白页起草非常接近。
+- Notion `AI blocks` 官方能力说明其支持 `Specified context` 和额外 `Search` 来源，说明 blank-page drafting 最佳实践不是仅依赖自由提示，而是显式绑定上下文范围与来源集合。
+- 概念官方的说明/技能文档说明：应把偏好写清楚，`Start with what you want`、`Be specific`；同时支持把可复用提示保存为技能，例如“用 3 个短段落为面向客户的受众重写此内容”。这为重写的产品化提供了“可复用模板/技能”的思路。
+- BlockNote 官方 AI 文档强调三个用户体验原则：`Interactive AI Suggestions`（可接受/拒绝）、`Real-time Feedback`（流式反馈）、`Transparent Operations`（明确展示 AI 正在做什么）。技术上还明确支持 `Flexible Command System`、`Human in the Loop` 多步工作流、自定义 prompts。
+- BlockNote AI Reference 暴露了非常贴近产品状态机的能力：`user-input / thinking / ai-writing / user-reviewing` 四个状态，以及 `acceptChanges / rejectChanges / retry / abort` 操作；`invokeAI` 还支持 `useSelection?: boolean`，并会把 `selectedBlocks`、`documentState` 一起发给模型。这对 selection rewrite / blank-page drafting 的状态设计非常有参考价值。
+- Tiptap 官方 AI Toolkit 将能够显式拆分 `AI agents` 与 `workflows` 类，并直接说明工作流程只有单一、显式任务，例如插入内容、校对、tiptap 编辑；AI 代理更灵活，但更适合复杂任务。
+- Tiptap 官方还将文档 AI 关键能力拆成独立模块：`Review changes`、`Tool streaming`、`Selection awareness`、`Multi-document`、`Schema awareness`。这说明成熟框架倾向把“编辑能力”“审阅能力”“上下文感知”“跨文档能力”解耦，而不是耦成一个黑盒聊天。
+- Tiptap 的 suggestions 官方文档定义了三种编辑模式：默认直接改文档；`preview` 模式先展示建议，用户接受后再改；`review` 模式先改文档，但保留可撤销的 suggestion。还支持 `acceptSuggestion / rejectSuggestion` 与不同 diff mode。这是 selection rewrite 与 document transform 应如何落地 review UX 的直接参考。
+- Tiptap 的 `Insert content workflow` 官方示例说明：对于选区插入/替换，客户端先读取当前 selection，再流式插入 HTML；如果要让用户审阅，则配置 `reviewOptions: { mode: 'review' }`。这和“selection rewrite 默认局部、可流式、可审阅”高度一致。
+
+## 2026-03-20 外部研究资源
+- Anthropic 文章：https://www.anthropic.com/engineering/building-effective-agents
+- Anthropic 电子书落地页：https://resources.anthropic.com/building-effective-ai-agents
+- Microsoft 支持 - 使用 Copilot 在 Word 中起草和添加内容：https://support.microsoft.com/en-us/office/draft-and-add-content-with-copilot-in-word-069c91f0-9e42-4c9a-bbce-fddf5d581541
+- Microsoft 支持 - 在 Word 中使用 Copilot 重写文本：https://support.microsoft.com/en-us/office/rewrite-text-with-copilot-in-word-923d9763-f896-4da7-8a3f-5b12c3bfc475
+- Microsoft 支持 - 在 Word 中使用 Copilot 进行编辑：https://support.microsoft.com/en-us/office/edit-with-copilot-in-word-647d5d14-eaec-4e8a-a574-7cefffa7f8f0
+- Notion Help - What is Notion AI?: https://www.notion.com/help/notion-ai-faqs
+- Notion 帮助 - Notion 代理：https://www.notion.com/help/notion-agent
+- Notion 帮助 - 使用说明和技能自定义您的 Notion Agent：https://www.notion.com/help/customize-your-notion-agent-with-instructions-and-skills
+- Notion 产品用例 - 按照您的风格编写：https://www.notion.com/product/ai/use-cases/write-in-your-style
+- BlockNote 文档 - AI 集成：https://www.blocknotejs.org/docs/features/ai
+- BlockNote 文档 - AI 参考：https://www.blocknotejs.org/docs/features/ai/reference
+- Tiptap 文档 - AI 工具包概述：https://tiptap.dev/docs/content-ai/capabilities/ai-toolkit/overview
+- Tiptap 文档 - AI 代理：https://tiptap.dev/docs/content-ai/capabilities/ai-toolkit/agents
+- Tiptap 文档 - 建议：https://tiptap.dev/docs/content-ai/capabilities/ai-toolkit/advanced-guides/suggestions
+
+## 2026-03-20 与映射相关的最新文档事实
+- 前端 `resolveAiIntent` 已把三类场景显式分流：有选区则 `selection_edit`；有文件或当前页已有内容则 `document_transform`；空白页默认 `document_create`；空白页但 prompt 含 URL 时仍走 `document_transform`。
+- 前端还为每次提交显式计算 `insertMode`：有选区则 `replace`；空白页是 `create`；已有内容默认 `overwrite`，只有 continue/append 意图才走 `append`。这意味着 Docmost 已经在产品层把 selection rewrite、blank-page drafting、document transform 区分成不同写回语义。
+- 后端复杂度分析器把 `selection_edit` 强制归为 Level 1；单文件通常归到 Level 2；多文件、模板创建、明显 create/write/draft 请求归到 Level 3。
+- Level 1 当前路径是 `simple_edit -> finalize`，适合局部改写；Level 2 是 `prepare_evidence -> brief confirm -> simple_edit -> finalize`，但在“单文件 document_transform 且需要保留源图”时会升级为 `brief -> blueprint -> section writer -> review -> finalize`；Level 3 默认走完整 structured write 流。
+- AI Creator前端会保存`threadId/taskId`、支持`await_input`（简要/蓝图/评审）、`draft_patch`、`blocked`、Hydration恢复；输入栏也已公开`auto-insert`与`Deep mode`两个关键控制项。
+## 2026-03-20 确认产品要求
+- 优先级顺序为`document transform > selection rewrite > blank-page drafting`。
+- 文档转换必须同时支持严格的保存模式和宽松的优化模式。
+- 默认文档转换模式是严格保存。
+- 严格保存意味着结构、图像、表格和代码块应尽可能保留。
+- 宽松的优化可以重新排序结构，但不得破坏含义或图文对应。
+- 文档转换的默认结果交付是可审查的差异，每个项目接受/拒绝。
+- 选择重写保留两种模式：内联编辑器本地预览流程，以及需要时的面板辅助流程。
+- 默认选择重写路径在编辑器中保持内联。
+- 重新设计必须防止选择重写与长期对话/会话上下文发生冲突。
+- 右侧 AI 面板应默认仅处理文档级任务；普通选择重写不应进入主面板。
+- 右侧 AI 面板应具有双重性质：默认文档操作中心，仅将复杂任务升级为专家/深度协作。
+- 上传文件优化和当前页面优化应共享一个统一的文档转换主流程。
+- 统一的文档转换流程应使用渐进式确认：小的更改可以直接进行 diff，而较大/影响较大的更改应首先提出计划并在用户确认后继续。
+- 专家/深度协作应该可以通过系统复杂性评估自动触发，但用户必须能够将其关闭。
+- 文档转换运行应仅继承当前文档任务的结构化任务摘要，而不是完整的原始对话历史记录。
+- 选择重写可以读取选择本地上下文加上当前文档任务摘要，但该摘要必须仅为结构化目标/约束/决策，而不是原始聊天历史记录。
+- 如果不能安全地维持严格保留模式，只有在用户明确确认后，系统才可能降级到宽松优化。
+- 空白页起草应采用渐进复杂性：小任务可以直接起草，而较大的任务必须先经过概要/大纲确认。
+- 总体重新设计目标是产品边界修正和代理能力重构，其中产品边界优先。
+- 对同一文档的重复优化应自动继承先前确认的结构化任务摘要、约束和样式选择。
+- 差异审查应使用混合粒度：默认为块级，对于纯文本块可扩展更精细的文本差异。
+- 接受/拒绝决策应默认为待处理的更改集，最终应用程序发生在一个显式应用步骤中。
+- 严格保留与宽松优化应该是系统推荐的，但用户始终可以一目了然地切换。
+- 迁移策略应该是混合的：后端和状态层可以增量迁移，但主要前端入口模型应该通过一次可见的切换切换到新的交互模型。
+- 多文档合并/重写仍然是统一文档转换流程的一部分，但应该自动升级到复杂任务路径。
+- 对于上传的文档优化，上传的来源应该是默认的主要输入；仅当用户明确要求时，当前页面才应参与。
+- 最终应用应将接受的更改直接写入当前文档，同时自动创建回滚快照。
+- 当前页面优化不应被视为纯文本重写；至少，现有的图像和表格必须保留在保存管道内，即使完整的保存堆栈比上传的源处理轻。
+- 在结构化内容故障模式中，最敏感/最高成本的问题是图像到文本的对应关系被破坏。
+- 在严格保留模式下，当图像放置不确定时，系统应将原始图像保留在原始位置，避免主动重新定位。
+- 在宽松优化模式下，图像仍应倾向于停留在原始位置附近，仅在当前位置明显不合适时才建议重新定位。
+- 在严格保留模式下，当表格/代码块/Mermaid无法安全转换时，它们应保持原样不变，而AI 仅优化周围的内容。
+- 当文档转换任务处于活动状态时，任何临时选择重写都应作为独立的临时操作运行，并且不得污染活动文档任务状态。
+- 当前的 AI Creator 工作台概念可以退役并替换为三部分模型：
+  - 内联编辑器本地重写
+  - 右侧文档操作中心
+  - 按需专家协作层

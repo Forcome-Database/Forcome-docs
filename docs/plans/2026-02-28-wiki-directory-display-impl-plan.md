@@ -1,21 +1,21 @@
 # Wiki 前台目录展示 实现计划
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **对于Claude：** 必须使用的子技能：使用超能力：executing-plans来逐个任务地实施该计划。
 
-**Goal:** 让 Wiki 前台支持目录/主题层级展示——空间有目录时顶部导航显示目录下拉列表，侧边栏按主题分组展示页面。
+**目标：** 让 Wiki 前台支持目录/主题层级展示——空间有目录时顶部导航显示目录下拉列表，侧边栏按主题分组展示页面。
 
-**Architecture:** 后端 public-wiki 模块新增 directories API 端点，修改 sidebar API 支持 directoryId 过滤并返回带 nodeType 的混合树；前端 useDocmostSidebar composable 增加目录状态管理，NavBar 复用现有下拉菜单组件展示目录列表。
+**架构：**头部public-wiki模块新增目录API端点，修改sidebar API支持directoryId过滤并返回带nodeType的混合树；引入useDocmostSidebar可组合增加目录状态管理，NavBar复用现有下拉组件菜单显示目录列表。
 
-**Tech Stack:** NestJS (后端 API)、Vue 3 + VitePress (前端)、Kysely (SQL 查询)
+**技术栈：** NestJS (笔 API)、Vue 3 + VitePress (前端)、Kysely (SQL 查询)
 
 ---
 
-### Task 1: 后端 — 扩展 DTO 定义
+### 任务 1：后端 — 扩展 DTO 定义
 
-**Files:**
-- Modify: `apps/server/src/core/public-wiki/dto/public-wiki.dto.ts`
+**文件：**
+- 修改：`apps/server/src/core/public-wiki/dto/public-wiki.dto.ts`
 
-**Step 1: 添加 PublicDirectoriesDto 和修改 PublicSidebarDto**
+**步骤 1：添加 PublicDirectoriesDto 和修改 PublicSidebarDto**
 
 在 `public-wiki.dto.ts` 文件末尾添加新 DTO，并给 `PublicSidebarDto` 增加可选的 `directoryId` 字段：
 
@@ -39,7 +39,7 @@ export class PublicDirectoriesDto {
 }
 ```
 
-**Step 2: 提交**
+**步骤 2：提交**
 
 ```bash
 git add apps/server/src/core/public-wiki/dto/public-wiki.dto.ts
@@ -48,12 +48,12 @@ git commit -m "feat(public-wiki): add PublicDirectoriesDto and extend PublicSide
 
 ---
 
-### Task 2: 后端 — 扩展 PublicWikiService
+### 任务 2：后端 — 扩展 PublicWikiService
 
-**Files:**
-- Modify: `apps/server/src/core/public-wiki/public-wiki.service.ts`
+**文件：**
+- 修改：`apps/server/src/core/public-wiki/public-wiki.service.ts`
 
-**Step 1: 修改 getPublicSpaces() 返回 hasDirectories**
+**第一步：修改 getPublicSpaces() 返回 hasDirectories**
 
 在 `getPublicSpaces` 方法中，查询每个空间是否有目录：
 
@@ -106,7 +106,7 @@ async getPublicSpaces(workspaceId: string) {
 }
 ```
 
-**Step 2: 新增 getDirectories() 方法**
+**第 2 步：新增 getDirectories() 方法**
 
 ```typescript
 async getDirectories(spaceSlug: string, workspaceId: string) {
@@ -131,7 +131,7 @@ async getDirectories(spaceSlug: string, workspaceId: string) {
 }
 ```
 
-**Step 3: 修改 getSidebarTree() 支持 directoryId**
+**步骤3：修改getSidebarTree()支持directoryId**
 
 修改方法签名并增加 directoryId 分支逻辑：
 
@@ -168,7 +168,7 @@ async getSidebarTree(spaceSlug: string, workspaceId: string, directoryId?: strin
 }
 ```
 
-**Step 4: 新增 buildDirectorySidebar() 私有方法**
+**第 4 步：新增buildDirectorySidebar()方法**
 
 ```typescript
 private async buildDirectorySidebar(
@@ -263,7 +263,7 @@ private async buildDirectorySidebar(
 }
 ```
 
-**Step 5: 提交**
+**步骤 5：提交**
 
 ```bash
 git add apps/server/src/core/public-wiki/public-wiki.service.ts
@@ -272,14 +272,14 @@ git commit -m "feat(public-wiki): add getDirectories, extend getSidebarTree with
 
 ---
 
-### Task 3: 后端 — 扩展 Controller
+### 任务 3：后端 — 扩展 Controller
 
-**Files:**
-- Modify: `apps/server/src/core/public-wiki/public-wiki.controller.ts`
+**文件：**
+- 修改：`apps/server/src/core/public-wiki/public-wiki.controller.ts`
 
-**Step 1: 添加 directories 端点，修改 sidebar 端点传参**
+**第一步：添加目录端点，修改sidebar端点传参**
 
-在 controller 中导入 `PublicDirectoriesDto`，新增 directories 端点：
+在控制器中导入`PublicDirectoriesDto`，新增目录端点：
 
 ```typescript
 // 导入新增
@@ -314,7 +314,7 @@ async getSidebar(
 }
 ```
 
-**Step 2: 提交**
+**步骤 2：提交**
 
 ```bash
 git add apps/server/src/core/public-wiki/public-wiki.controller.ts
@@ -323,12 +323,12 @@ git commit -m "feat(public-wiki): add directories endpoint, pass directoryId to 
 
 ---
 
-### Task 4: 前端 — 扩展类型定义
+### 任务 4：前端 — 扩展类型定义
 
-**Files:**
-- Modify: `wiki/docs/.vitepress/theme/types/index.ts`
+**文件：**
+- 修改：`wiki/docs/.vitepress/theme/types/index.ts`
 
-**Step 1: 新增 DocmostDirectory 接口，扩展现有类型**
+**第 1 步：新增DocmostDirectory接口，扩展现有类型**
 
 ```typescript
 // 新增 —— 在 DocmostSpace 定义之后
@@ -364,7 +364,7 @@ export interface DocmostSidebarNode {
 }
 ```
 
-**Step 2: 提交**
+**步骤 2：提交**
 
 ```bash
 git add wiki/docs/.vitepress/theme/types/index.ts
@@ -373,12 +373,12 @@ git commit -m "feat(wiki): add DocmostDirectory type, extend DocmostSpace and Do
 
 ---
 
-### Task 5: 前端 — 扩展 API 服务
+### 任务 5：前端 — 扩展 API 服务
 
-**Files:**
-- Modify: `wiki/docs/.vitepress/theme/services/docmost.ts`
+**文件：**
+- 修改：`wiki/docs/.vitepress/theme/services/docmost.ts`
 
-**Step 1: 新增 getDirectories 方法，修改 getSidebar 签名**
+**第一步：新增 getDirectories 方法，修改 getSidebar 签名**
 
 在 `DocmostService` 类中添加：
 
@@ -423,7 +423,7 @@ import type {
 } from '../types'
 ```
 
-**Step 2: 提交**
+**步骤 2：提交**
 
 ```bash
 git add wiki/docs/.vitepress/theme/services/docmost.ts
@@ -432,14 +432,14 @@ git commit -m "feat(wiki): add getDirectories API, extend getSidebar with direct
 
 ---
 
-### Task 6: 前端 — 重构 useDocmostSidebar composable
+### 任务 6：前端 — 重构 useDocmostSidebar composable
 
-**Files:**
-- Modify: `wiki/docs/.vitepress/theme/composables/useDocmostSidebar.ts`
+**文件：**
+- 修改：`wiki/docs/.vitepress/theme/composables/useDocmostSidebar.ts`
 
 这是核心改动，需要增加目录状态管理和侧边栏映射逻辑。
 
-**Step 1: 增加目录相关状态和导入**
+**步骤 1：增加目录相关状态和导入**
 
 ```typescript
 import type { DocmostSpace, DocmostSidebarNode, DocmostDirectory, SidebarItem } from '../types'
@@ -453,7 +453,7 @@ const isLoading = ref(false)
 const isLoaded = ref(false)
 ```
 
-**Step 2: 修改 mapToSidebarItems 支持 topic 节点**
+**第 2 步：修改mapToSidebarItems支持主题节点**
 
 ```typescript
 function mapToSidebarItems(
@@ -488,7 +488,7 @@ function mapToSidebarItems(
 }
 ```
 
-**Step 3: 修改 loadSpaces 加载目录**
+**第三步：修改loadSpaces加载目录**
 
 ```typescript
 async function loadSpaces() {
@@ -541,7 +541,7 @@ async function loadSpaces() {
 }
 ```
 
-**Step 4: 新增 selectDirectory 方法**
+**第 4 步：添加selectDirectory方法**
 
 ```typescript
 async function selectDirectory(spaceSlug: string, directoryId: string) {
@@ -562,13 +562,13 @@ async function selectDirectory(spaceSlug: string, directoryId: string) {
 }
 ```
 
-**Step 5: 修改 buildSidebarForRoute**
+**第 5 步：修改buildSidebarForRoute**
 
 现有的 `buildSidebarForRoute` 基本保持不变（它已经读取 `sidebarData[spaceSlug]`），但 `mapToSidebarItems` 现在能处理 topic 节点了，所以不需要大改。确认分组渲染：
 
 当侧边栏数据包含 topic 时，`mapToSidebarItems` 会生成 `{ text: 'CRM系统', items: [...], collapsed: false }` 这样的结构。`SideBar.vue` 的模板中已有分组标题渲染逻辑（`sidebar-group-title`），但这条路径要求 `group.collapsed === undefined`。而 topic 节点我们返回的 `collapsed: false`，这意味着它会走 SideBarItem 的可折叠分组路径（无 link 有 items），效果一样好。
 
-**Step 6: 暴露新状态**
+**步骤 6：暴露新状态**
 
 ```typescript
 return {
@@ -586,7 +586,7 @@ return {
 }
 ```
 
-**Step 7: 提交**
+**步骤 7：提交**
 
 ```bash
 git add wiki/docs/.vitepress/theme/composables/useDocmostSidebar.ts
@@ -595,12 +595,12 @@ git commit -m "feat(wiki): add directory state management and topic-aware sideba
 
 ---
 
-### Task 7: 前端 — 修改 NavBar 支持目录下拉
+### 任务 7：前端 — 修改 NavBar 支持目录下拉
 
-**Files:**
-- Modify: `wiki/docs/.vitepress/theme/components/NavBar.vue`
+**文件：**
+- 修改：`wiki/docs/.vitepress/theme/components/NavBar.vue`
 
-**Step 1: 引入目录相关数据**
+**步骤 1：引入目录相关数据**
 
 在 `<script setup>` 中：
 
@@ -613,7 +613,7 @@ const {
 } = useDocmostSidebar()
 ```
 
-**Step 2: 修改 navItems 计算属性**
+**第 2 步：修改navItems计算属性**
 
 把有目录的空间转为下拉菜单（`items` 数组），无目录的保持普通链接：
 
@@ -656,7 +656,7 @@ const navItems = computed(() => {
 })
 ```
 
-**Step 3: 修改模板中的下拉菜单点击**
+**步骤 3：修改模板中的下拉菜单点击**
 
 找到 `<a v-for="child in item.items"` 部分，修改下拉项的点击处理：
 
@@ -683,7 +683,7 @@ const navItems = computed(() => {
 </div>
 ```
 
-**Step 4: 新增 handleDirectoryClick 方法**
+**第 4 步：添加handleDirectoryClick方法**
 
 ```typescript
 const handleDirectoryClick = (event: Event, child: any) => {
@@ -694,7 +694,7 @@ const handleDirectoryClick = (event: Event, child: any) => {
 }
 ```
 
-**Step 5: 提交**
+**步骤 5：提交**
 
 ```bash
 git add wiki/docs/.vitepress/theme/components/NavBar.vue
@@ -703,15 +703,15 @@ git commit -m "feat(wiki): NavBar directory dropdown for spaces with directories
 
 ---
 
-### Task 8: 集成验证
+### 任务 8：集成验证
 
-**Step 1: 启动后端开发服务器**
+**步骤 1：启动后端开发服务器**
 
 ```bash
 cd E:/test/Docmost && pnpm dev
 ```
 
-**Step 2: 确认 API 正常**
+**第二步：确认API正常**
 
 用 curl 测试新端点：
 
@@ -730,13 +730,13 @@ curl -s -X POST http://localhost:3000/api/public-wiki/sidebar \
   -d '{"spaceSlug":"your-space-slug","directoryId":"your-directory-id"}' | jq '.data.items'
 ```
 
-**Step 3: 启动 wiki 前端**
+**第三步：启动wiki前端**
 
 ```bash
 cd E:/test/Docmost/wiki && pnpm dev
 ```
 
-**Step 4: 浏览器验证**
+**步骤 4：浏览器验证**
 
 - 访问有目录的空间 → 顶部导航应显示下拉箭头
 - 点击下拉箭头 → 应展示目录列表
@@ -744,6 +744,6 @@ cd E:/test/Docmost/wiki && pnpm dev
 - 访问无目录的空间 → 保持原有行为
 - 点击空间名（有目录时）→ 自动加载第一个目录的内容
 
-**Step 5: 最终提交**
+**步骤 5：最终提交**
 
 确认一切正常后，如有遗漏的微调一并提交。

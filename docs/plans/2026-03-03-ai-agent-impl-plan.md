@@ -1,29 +1,29 @@
 # AI Agent 智能体重构 实施计划
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **对于Claude：** 必须使用的子技能：使用超能力：executing-plans来逐个任务地实施该计划。
 
-**Goal:** 将 Docmost AI 助手升级为 LangGraph 驱动的自主智能体，具备文档解析、深度调研、图片生成/标注、上下文感知修改能力。
+**目标：** 将 Docmost AI 助手升级为 LangGraph 驱动的自主智能体，具备文档解析、深度调研、图片生成/标注、上下文感知修改能力。
 
-**Architecture:** 独立 Python FastAPI 微服务（LangGraph Agent Core + 9 工具） + NestJS 网关层（认证/转发/SSE 代理） + 前端轻量增强（步骤进度嵌入气泡）。
+**架构：**独立Python FastAPI微服务（LangGraph Agent Core + 9工具）+ NestJS网关层（认证/转发/SSE代理）+前置轻量增强（步骤推进嵌入气泡）。
 
-**Tech Stack:** Python 3.12, FastAPI, LangGraph, Docling, Tavily, Firecrawl, Pillow, NestJS, React/Jotai/Mantine
+**技术栈：** Python 3.12、FastAPI、LangGraph、Docling、Tavily、Firecrawl、Pillow、NestJS、React/Jotai/Mantine
 
-**Design Doc:** `docs/plans/2026-03-03-ai-agent-architecture-design.md`
+**设计文档：** `docs/plans/2026-03-03-ai-agent-architecture-design.md`
 
 ---
 
-## Phase 1: Agent Service 项目脚手架
+## 阶段 1: Agent Service 项目脚手架
 
-### Task 1.1: 创建 Python 项目结构
+### 任务 1.1: 创建 Python 项目结构
 
-**Files:**
-- Create: `agent-service/pyproject.toml`
-- Create: `agent-service/app/__init__.py`
-- Create: `agent-service/app/config.py`
-- Create: `agent-service/tests/__init__.py`
-- Create: `agent-service/tests/conftest.py`
+**文件：**
+- 创建：`agent-service/pyproject.toml`
+- 创建：`agent-service/app/__init__.py`
+- 创建：`agent-service/app/config.py`
+- 创建：`agent-service/tests/__init__.py`
+- 创建：`agent-service/tests/conftest.py`
 
-**Step 1: 创建项目目录和 pyproject.toml**
+**第 1 步：创建项目目录和pyproject.toml**
 
 ```toml
 # agent-service/pyproject.toml
@@ -56,7 +56,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 ```
 
-**Step 2: 创建配置模块（双层配置）**
+**步骤 2：创建配置模块（双层配置）**
 
 ```python
 # agent-service/app/config.py
@@ -109,7 +109,7 @@ class Settings(BaseSettings):
 settings = Settings()
 ```
 
-**Step 3: 创建空的 __init__ 和 conftest**
+**第 3 步：创建空的 __init__ 和 conftest**
 
 ```python
 # agent-service/app/__init__.py
@@ -135,7 +135,7 @@ def test_settings():
     )
 ```
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add agent-service/
@@ -144,15 +144,15 @@ git commit -m "feat(agent): scaffold Python agent-service project with config"
 
 ---
 
-### Task 1.2: FastAPI 入口 + 健康检查 + 认证中间件
+### 任务 1.2: FastAPI 入口 + 健康检查 + 认证中间件
 
-**Files:**
-- Create: `agent-service/app/main.py`
-- Create: `agent-service/app/middleware/__init__.py`
-- Create: `agent-service/app/middleware/auth.py`
-- Create: `agent-service/tests/test_main.py`
+**文件：**
+- 创建：`agent-service/app/main.py`
+- 创建：`agent-service/app/middleware/__init__.py`
+- 创建：`agent-service/app/middleware/auth.py`
+- 创建：`agent-service/tests/test_main.py`
 
-**Step 1: 创建认证中间件**
+**步骤 1：创建认证中间件**
 
 ```python
 # agent-service/app/middleware/__init__.py
@@ -170,7 +170,7 @@ async def verify_internal_secret(request: Request):
         raise HTTPException(status_code=401, detail="Invalid internal secret")
 ```
 
-**Step 2: 创建 FastAPI 入口**
+**第 2 步：创建FastAPI入口**
 
 ```python
 # agent-service/app/main.py
@@ -191,7 +191,7 @@ async def health():
     return {"status": "ok", "service": "docmost-agent"}
 ```
 
-**Step 3: 写测试**
+**步骤 3：写测试**
 
 ```python
 # agent-service/tests/test_main.py
@@ -207,7 +207,7 @@ async def test_health():
     assert resp.json()["status"] == "ok"
 ```
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add agent-service/
@@ -216,14 +216,14 @@ git commit -m "feat(agent): add FastAPI entry point with health check and auth m
 
 ---
 
-### Task 1.3: Pydantic 请求/响应 Schema
+### 任务 1.3: Pydantic 请求/响应 Schema
 
-**Files:**
-- Create: `agent-service/app/schemas/__init__.py`
-- Create: `agent-service/app/schemas/request.py`
-- Create: `agent-service/app/schemas/response.py`
+**文件：**
+- 创建：`agent-service/app/schemas/__init__.py`
+- 创建：`agent-service/app/schemas/request.py`
+- 创建：`agent-service/app/schemas/response.py`
 
-**Step 1: 请求 Schema**
+**第 1 步：请求架构**
 
 ```python
 # agent-service/app/schemas/__init__.py
@@ -257,7 +257,7 @@ class AgentStopRequest(BaseModel):
     task_id: str
 ```
 
-**Step 2: 响应/SSE 事件 Schema**
+**步骤 2：响应/SSE 事件架构**
 
 ```python
 # agent-service/app/schemas/response.py
@@ -300,7 +300,7 @@ class DoneEvent(BaseModel):
 SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ImageEvent | ToolCallEvent | ErrorEvent | DoneEvent
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add agent-service/app/schemas/
@@ -309,18 +309,18 @@ git commit -m "feat(agent): add Pydantic request/response schemas for agent API"
 
 ---
 
-## Phase 2: Agent 工具实现
+## 阶段 2: Agent 工具实现
 
-### Task 2.1: 工具注册表 + Tavily 搜索工具
+### 任务 2.1: 工具注册表 + Tavily 搜索工具
 
-**Files:**
-- Create: `agent-service/app/tools/__init__.py`
-- Create: `agent-service/app/tools/registry.py`
-- Create: `agent-service/app/tools/tavily_search.py`
-- Create: `agent-service/tests/test_tools/__init__.py`
-- Create: `agent-service/tests/test_tools/test_tavily.py`
+**文件：**
+- 创建：`agent-service/app/tools/__init__.py`
+- 创建：`agent-service/app/tools/registry.py`
+- 创建：`agent-service/app/tools/tavily_search.py`
+- 创建：`agent-service/tests/test_tools/__init__.py`
+- 创建：`agent-service/tests/test_tools/test_tavily.py`
 
-**Step 1: 工具注册表**
+**步骤 1：工具注册表**
 
 ```python
 # agent-service/app/tools/__init__.py
@@ -345,7 +345,7 @@ def get_tool_names() -> list[str]:
     return list(_registry.keys())
 ```
 
-**Step 2: Tavily 搜索工具**
+**第 2 步：Tavilly 搜索工具**
 
 ```python
 # agent-service/app/tools/tavily_search.py
@@ -367,7 +367,7 @@ def tavily_search(query: str, max_results: int = 5) -> str:
     return "\n---\n".join(output_parts) if output_parts else "未找到相关结果。"
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add agent-service/app/tools/ agent-service/tests/test_tools/
@@ -376,12 +376,12 @@ git commit -m "feat(agent): add tool registry and tavily_search tool"
 
 ---
 
-### Task 2.2: Firecrawl 爬取工具
+### 任务 2.2: Firecrawl 爬取工具
 
-**Files:**
-- Create: `agent-service/app/tools/firecrawl_scrape.py`
+**文件：**
+- 创建：`agent-service/app/tools/firecrawl_scrape.py`
 
-**Step 1: 实现**
+**步骤 1：实现**
 
 ```python
 # agent-service/app/tools/firecrawl_scrape.py
@@ -400,7 +400,7 @@ def firecrawl_scrape(url: str) -> str:
     return result.get("markdown", "无法提取页面内容。")
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/tools/firecrawl_scrape.py
@@ -409,12 +409,12 @@ git commit -m "feat(agent): add firecrawl_scrape tool"
 
 ---
 
-### Task 2.3: Docling 文档解析工具
+### 任务 2.3: Docling 文档解析工具
 
-**Files:**
-- Create: `agent-service/app/tools/docling_parser.py`
+**文件：**
+- 创建：`agent-service/app/tools/docling_parser.py`
 
-**Step 1: 实现**
+**步骤 1：实现**
 
 ```python
 # agent-service/app/tools/docling_parser.py
@@ -449,7 +449,7 @@ def docling_parser(file_content_b64: str, filename: str, mimetype: str) -> str:
         Path(tmp_path).unlink(missing_ok=True)
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/tools/docling_parser.py
@@ -458,14 +458,14 @@ git commit -m "feat(agent): add docling_parser tool for multi-format document pa
 
 ---
 
-### Task 2.4: 图片生成 + 图片标注 + 图片理解工具
+### 任务 2.4: 图片生成 + 图片标注 + 图片理解工具
 
-**Files:**
-- Create: `agent-service/app/tools/nanobana_imggen.py`
-- Create: `agent-service/app/tools/image_annotate.py`
-- Create: `agent-service/app/tools/vlm_understand.py`
+**文件：**
+- 创建：`agent-service/app/tools/nanobana_imggen.py`
+- 创建：`agent-service/app/tools/image_annotate.py`
+- 创建：`agent-service/app/tools/vlm_understand.py`
 
-**Step 1: 图片生成**
+**步骤 1：图片生成**
 
 ```python
 # agent-service/app/tools/nanobana_imggen.py
@@ -490,7 +490,7 @@ def nanobana_imggen(prompt: str, style: str = "default") -> str:
     return data.get("image_b64", "")
 ```
 
-**Step 2: 图片标注**
+**步骤 2：图片标注**
 
 ```python
 # agent-service/app/tools/image_annotate.py
@@ -552,7 +552,7 @@ def image_annotate(image_b64: str, annotations: list[dict]) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 ```
 
-**Step 3: 图片理解 (VLM)**
+**步骤 3：图像理解 (VLM)**
 
 ```python
 # agent-service/app/tools/vlm_understand.py
@@ -596,7 +596,7 @@ def vlm_understand(image_b64: str, question: str = "描述这张图片的内容"
     return response.content
 ```
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add agent-service/app/tools/nanobana_imggen.py agent-service/app/tools/image_annotate.py agent-service/app/tools/vlm_understand.py
@@ -605,12 +605,12 @@ git commit -m "feat(agent): add image tools (generation, annotation, VLM underst
 
 ---
 
-### Task 2.5: Docmost API 交互工具 (page_read + rag + upload)
+### 任务 2.5: Docmost API 交互工具 (page_read + rag + upload)
 
-**Files:**
-- Create: `agent-service/app/tools/docmost_api.py`
+**文件：**
+- 创建：`agent-service/app/tools/docmost_api.py`
 
-**Step 1: 实现三个 Docmost API 工具**
+**第 1 步：实现三个Docmost API工具**
 
 ```python
 # agent-service/app/tools/docmost_api.py
@@ -667,7 +667,7 @@ def docmost_upload(file_content_b64: str, filename: str, page_id: str) -> str:
     return result.get("url", result.get("filePath", "上传失败"))
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/tools/docmost_api.py
@@ -676,15 +676,15 @@ git commit -m "feat(agent): add Docmost API tools (page_read, rag, upload)"
 
 ---
 
-## Phase 3: LangGraph Agent 核心
+## 阶段 3: LangGraph Agent 核心
 
-### Task 3.1: Agent 状态定义
+### 任务 3.1: Agent 状态定义
 
-**Files:**
-- Create: `agent-service/app/agent/__init__.py`
-- Create: `agent-service/app/agent/state.py`
+**文件：**
+- 创建：`agent-service/app/agent/__init__.py`
+- 创建：`agent-service/app/agent/state.py`
 
-**Step 1: 实现**
+**步骤 1：实现**
 
 ```python
 # agent-service/app/agent/__init__.py
@@ -736,7 +736,7 @@ class AgentState(TypedDict):
     max_iterations: int
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/
@@ -745,12 +745,12 @@ git commit -m "feat(agent): define AgentState for LangGraph"
 
 ---
 
-### Task 3.2: LLM 工厂函数
+### 任务 3.2: LLM 工厂函数
 
-**Files:**
-- Create: `agent-service/app/agent/llm.py`
+**文件：**
+- 创建：`agent-service/app/agent/llm.py`
 
-**Step 1: 实现**
+**步骤 1：实现**
 
 ```python
 # agent-service/app/agent/llm.py
@@ -778,7 +778,7 @@ def get_chat_model() -> BaseChatModel:
         return ChatOpenAI(model=model, api_key=settings.llm_api_key, streaming=True)
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/llm.py
@@ -787,13 +787,13 @@ git commit -m "feat(agent): add LLM factory with dual-layer config"
 
 ---
 
-### Task 3.3: Planner 节点
+### 任务 3.3: Planner 节点
 
-**Files:**
-- Create: `agent-service/app/agent/nodes/__init__.py`
-- Create: `agent-service/app/agent/nodes/planner.py`
+**文件：**
+- 创建：`agent-service/app/agent/nodes/__init__.py`
+- 创建：`agent-service/app/agent/nodes/planner.py`
 
-**Step 1: 实现**
+**步骤 1：实现**
 
 ```python
 # agent-service/app/agent/nodes/__init__.py
@@ -881,7 +881,7 @@ async def planner_node(state: AgentState) -> dict:
     }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/nodes/
@@ -890,12 +890,12 @@ git commit -m "feat(agent): add planner node with structured plan output"
 
 ---
 
-### Task 3.4: Researcher 节点
+### 任务 3.4: Researcher 节点
 
-**Files:**
-- Create: `agent-service/app/agent/nodes/researcher.py`
+**文件：**
+- 创建：`agent-service/app/agent/nodes/researcher.py`
 
-**Step 1: 实现**
+**步骤 1：实现**
 
 ```python
 # agent-service/app/agent/nodes/researcher.py
@@ -975,7 +975,7 @@ async def researcher_node(state: AgentState) -> dict:
     }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/nodes/researcher.py
@@ -984,12 +984,12 @@ git commit -m "feat(agent): add researcher node (file parsing, search, crawl)"
 
 ---
 
-### Task 3.5: Executor 节点
+### 任务 3.5: Executor 节点
 
-**Files:**
-- Create: `agent-service/app/agent/nodes/executor.py`
+**文件：**
+- 创建：`agent-service/app/agent/nodes/executor.py`
 
-**Step 1: 实现**
+**步骤 1：实现**
 
 ```python
 # agent-service/app/agent/nodes/executor.py
@@ -1061,7 +1061,7 @@ async def executor_node(state: AgentState) -> dict:
     }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/nodes/executor.py
@@ -1070,12 +1070,12 @@ git commit -m "feat(agent): add executor node with streaming content generation"
 
 ---
 
-### Task 3.6: Reviewer 节点
+### 任务 3.6: Reviewer 节点
 
-**Files:**
-- Create: `agent-service/app/agent/nodes/reviewer.py`
+**文件：**
+- 创建：`agent-service/app/agent/nodes/reviewer.py`
 
-**Step 1: 实现**
+**步骤 1：实现**
 
 ```python
 # agent-service/app/agent/nodes/reviewer.py
@@ -1156,7 +1156,7 @@ async def reviewer_node(state: AgentState) -> dict:
         }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/nodes/reviewer.py
@@ -1165,12 +1165,12 @@ git commit -m "feat(agent): add reviewer node with quality assessment"
 
 ---
 
-### Task 3.7: LangGraph 图定义与编译
+### 任务 3.7: LangGraph 图定义与编译
 
-**Files:**
-- Create: `agent-service/app/agent/graph.py`
+**文件：**
+- 创建：`agent-service/app/agent/graph.py`
 
-**Step 1: 实现**
+**步骤 1：实现**
 
 ```python
 # agent-service/app/agent/graph.py
@@ -1214,7 +1214,7 @@ def build_agent_graph():
 agent_graph = build_agent_graph()
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/graph.py
@@ -1223,12 +1223,12 @@ git commit -m "feat(agent): build LangGraph with Plan-Execute-Review loop"
 
 ---
 
-### Task 3.8: Agent 运行 API 端点（SSE 流式响应）
+### 任务 3.8: Agent 运行 API 端点（SSE 流式响应）
 
-**Files:**
-- Modify: `agent-service/app/main.py`
+**文件：**
+- 修改：`agent-service/app/main.py`
 
-**Step 1: 添加 agent/run 端点**
+**第 1 步：添加代理/运行端点**
 
 在 `agent-service/app/main.py` 中新增：
 
@@ -1355,7 +1355,7 @@ async def stop_agent(request: AgentStopRequest):
     return {"status": "not_found"}
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/main.py
@@ -1364,14 +1364,14 @@ git commit -m "feat(agent): add /agent/run SSE endpoint with LangGraph streaming
 
 ---
 
-## Phase 4: NestJS 网关层
+## 阶段 4: NestJS 网关层
 
-### Task 4.1: 新增环境变量
+### 任务 4.1: 新增环境变量
 
-**Files:**
-- Modify: `apps/server/src/integrations/environment/environment.service.ts`
+**文件：**
+- 修改：`apps/server/src/integrations/environment/environment.service.ts`
 
-**Step 1: 添加 Agent 相关 getter 方法**
+**第一步：添加Agent相关getter方法**
 
 在 `EnvironmentService` 类中添加：
 
@@ -1385,7 +1385,7 @@ getAgentInternalSecret(): string {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/integrations/environment/environment.service.ts
@@ -1394,13 +1394,13 @@ git commit -m "feat(agent): add agent service config to EnvironmentService"
 
 ---
 
-### Task 4.2: 网关 DTO
+### 任务 4.2: 网关 DTO
 
-**Files:**
-- Create: `apps/server/src/ee/ai/agent-gateway/dto/agent-run.dto.ts`
-- Create: `apps/server/src/ee/ai/agent-gateway/dto/agent-stop.dto.ts`
+**文件：**
+- 创建：`apps/server/src/ee/ai/agent-gateway/dto/agent-run.dto.ts`
+- 创建：`apps/server/src/ee/ai/agent-gateway/dto/agent-stop.dto.ts`
 
-**Step 1: 实现 DTO**
+**步骤1：实现DTO**
 
 ```typescript
 // apps/server/src/ee/ai/agent-gateway/dto/agent-run.dto.ts
@@ -1439,7 +1439,7 @@ export class AgentStopDto {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/agent-gateway/
@@ -1448,12 +1448,12 @@ git commit -m "feat(agent): add NestJS gateway DTOs"
 
 ---
 
-### Task 4.3: 网关 Service
+### 任务 4.3: 网关 Service
 
-**Files:**
-- Create: `apps/server/src/ee/ai/agent-gateway/agent-gateway.service.ts`
+**文件：**
+- 创建：`apps/server/src/ee/ai/agent-gateway/agent-gateway.service.ts`
 
-**Step 1: 实现 SSE 代理服务**
+**步骤 1：实现 SSE 代理服务**
 
 ```typescript
 // apps/server/src/ee/ai/agent-gateway/agent-gateway.service.ts
@@ -1512,7 +1512,7 @@ export class AgentGatewayService {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/agent-gateway/agent-gateway.service.ts
@@ -1521,12 +1521,12 @@ git commit -m "feat(agent): add AgentGatewayService for proxying to Python servi
 
 ---
 
-### Task 4.4: 网关 Controller
+### 任务 4.4: 网关 Controller
 
-**Files:**
-- Create: `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts`
+**文件：**
+- 创建：`apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts`
 
-**Step 1: 实现控制器**
+**步骤 1：实现控制器**
 
 ```typescript
 // apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts
@@ -1662,7 +1662,7 @@ export class AgentGatewayController {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts
@@ -1671,13 +1671,13 @@ git commit -m "feat(agent): add AgentGatewayController with SSE proxy"
 
 ---
 
-### Task 4.5: 网关 Module + 注册到 EeModule
+### 任务 4.5: 网关 Module + 注册到 EeModule
 
-**Files:**
-- Create: `apps/server/src/ee/ai/agent-gateway/agent-gateway.module.ts`
-- Modify: `apps/server/src/ee/ee.module.ts`
+**文件：**
+- 创建：`apps/server/src/ee/ai/agent-gateway/agent-gateway.module.ts`
+- 修改：`apps/server/src/ee/ee.module.ts`
 
-**Step 1: 创建 Module**
+**第 1 步：创建模块**
 
 ```typescript
 // apps/server/src/ee/ai/agent-gateway/agent-gateway.module.ts
@@ -1692,11 +1692,11 @@ import { AgentGatewayService } from './agent-gateway.service';
 export class AgentGatewayModule {}
 ```
 
-**Step 2: 在 EeModule 中导入 AgentGatewayModule**
+**第 2 步：在EeModule中导入AgentGatewayModule**
 
 在 `apps/server/src/ee/ee.module.ts` 的 imports 数组中添加 `AgentGatewayModule`。
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/agent-gateway/agent-gateway.module.ts apps/server/src/ee/ee.module.ts
@@ -1705,15 +1705,15 @@ git commit -m "feat(agent): register AgentGatewayModule in EeModule"
 
 ---
 
-## Phase 5: 前端集成
+## 阶段 5: 前端集成
 
-### Task 5.1: Agent 类型定义和 Atom
+### 任务 5.1: Agent 类型定义和 Atom
 
-**Files:**
-- Create: `apps/client/src/ee/ai/types/agent.types.ts`
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/types/agent.types.ts`
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`
 
-**Step 1: 类型定义**
+**步骤 1：类型定义**
 
 ```typescript
 // apps/client/src/ee/ai/types/agent.types.ts
@@ -1730,7 +1730,7 @@ export interface AgentSSEEvent {
 }
 ```
 
-**Step 2: 在 ai-creator-atoms.ts 中新增 atom**
+**步骤 2：在 ai-creator-atoms.ts 中添加原子**
 
 在现有 atom 文件末尾添加：
 
@@ -1742,7 +1742,7 @@ export const agentStepsAtom = atom<Record<string, AgentStepInfo[]>>({});
 
 需要导入: `import { AgentStepInfo } from '../../types/agent.types';`
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/types/agent.types.ts apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts
@@ -1751,12 +1751,12 @@ git commit -m "feat(agent): add agent types and Jotai atoms"
 
 ---
 
-### Task 5.2: Agent Service (前端 API 调用)
+### 任务 5.2: Agent Service (前端 API 调用)
 
-**Files:**
-- Create: `apps/client/src/ee/ai/services/agent-service.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/services/agent-service.ts`
 
-**Step 1: 实现 SSE 流式调用**
+**步骤 1：实现 SSE 流式调用**
 
 ```typescript
 // apps/client/src/ee/ai/services/agent-service.ts
@@ -1850,7 +1850,7 @@ export function agentGenerate(
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/services/agent-service.ts
@@ -1859,13 +1859,13 @@ git commit -m "feat(agent): add frontend agent SSE service"
 
 ---
 
-### Task 5.3: Agent 步骤进度组件
+### 任务 5.3: Agent 步骤进度组件
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-agent-steps.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-agent-steps.module.css`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-agent-steps.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-agent-steps.module.css`
 
-**Step 1: 组件实现**
+**步骤 1：组件实现**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/ai-creator-agent-steps.tsx
@@ -1905,7 +1905,7 @@ export function AiCreatorAgentSteps({ steps }: Props) {
 }
 ```
 
-**Step 2: 样式**
+**步骤 2：样式**
 
 ```css
 /* apps/client/src/ee/ai/components/ai-creator/ai-creator-agent-steps.module.css */
@@ -1963,7 +1963,7 @@ export function AiCreatorAgentSteps({ steps }: Props) {
 }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-agent-steps.tsx apps/client/src/ee/ai/components/ai-creator/ai-creator-agent-steps.module.css
@@ -1972,12 +1972,12 @@ git commit -m "feat(agent): add agent steps progress component"
 
 ---
 
-### Task 5.4: 修改 AI Creator Input（添加深度模式开关）
+### 任务 5.4: 修改 AI Creator Input（添加深度模式开关）
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
 
-**Step 1: 在 inputToolbarLeft 区域添加深度模式开关**
+**第 1 步：在输入工具栏左侧添加区域深度模式开关**
 
 在已有的模板选择按钮和文件上传按钮旁边，添加一个 Agent 模式切换按钮。具体位置：在 `inputToolbarLeft` 的 `div` 内，模板按钮之后添加：
 
@@ -2002,11 +2002,11 @@ const [agentMode, setAgentMode] = useAtom(agentModeAtom);
 </Tooltip>
 ```
 
-**Step 2: 在 handleSubmit 中根据 agentMode 路由到不同流程**
+**第 2 步：在handleSubmit中根据agentMode路由到不同的流程**
 
-在 `handleSubmit` 函数内，当 `agentMode` 为 true 时，调用 `agentGenerate` 而非 `creatorGenerate`。具体逻辑在 Task 5.5 的 use-agent hook 中封装。
+在 `handleSubmit` 函数内，当 `agentMode` 为 true 时，调用 `agentGenerate` 而非 `creatorGenerate`。具体逻辑在 任务 5.5 的 use-agent hook 中封装。
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx
@@ -2015,13 +2015,13 @@ git commit -m "feat(agent): add deep mode toggle button to AI creator input"
 
 ---
 
-### Task 5.5: Agent Hook + 修改 Message Item 渲染步骤
+### 任务 5.5: Agent Hook + 修改 Message Item 渲染步骤
 
-**Files:**
-- Create: `apps/client/src/ee/ai/hooks/use-agent.ts`
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/hooks/use-agent.ts`
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx`
 
-**Step 1: use-agent hook**
+**第 1 步：使用代理挂钩**
 
 ```typescript
 // apps/client/src/ee/ai/hooks/use-agent.ts
@@ -2101,7 +2101,7 @@ export function useAgent(pageId: string) {
 }
 ```
 
-**Step 2: 修改 message-item 渲染步骤**
+**第 2 步：修改message-item渲染步骤**
 
 在 `ai-creator-message-item.tsx` 中，当消息的 role 为 'assistant' 时，在内容上方渲染 `AiCreatorAgentSteps` 组件（仅在 agentMode 活跃且有步骤时显示）。
 
@@ -2122,7 +2122,7 @@ const steps = allSteps[pageId] || [];
 )}
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/hooks/use-agent.ts apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx
@@ -2131,15 +2131,15 @@ git commit -m "feat(agent): add useAgent hook and render steps in message item"
 
 ---
 
-## Phase 6: Docker 部署
+## 阶段 6: Docker 部署
 
-### Task 6.1: Agent Service Dockerfile
+### 任务 6.1: Agent Service Dockerfile
 
-**Files:**
-- Create: `agent-service/Dockerfile`
-- Create: `agent-service/.dockerignore`
+**文件：**
+- 创建：`agent-service/Dockerfile`
+- 创建：`agent-service/.dockerignore`
 
-**Step 1: Dockerfile**
+**步骤 1：Dockerfile**
 
 ```dockerfile
 # agent-service/Dockerfile
@@ -2164,7 +2164,7 @@ EXPOSE 8100
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8100", "--workers", "1"]
 ```
 
-**Step 2: .dockerignore**
+**步骤2：.dockerignore**
 
 ```
 # agent-service/.dockerignore
@@ -2176,7 +2176,7 @@ tests/
 .git
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add agent-service/Dockerfile agent-service/.dockerignore
@@ -2185,12 +2185,12 @@ git commit -m "feat(agent): add Dockerfile for agent-service"
 
 ---
 
-### Task 6.2: 更新 docker-compose.yml
+### 任务 6.2: 更新 docker-compose.yml
 
-**Files:**
-- Modify: `docker-compose.yml`
+**文件：**
+- 修改：`docker-compose.yml`
 
-**Step 1: 在 services 中添加 agent-service**
+**第 1 步：在services中添加agent-service**
 
 ```yaml
   agent-service:
@@ -2224,14 +2224,14 @@ git commit -m "feat(agent): add Dockerfile for agent-service"
       - docmost-network
 ```
 
-**Step 2: 在 docmost 服务的 environment 中添加**
+**第 2 步：在docmost服务的环境中添加**
 
 ```yaml
       - AGENT_SERVICE_URL=http://agent-service:8100
       - AGENT_INTERNAL_SECRET=${AGENT_INTERNAL_SECRET}
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add docker-compose.yml
@@ -2240,12 +2240,12 @@ git commit -m "feat(agent): add agent-service to docker-compose"
 
 ---
 
-### Task 6.3: 更新 .env.example
+### 任务 6.3: 更新 .env.example
 
-**Files:**
-- Modify: `.env.example`
+**文件：**
+- 修改：`.env.example`
 
-**Step 1: 添加 Agent 相关环境变量**
+**步骤 1：添加 Agent 相关环境变量**
 
 ```bash
 # === AI Agent Service ===
@@ -2268,7 +2268,7 @@ NANOBANA_API_KEY=your-nanobana-key
 # AGENT_MAX_ITERATIONS=3
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add .env.example
@@ -2279,13 +2279,13 @@ git commit -m "docs: add agent service env vars to .env.example"
 
 ## 执行顺序汇总
 
-| Phase | Task | 描述 | 估计文件数 |
+| 阶段 | 任务 | 描述 | 估计文件数 |
 |-------|------|------|-----------|
-| 1 | 1.1-1.3 | Python 项目脚手架 + 配置 + Schema | 10 |
+| 1 | 1.1-1.3 | Python项目搭建骨架+配置+架构 | 10 |
 | 2 | 2.1-2.5 | 9 个工具实现 | 8 |
-| 3 | 3.1-3.8 | LangGraph Agent 核心（状态/节点/图/API） | 9 |
+| 3 | 3.1-3.8 | LangGraph Agent核心（状态/节点/图/API） | 9 |
 | 4 | 4.1-4.5 | NestJS 网关层 | 7 |
 | 5 | 5.1-5.5 | 前端集成 | 7 |
-| 6 | 6.1-6.3 | Docker 部署 | 4 |
+| 6 | 6.1-6.3 | Docker部署 | 4 |
 
-**总计**: 6 Phase, 21 Tasks, ~45 文件
+**总计**：6 个阶段，21 个任务，~45 个文件

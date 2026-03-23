@@ -1,80 +1,80 @@
-# Phase 1: Core Orchestrator — Implementation Plan
+# 阶段 1：核心编排器实施计划
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **对于智能体执行者：** 要求：使用 superpowers:subagent-driven-development （如果子代理可用）或 superpowers:executing-plans 来实施此计划。步骤使用复选框 (`- [ ]`) 语法进行跟踪。
 
-**Goal:** Build the PydanticAI Orchestrator with ReAct loop, complexity analysis, user interaction tools, and Level 1 task execution — proving the new architecture works end-to-end.
+**目标：** 使用 ReAct 循环、复杂性分析、用户交互工具和 1 级任务执行构建 PydanticAI Orchestrator - 证明新架构端到端地工作。
 
-**Architecture:** A single PydanticAI Agent with tool calling serves as the Orchestrator. It dynamically decides what to do next based on task complexity. Tools include `analyze_complexity`, `ask_user`, `simple_edit` (for Level 1), and `finalize`. The existing `asyncio.Queue` SSE mechanism is adapted for the new event protocol. The old LangGraph code stays in place — we build v2 alongside it.
+**架构：** 具有工具调用功能的单个 PydanticAI 代理充当 Orchestrator。它根据任务复杂性动态决定下一步做什么。工具包括`analyze_complexity`、`ask_user`、`simple_edit`（针对级别1）和`finalize`。现有的`asyncio.Queue` SSE 机制适用于新的事件协议。旧的 LangGraph 代码保持不变——我们在它旁边构建了 v2。
 
-**Tech Stack:** PydanticAI, FastAPI, asyncio, existing LLM abstraction from `app/config.py`
+**技术栈：** PydanticAI、FastAPI、asyncio、来自 `app/config.py` 的现有 LLM 抽象
 
-**Prerequisites (from Phase 0):**
-- Pydantic models: `CreationBrief`, `AssetMap`, `CreationBlueprint`, `SectionDraft`, `ReviewReport`, `SSEEvent`, `CreationState`
-- Chinese word counting utility
-- Frontend TypeScript types
-- Empty scaffolding for orchestrator and workers
+**先决条件（从第 0 阶段开始）：**
+- Pydantic 型号：`CreationBrief`、`AssetMap`、`CreationBlueprint`、`SectionDraft`、`ReviewReport`、`SSEEvent`、`CreationState`
+- 中文字数统计实用程序
+- 前端 TypeScript 类型
+- 协调员和工人的空搭建骨架
 
 ---
 
-## File Structure Overview
+## 文件结构概述
 
-### New files (agent-service)
+### 新文件（代理服务）
 
-| File | Purpose |
+| 文件 | 用途 |
 |------|---------|
-| `agent-service/app/orchestrator/__init__.py` | Package init |
-| `agent-service/app/orchestrator/llm_factory.py` | PydanticAI model adapter factory |
-| `agent-service/app/orchestrator/engine.py` | Core orchestrator engine (PydanticAI Agent) |
-| `agent-service/app/orchestrator/prompts.py` | System prompts for orchestrator |
-| `agent-service/app/orchestrator/tools/__init__.py` | Tools package init |
+| `agent-service/app/orchestrator/__init__.py` | 包初始化 |
+| `agent-service/app/orchestrator/llm_factory.py` | PydanticAI模型适配器工厂 |
+| `agent-service/app/orchestrator/engine.py` | 核心编排引擎（PydanticAI Agent） |
+| `agent-service/app/orchestrator/prompts.py` | 系统提示需要协调器 |
+| `agent-service/app/orchestrator/tools/__init__.py` | 工具包初始化 |
 | `agent-service/app/orchestrator/tools/complexity.py` | `analyze_complexity` tool |
-| `agent-service/app/orchestrator/tools/user_interaction.py` | `ask_user` tool (interrupt mechanism) |
-| `agent-service/app/orchestrator/tools/simple_edit.py` | `simple_edit` tool (Level 1 execution) |
-| `agent-service/app/orchestrator/tools/finalize.py` | `finalize` tool (merge + done) |
-| `agent-service/tests/orchestrator/__init__.py` | Test package |
-| `agent-service/tests/orchestrator/test_llm_factory.py` | LLM factory tests |
-| `agent-service/tests/orchestrator/test_complexity.py` | Complexity analysis tests |
-| `agent-service/tests/orchestrator/test_user_interaction.py` | User interaction tests |
-| `agent-service/tests/orchestrator/test_simple_edit.py` | Simple edit tests |
-| `agent-service/tests/orchestrator/test_finalize.py` | Finalize tests |
-| `agent-service/tests/orchestrator/test_engine.py` | Orchestrator engine tests |
-| `agent-service/tests/orchestrator/test_e2e_level1.py` | End-to-end Level 1 integration test |
+| `agent-service/app/orchestrator/tools/user_interaction.py` | `ask_user`工具（中断机制） |
+| `agent-service/app/orchestrator/tools/simple_edit.py` | `simple_edit` 工具（1 级执行） |
+| `agent-service/app/orchestrator/tools/finalize.py` | `finalize` 工具（合并+完成） |
+| `agent-service/tests/orchestrator/__init__.py` | 测试包 |
+| `agent-service/tests/orchestrator/test_llm_factory.py` | LLM工厂测试 |
+| `agent-service/tests/orchestrator/test_complexity.py` | 复杂性分析测试 |
+| `agent-service/tests/orchestrator/test_user_interaction.py` | 用户交互测试 |
+| `agent-service/tests/orchestrator/test_simple_edit.py` | 简单的编辑测试 |
+| `agent-service/tests/orchestrator/test_finalize.py` | 完成测试 |
+| `agent-service/tests/orchestrator/test_engine.py` | Orchestrator 引擎测试 |
+| `agent-service/tests/orchestrator/test_e2e_level1.py` | 端到端1级集成测试 |
 
-### Modified files
+### 修改文件
 
-| File | Change |
+| 文件 | 变更 |
 |------|--------|
-| `agent-service/app/main.py` | Add `/v2/agent/run`, `/v2/agent/resume`, `/v2/agent/stop` endpoints |
-| `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts` | Add v2 proxy routes |
-| `apps/client/src/ee/ai/services/ai-create-runner.utils.ts` | Add v2 event normalization |
+| `agent-service/app/main.py` | 添加 `/v2/agent/run`、`/v2/agent/resume`、`/v2/agent/stop` 端点 |
+| `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts` | 添加v2代理路由 |
+| `apps/client/src/ee/ai/services/ai-create-runner.utils.ts` | 添加 v2 事件标准化 |
 
 ---
 
-## Chunk 1: LLM Adapter
+## 分块 1：LLM 适配器
 
-### Task 1: Create LLM adapter for PydanticAI
+### 任务 1：创建 LLM adapter for PydanticAI
 
-PydanticAI needs a model adapter. The project supports multiple providers (OpenAI, Gemini, Ollama, OpenAI-compatible). Create a factory that reads existing `app/config.py` settings and returns the right PydanticAI model string or instance.
+PydanticAI 需要一个模型适配器。该项目支持多个提供商（OpenAI、Gemini、Ollama、OpenAI 兼容）。创建一个读取现有 `app/config.py` 设置并返回正确的 PydanticAI 模型字符串或实例的工厂。
 
-**Files:**
-- Create: `agent-service/app/orchestrator/__init__.py`
-- Create: `agent-service/app/orchestrator/llm_factory.py`
-- Test: `agent-service/tests/orchestrator/__init__.py`
-- Test: `agent-service/tests/orchestrator/test_llm_factory.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/__init__.py`
+- 创建：`agent-service/app/orchestrator/llm_factory.py`
+- 测试： `agent-service/tests/orchestrator/__init__.py`
+- 测试： `agent-service/tests/orchestrator/test_llm_factory.py`
 
-**Context:** The existing `app/config.py` has these resolved properties:
+**上下文：** 现有的 `app/config.py` 具有以下已解析的属性：
 - `settings.llm_provider` → `"openai"` | `"openai-compatible"` | `"gemini"` | `"ollama"`
 - `settings.llm_model` → e.g. `"gpt-4"`, `"gemini-2.0-flash"`, `"llama3"`
-- `settings.llm_api_key` → API key string
-- `settings.llm_api_url` → Base URL (relevant for openai-compatible and ollama)
+- `settings.llm_api_key` → API 密钥字符串
+- `settings.llm_api_url` → 基本 URL（与 openai 兼容和 ollama 相关）
 
-PydanticAI model format:
-- OpenAI: `"openai:gpt-4"` (uses `OPENAI_API_KEY` env or explicit)
-- Gemini: `"google-gla:gemini-2.0-flash"` (uses `GOOGLE_API_KEY` env or explicit)
-- Ollama: `"ollama:llama3"` (uses `OLLAMA_BASE_URL` env or explicit)
-- OpenAI-compatible: `OpenAIModel(model_name, base_url=..., api_key=...)` from `pydantic_ai.models.openai`
+PydanticAI模型格式：
+- OpenAI：`"openai:gpt-4"`（使用`OPENAI_API_KEY` env或显式）
+- 双子座：`"google-gla:gemini-2.0-flash"`（使用 `GOOGLE_API_KEY` env 或显式）
+- Ollama：`"ollama:llama3"`（使用 `OLLAMA_BASE_URL` env 或显式）
+- OpenAI 兼容：`OpenAIModel(model_name, base_url=..., api_key=...)` 来自 `pydantic_ai.models.openai`
 
-- [ ] **Step 1: Write failing tests for LLM factory**
+- [ ] **第 1 步：为 LLM 工厂编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_llm_factory.py
@@ -156,15 +156,15 @@ def test_unknown_provider_falls_back_to_openai():
         assert model is not None
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_llm_factory.py -q
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.orchestrator'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.orchestrator'`
 
-- [ ] **Step 3: Implement the LLM factory**
+- [ ] **第 3 步：实施LLM工厂**
 
 ```python
 # agent-service/app/orchestrator/__init__.py
@@ -253,15 +253,15 @@ def create_pydantic_ai_model(
     )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_llm_factory.py -q
 ```
 
-Expected: PASS — all 5 tests pass.
+预期：通过 — 所有 5 项测试均通过。
 
-- [ ] **Step 5: Verify with a smoke test (requires real API key)**
+- [ ] **第 5 步：通过冒烟测试进行验证（需要真实的 API 密钥）**
 
 ```bash
 cd agent-service && python -c "
@@ -272,9 +272,9 @@ print(f'Type: {type(model).__name__}')
 "
 ```
 
-Expected: prints model info without errors.
+预期：打印模型信息，没有错误。
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/__init__.py agent-service/app/orchestrator/llm_factory.py agent-service/tests/orchestrator/__init__.py agent-service/tests/orchestrator/test_llm_factory.py
@@ -283,32 +283,32 @@ git commit -m "feat(orchestrator): add PydanticAI LLM adapter factory"
 
 ---
 
-## Chunk 2: Complexity Analysis
+## 分块 2：复杂度分析
 
-### Task 2: Implement analyze_complexity tool
+### 任务 2：实现 analyze_complexity tool
 
-This tool analyzes user input + context to determine task complexity Level 1/2/3, which drives the orchestrator's execution strategy.
+该工具分析用户输入+上下文以确定任务复杂性级别1/2/3，从而驱动编排器的执行策略。
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/__init__.py`
-- Create: `agent-service/app/orchestrator/tools/complexity.py`
-- Test: `agent-service/tests/orchestrator/test_complexity.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/__init__.py`
+- 创建：`agent-service/app/orchestrator/tools/complexity.py`
+- 测试： `agent-service/tests/orchestrator/test_complexity.py`
 
-**Complexity levels:**
+**复杂程度：**
 
-| Level | Description | Keywords (EN) | Keywords (ZH) | Behavior |
+| Level | 说明 | Keywords (EN) | Keywords (ZH) | Behavior |
 |-------|-------------|---------------|---------------|----------|
-| 1 | Simple edit | translate, fix spelling, shorten, lengthen, simplify, change tone | 翻译, 改错, 精简, 加长, 简化, 改语气 | Single LLM call, no planning |
-| 2 | Structured edit | format, layout, continue, expand, restructure | 排版, 续写, 扩展, 重构 | Brief + single-pass write |
-| 3 | Full creation | create, write, rewrite, compose, design | 创作, 写, 仿写, 合并, 设计 | Full pipeline with blueprint |
+| 1 | 简单编辑 | 翻译、修正拼写、缩短、延长、简化、改变语气 | 翻译, 改错, 精简, 加长, 简化, 改语气 | 单一 LLM 通话，无需规划 |
+| 2 | 结构化编辑 | 格式、布局、继续、扩展、重组 | 排版, 续写, 扩展, 重构 | 简短+单遍写入 |
+| 3 | 全创作 | 创建、编写、重写、撰写、设计 | 创作, 写, 仿写, 合并, 设计 | 完整的管道与蓝图 |
 
-**Override rules:**
-- File uploads → at least Level 2
-- Multiple files → Level 3
-- Templates that imply creation → Level 3
+**覆盖规则：**
+- 文件上传 → 至少 2 级
+- 多个文件 → 3 级
+- 暗示创造的模板 → 第 3 级
 - `intent_route == "selection_edit"` → Level 1
 
-- [ ] **Step 1: Write failing tests for complexity analysis**
+- [ ] **第 1 步：编写失败测试以进行复杂性分析**
 
 ```python
 # agent-service/tests/orchestrator/test_complexity.py
@@ -514,15 +514,15 @@ class TestReasoningOutput:
         assert result["level"] in (1, 2, 3)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_complexity.py -q
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.orchestrator.tools'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.orchestrator.tools'`
 
-- [ ] **Step 3: Implement the complexity analyzer**
+- [ ] **第 3 步：实施复杂性分析器**
 
 ```python
 # agent-service/app/orchestrator/tools/__init__.py
@@ -666,15 +666,15 @@ def analyze_task_complexity(
     return ComplexityResult(level=3, reasoning="; ".join(reasons))
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_complexity.py -v
 ```
 
-Expected: PASS — all tests green.
+预期：通过 — 所有测试均呈绿色。
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/tools/__init__.py agent-service/app/orchestrator/tools/complexity.py agent-service/tests/orchestrator/test_complexity.py
@@ -683,28 +683,28 @@ git commit -m "feat(orchestrator): add deterministic task complexity analyzer"
 
 ---
 
-## Chunk 3: User Interaction (Interrupt Mechanism)
+## 分块 3：用户交互（中断机制）
 
-### Task 3: Implement ask_user tool (interrupt mechanism)
+### 任务 3：实现 ask_user tool (interrupt mechanism)
 
-This is the most critical tool. It emits an SSE event and PAUSES the orchestrator until the user responds. Uses `asyncio.Event` for pause/resume signaling.
+这是最关键的工具。它会发出 SSE 事件并暂停协调器，直到用户响应。使用 `asyncio.Event` 发出暂停/恢复信号。
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/user_interaction.py`
-- Test: `agent-service/tests/orchestrator/test_user_interaction.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/user_interaction.py`
+- 测试： `agent-service/tests/orchestrator/test_user_interaction.py`
 
-**Design:**
+**设计：**
 
-The `ask_user` tool is called by the PydanticAI agent when it needs user input. It:
-1. Serializes the question/data as an SSE `await_input` event
-2. Pushes it to the existing `asyncio.Queue` (via `app.agent.events.emit`)
-3. Sets an `asyncio.Event` and waits on a corresponding response Event
-4. The `/v2/agent/resume` endpoint sets the response and signals the Event
-5. The tool returns the user's response to the PydanticAI agent
+当需要用户输入时，`ask_user` 工具由 PydanticAI 代理调用。它：
+1. 将问题/数据序列化为 SSE `await_input` 事件
+2. 将其推送到现有的 `asyncio.Queue`（通过 `app.agent.events.emit`）
+3. 设置`asyncio.Event`并等待相应的响应事件
+4. `/v2/agent/resume` 端点设置响应并发出事件信号
+5. 该工具将用户的响应返回给 PydanticAI 代理
 
-A per-thread registry maps `thread_id` to `(asyncio.Event, response_value)` pairs.
+每线程注册表将 `thread_id` 映射到 `(asyncio.Event, response_value)` 对。
 
-- [ ] **Step 1: Write failing tests for user interaction**
+- [ ] **第 1 步：为用户交互编写失败的测试**
 
 ```python
 # agent-service/tests/orchestrator/test_user_interaction.py
@@ -778,15 +778,15 @@ class TestInteractionPhase:
         assert InteractionPhase.CLARIFY == "clarify"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_user_interaction.py -q
 ```
 
-Expected: FAIL — `ModuleNotFoundError`
+预期：失败 — `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement the user interaction system**
+- [ ] **第 3 步：实现用户交互系统**
 
 ```python
 # agent-service/app/orchestrator/tools/user_interaction.py
@@ -897,15 +897,15 @@ class InteractionRegistry:
 interaction_registry = InteractionRegistry()
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_user_interaction.py -v
 ```
 
-Expected: PASS — all tests green.
+预期：通过 — 所有测试均呈绿色。
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/tools/user_interaction.py agent-service/tests/orchestrator/test_user_interaction.py
@@ -914,23 +914,23 @@ git commit -m "feat(orchestrator): add user interaction pause/resume mechanism"
 
 ---
 
-## Chunk 4: Simple Edit (Level 1)
+## 分块 4：简单编辑（Level 1）
 
-### Task 4: Implement simple_edit tool (Level 1 execution)
+### 任务 4：实现 simple_edit tool (Level 1 execution)
 
-For Level 1 tasks: single LLM call with user prompt + selected text + page context. Streams content via SSE `content_delta` events. No planning, no blueprint, no review.
+对于 1 级任务：带有用户提示 + 选定文本 + 页面上下文的单个 LLM 调用。通过 SSE `content_delta` 事件传输内容。没有计划，没有蓝图，没有审查。
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/simple_edit.py`
-- Test: `agent-service/tests/orchestrator/test_simple_edit.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/simple_edit.py`
+- 测试： `agent-service/tests/orchestrator/test_simple_edit.py`
 
-**Design:**
+**设计：**
 - Takes: `user_message`, `selected_text`, `page_context`, `system_prompt`
-- Uses PydanticAI agent with streaming for the actual LLM call
-- Emits `step_start` → streams `content` events → emits `step_done`
-- Returns the complete generated text
+- 使用 PydanticAI 代理和流媒体进行实际的 LLM 调用
+- 发出 `step_start` → 流 `content` 事件 → 发出 `step_done`
+- 返回完整生成的文本
 
-- [ ] **Step 1: Write failing tests for simple_edit**
+- [ ] **第 1 步：为 simple_edit 编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_simple_edit.py
@@ -999,15 +999,15 @@ class TestSimpleEditRequest:
         assert req.selected_text == "你好"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_simple_edit.py -q
 ```
 
-Expected: FAIL — `ModuleNotFoundError`
+预期：失败 — `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement simple_edit**
+- [ ] **第 3 步：实施 simple_edit**
 
 ```python
 # agent-service/app/orchestrator/tools/simple_edit.py
@@ -1133,15 +1133,15 @@ async def execute_simple_edit(
     return full_text
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_simple_edit.py -v
 ```
 
-Expected: PASS — prompt building and request model tests pass.
+预期：通过 - 提示构建并请求模型测试通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/tools/simple_edit.py agent-service/tests/orchestrator/test_simple_edit.py
@@ -1150,17 +1150,17 @@ git commit -m "feat(orchestrator): add simple_edit tool for Level 1 tasks"
 
 ---
 
-## Chunk 5: Finalize Tool
+## 分块 5：finalize 工具
 
-### Task 5: Implement finalize tool
+### 任务 5：实现 finalize tool
 
-Merges all section drafts into `final_content`, computes final word count, and emits the `done` event.
+将所有部分草稿合并到 `final_content`，计算最终字数，并发出 `done` 事件。
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/finalize.py`
-- Test: `agent-service/tests/orchestrator/test_finalize.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/finalize.py`
+- 测试： `agent-service/tests/orchestrator/test_finalize.py`
 
-- [ ] **Step 1: Write failing tests for finalize**
+- [ ] **第 1 步：为 Finalize 编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_finalize.py
@@ -1224,15 +1224,15 @@ class TestComputeWordCount:
         assert count == 0
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_finalize.py -q
 ```
 
-Expected: FAIL — `ModuleNotFoundError`
+预期：失败 — `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement finalize tool**
+- [ ] **第 3 步：实施最终确定工具**
 
 ```python
 # agent-service/app/orchestrator/tools/finalize.py
@@ -1337,15 +1337,15 @@ async def finalize_and_emit(
     return final_content
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_finalize.py -v
 ```
 
-Expected: PASS — all tests green.
+预期：通过 — 所有测试均呈绿色。
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/tools/finalize.py agent-service/tests/orchestrator/test_finalize.py
@@ -1354,33 +1354,33 @@ git commit -m "feat(orchestrator): add finalize tool for content merging"
 
 ---
 
-## Chunk 6: Orchestrator Engine
+## 分块 6：编排器引擎
 
-### Task 6: Build the Orchestrator Engine
+### 任务 6：构建 the 编排器引擎
 
-The core PydanticAI Agent that ties everything together.
+核心 PydanticAI 代理将一切联系在一起。
 
-**Files:**
-- Create: `agent-service/app/orchestrator/prompts.py`
-- Create: `agent-service/app/orchestrator/engine.py`
-- Test: `agent-service/tests/orchestrator/test_engine.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/prompts.py`
+- 创建：`agent-service/app/orchestrator/engine.py`
+- 测试： `agent-service/tests/orchestrator/test_engine.py`
 
-**Design:**
+**设计：**
 
-The engine creates a PydanticAI Agent with:
-- System prompt from `prompts.py`
+该引擎创建一个 PydanticAI 代理：
+- 来自`prompts.py`的系统提示
 - Tools: `analyze_complexity`, `ask_user`, `simple_edit`, `finalize`
-- Dependency injection of `CreationState` (runtime context)
-- Streaming output via SSE events
+- `CreationState` 的依赖注入（运行时上下文）
+- 通过 SSE 事件进行流式输出
 
-The `run()` method orchestrates the full lifecycle:
-1. Creates state from request
-2. Runs PydanticAI agent — the agent decides what tools to call
-3. For Level 1: agent calls `analyze_complexity` → `simple_edit` → `finalize`
-4. For Level 2/3: agent calls `analyze_complexity` → `ask_user` (optional) → delegates to workers (Phase 2+)
-5. Handles cancellation and errors
+`run()` 方法协调整个生命周期：
+1. 根据请求创建状态
+2. 运行 PydanticAI 代理 — 代理决定调用哪些工具
+3. 对于级别 1：座席呼叫 `analyze_complexity` → `simple_edit` → `finalize`
+4. 对于 2/3 级：代理调用 `analyze_complexity` → `ask_user`（可选）→ 委托给工作人员（阶段 2+）
+5. 处理取消和错误
 
-- [ ] **Step 1: Write the orchestrator system prompt**
+- [ ] **第 1 步：编写 Orchestrator 系统提示符**
 
 ```python
 # agent-service/app/orchestrator/prompts.py
@@ -1422,7 +1422,7 @@ ORCHESTRATOR_SYSTEM_PROMPT = """You are the orchestrator for a document creation
 """
 ```
 
-- [ ] **Step 2: Write failing tests for the engine**
+- [ ] **第 2 步：为引擎编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_engine.py
@@ -1482,15 +1482,15 @@ class TestOrchestratorEngine:
             await engine.run(req)
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [ ] **第 3 步：运行测试以验证它们是否失败**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_engine.py -q
 ```
 
-Expected: FAIL — `ModuleNotFoundError`
+预期：失败 — `ModuleNotFoundError`
 
-- [ ] **Step 4: Implement the orchestrator engine**
+- [ ] **第 4 步：实施协调器引擎**
 
 ```python
 # agent-service/app/orchestrator/engine.py
@@ -1639,15 +1639,15 @@ class OrchestratorEngine:
         return final_content
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **第 5 步：运行测试以验证其通过**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_engine.py -v
 ```
 
-Expected: PASS — request model and engine initialization tests pass.
+预期：PASS — 请求模型和引擎初始化测试通过。
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/prompts.py agent-service/app/orchestrator/engine.py agent-service/tests/orchestrator/test_engine.py
@@ -1656,22 +1656,22 @@ git commit -m "feat(orchestrator): add core orchestrator engine with Level 1 exe
 
 ---
 
-## Chunk 7: FastAPI Endpoints
+## 分块 7：FastAPI 端点
 
-### Task 7: Create new FastAPI v2 endpoints
+### 任务 7：创建 new FastAPI v2 endpoints
 
-Add `/v2/agent/run`, `/v2/agent/resume`, and `/v2/agent/stop` that coexist with the old LangGraph endpoints.
+添加与旧 LangGraph 端点共存的 `/v2/agent/run`、`/v2/agent/resume` 和 `/v2/agent/stop`。
 
-**Files:**
-- Modify: `agent-service/app/main.py`
+**文件：**
+- 修改：`agent-service/app/main.py`
 
-**Design:**
-- New endpoints use `OrchestratorEngine` instead of LangGraph
-- Same SSE event stream format (reuses `asyncio.Queue` mechanism)
-- Same auth middleware (`verify_internal_secret`)
-- Old endpoints remain untouched for backward compatibility
+**设计：**
+- 新端点使用 `OrchestratorEngine` 而不是 LangGraph
+- 相同的SSE事件流格式（重用`asyncio.Queue`机制）
+- 相同的身份验证中间件（`verify_internal_secret`）
+- 旧端点保持不变以实现向后兼容性
 
-- [ ] **Step 1: Write failing tests for v2 endpoints**
+- [ ] **第 1 步：为 v2 端点编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_endpoints.py
@@ -1749,17 +1749,17 @@ async def test_old_endpoints_still_work():
         assert response.status_code != 404
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_endpoints.py -q
 ```
 
-Expected: FAIL — 404 for `/v2/agent/run`
+预期：FAIL — `/v2/agent/run` 为 404
 
-- [ ] **Step 3: Add v2 endpoints to main.py**
+- [ ] **步骤 3：将 v2 端点添加到 main.py**
 
-Add the following to `agent-service/app/main.py` (after the existing endpoints, keeping them intact):
+将以下内容添加到 `agent-service/app/main.py`（在现有端点之后，保持它们不变）：
 
 ```python
 # --- v2 Orchestrator Endpoints ---
@@ -1885,23 +1885,23 @@ async def stop_agent_v2(request: V2StopRequest):
     return {"status": "not_found"}
 ```
 
-**Important:** Add these imports at the top of `main.py`:
+**重要提示：** 在 `main.py` 顶部添加这些导入：
 
 ```python
 from pydantic import BaseModel, Field
 ```
 
-(`BaseModel` is already imported via `app.schemas.request`, but the v2 request models are defined inline in `main.py` for now.)
+（`BaseModel` 已通过 `app.schemas.request` 导入，但 v2 请求模型目前在 `main.py` 中内联定义。）
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_endpoints.py -v
 ```
 
-Expected: PASS — all 4 endpoint existence tests pass.
+预期：通过 — 所有 4 个端点存在测试均通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/main.py agent-service/tests/orchestrator/test_endpoints.py
@@ -1910,18 +1910,18 @@ git commit -m "feat(orchestrator): add /v2/agent/run, /resume, /stop endpoints"
 
 ---
 
-## Chunk 8: NestJS Gateway Adaptation
+## 分块 8：NestJS 网关适配
 
-### Task 8: Adapt NestJS gateway for v2 endpoints
+### 任务 8：适配 NestJS gateway for v2 endpoints
 
-Add new route handlers in the NestJS gateway that proxy to the Python `/v2/` endpoints. Keep existing routes working.
+在代理到 Python `/v2/` 端点的 NestJS 网关中添加新的路由处理程序。保持现有路线正常运行。
 
-**Files:**
-- Modify: `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts`
+**文件：**
+- 修改：`apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts`
 
-- [ ] **Step 1: Add v2 proxy routes to the gateway controller**
+- [ ] **步骤 1：将 v2 代理路由添加到网关控制器**
 
-Add these methods to `AgentGatewayController` in `agent-gateway.controller.ts`:
+将这些方法添加到 `agent-gateway.controller.ts` 中的 `AgentGatewayController`：
 
 ```typescript
 @Post('v2/run')
@@ -2091,17 +2091,17 @@ async stopAgentV2(@Body() dto: AgentStopDto) {
 }
 ```
 
-**Note:** The `stopAgentV2` method in `AgentGatewayService` should proxy to `/v2/agent/stop`. If the service doesn't have this method yet, add it following the same pattern as the existing `stopAgent`.
+**注意：** `AgentGatewayService` 中的 `stopAgentV2` 方法应代理到 `/v2/agent/stop`。如果服务还没有此方法，请按照与现有 `stopAgent` 相同的模式添加它。
 
-- [ ] **Step 2: Verify the gateway compiles**
+- [ ] **第 2 步：验证网关是否编译**
 
 ```bash
 cd E:/test/Docmost && pnpm --filter ./apps/server exec tsc --noEmit --pretty
 ```
 
-Expected: No compilation errors.
+预期：没有编译错误。
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
 ```bash
 git add apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts
@@ -2110,18 +2110,18 @@ git commit -m "feat(gateway): add v2 proxy routes for orchestrator endpoints"
 
 ---
 
-## Chunk 9: Level 1 End-to-End Test
+## 分块 9：Level 1 端到端测试
 
-### Task 9: Level 1 end-to-end integration test
+### 任务 9：Level 1 end-to-end integration test
 
-A test that exercises the full Level 1 path: request → complexity analysis → simple_edit → finalize → SSE events.
+练习完整 1 级路径的测试：请求 → 复杂性分析 → simple_edit → 最终确定 → SSE 事件。
 
-**Files:**
-- Create: `agent-service/tests/orchestrator/test_e2e_level1.py`
+**文件：**
+- 创建：`agent-service/tests/orchestrator/test_e2e_level1.py`
 
-**Note:** This test mocks the LLM layer but exercises everything else for real.
+**注意：** 该测试模拟了 LLM 层，但真实地练习了其他所有内容。
 
-- [ ] **Step 1: Write the end-to-end test**
+- [ ] **第 1 步：编写端到端测试**
 
 ```python
 # agent-service/tests/orchestrator/test_e2e_level1.py
@@ -2274,15 +2274,15 @@ async def test_level1_completes_without_ask_user():
             assert "done" in event_types
 ```
 
-- [ ] **Step 2: Run the test**
+- [ ] **第 2 步：运行测试**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/test_e2e_level1.py -v
 ```
 
-Expected: PASS — the full Level 1 pipeline works end-to-end with mocked LLM.
+预期：通过 - 完整的 1 级管道与模拟的 LLM 端到端工作。
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
 ```bash
 git add agent-service/tests/orchestrator/test_e2e_level1.py
@@ -2291,18 +2291,18 @@ git commit -m "test(orchestrator): add Level 1 end-to-end integration test"
 
 ---
 
-## Chunk 10: Frontend Event Adaptation
+## 分块 10：前端事件适配
 
-### Task 10: Frontend event handler adaptation
+### 任务 10：Frontend event handler adaptation
 
-Add v2 event normalization alongside existing event handling. New events for Phase 2+ are defined but not yet used.
+在现有事件处理旁边添加 v2 事件规范化。第 2+ 阶段的新事件已定义但尚未使用。
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/services/ai-create-runner.utils.ts`
+**文件：**
+- 修改：`apps/client/src/ee/ai/services/ai-create-runner.utils.ts`
 
-- [ ] **Step 1: Add v2 event types to AiCreateRunEvent**
+- [ ] **步骤 1：将 v2 事件类型添加到 AiCreateRunEvent**
 
-Add these new event types to the `AiCreateRunEvent` union in `ai-create-runner.utils.ts`:
+将这些新事件类型添加到 `ai-create-runner.utils.ts` 中的 `AiCreateRunEvent` 联合中：
 
 ```typescript
 // Add to the AiCreateRunEvent union type:
@@ -2313,9 +2313,9 @@ Add these new event types to the `AiCreateRunEvent` union in `ai-create-runner.u
 | { type: "complexity_analyzed"; level: 1 | 2 | 3; reasoning: string }
 ```
 
-- [ ] **Step 2: Add v2 event normalization cases to normalizeAgentRunEvent**
+- [ ] **步骤 2：将 v2 事件规范化案例添加到 normalizeAgentRunEvent**
 
-Add these cases to the `switch` in `normalizeAgentRunEvent`:
+将这些案例添加到 `normalizeAgentRunEvent` 中的 `switch`：
 
 ```typescript
 case "section_progress":
@@ -2348,15 +2348,15 @@ case "complexity_analyzed":
   };
 ```
 
-- [ ] **Step 3: Verify TypeScript compiles**
+- [ ] **第 3 步：验证 TypeScript 是否编译**
 
 ```bash
 cd E:/test/Docmost && pnpm --filter ./apps/client exec tsc --noEmit --pretty
 ```
 
-Expected: No compilation errors.
+预期：没有编译错误。
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/services/ai-create-runner.utils.ts
@@ -2365,41 +2365,41 @@ git commit -m "feat(client): add v2 event types for orchestrator SSE protocol"
 
 ---
 
-## Final Verification
+## 最终验证
 
-- [ ] **Step 1: Run all orchestrator tests**
+- [ ] **第 1 步：运行所有 Orchestrator 测试**
 
 ```bash
 cd agent-service && python -m pytest tests/orchestrator/ -v
 ```
 
-Expected: All tests PASS.
+预期：所有测试均通过。
 
-- [ ] **Step 2: Run existing agent tests (regression check)**
+- [ ] **步骤 2：运行现有代理测试（回归检查）**
 
 ```bash
 cd agent-service && python -m pytest tests/ -v --ignore=tests/orchestrator/
 ```
 
-Expected: Existing tests still PASS — v2 code does not break v1.
+预期：现有测试仍然通过 - v2 代码不会破坏 v1。
 
-- [ ] **Step 3: Verify server compiles**
+- [ ] **步骤 3：验证服务器编译**
 
 ```bash
 cd E:/test/Docmost && pnpm --filter ./apps/server exec tsc --noEmit --pretty
 ```
 
-Expected: No errors.
+预期：没有错误。
 
-- [ ] **Step 4: Verify client compiles**
+- [ ] **第 4 步：验证客户端编译**
 
 ```bash
 cd E:/test/Docmost && pnpm --filter ./apps/client exec tsc --noEmit --pretty
 ```
 
-Expected: No errors.
+预期：没有错误。
 
-- [ ] **Step 5: Final commit and tag**
+- [ ] **第 5 步：最终提交和标记**
 
 ```bash
 git add -A
@@ -2408,50 +2408,50 @@ git commit -m "docs: add Phase 1 orchestrator implementation plan"
 
 ---
 
-## Dependency Graph
+## 依赖关系图
 
 ```
-Task 1 (LLM Factory)
+任务 1 (LLM Factory)
     ↓
-Task 2 (Complexity) ←── independent of Task 1
+任务 2 (Complexity) ←── independent of 任务 1
     ↓
-Task 3 (User Interaction) ←── independent of Task 1/2
+任务 3 (User Interaction) ←── independent of 任务 1/2
     ↓
-Task 4 (Simple Edit) ←── depends on Task 1 (llm_factory)
+任务 4 (Simple Edit) ←── depends on 任务 1 (llm_factory)
     ↓
-Task 5 (Finalize) ←── independent
+任务 5 (Finalize) ←── independent
     ↓
-Task 6 (Engine) ←── depends on Tasks 1-5
+任务 6 (Engine) ←── depends on 任务 1-5
     ↓
-Task 7 (FastAPI Endpoints) ←── depends on Task 6
+任务 7 (FastAPI Endpoints) ←── depends on 任务 6
     ↓
-Task 8 (NestJS Gateway) ←── depends on Task 7 (endpoint URLs)
+任务 8 (NestJS Gateway) ←── depends on 任务 7 (endpoint URLs)
     ↓
-Task 9 (E2E Test) ←── depends on Task 7
+任务 9 (E2E Test) ←── depends on 任务 7
     ↓
-Task 10 (Frontend Events) ←── independent of backend tasks
+任务 10 (Frontend Events) ←── independent of backend tasks
 ```
 
-Tasks 1, 2, 3, 5, and 10 can be worked on in parallel. Task 4 depends on Task 1. Task 6 depends on all tool tasks. Tasks 7-9 are sequential.
+任务 1、2、3、5 和 10 可以并行进行。任务 4 取决于任务 1。任务 6 取决于所有工具任务。任务 7-9 是连续的。
 
 ---
 
-## Phase 1 Deliverables Summary
+## 阶段 1 Deliverables Summary
 
-After Phase 1 is complete, the system can:
+第一阶段完成后，系统可以：
 
-1. Accept requests via `/v2/agent/run` (coexists with old `/agent/run`)
-2. Analyze task complexity deterministically (no LLM needed)
-3. Execute Level 1 tasks end-to-end (translate, fix spelling, shorten, change tone)
-4. Stream results via SSE with the same event format as v1
-5. Pause/resume via `ask_user` mechanism (infrastructure ready, used in Phase 2+)
-6. Cancel running tasks via `/v2/agent/stop`
-7. Proxy through NestJS gateway to the frontend
+1. 通过`/v2/agent/run`接受请求（与旧的`/agent/run`共存）
+2. 确定性地分析任务复杂性（无需LLM）
+3. 端到端执行 1 级任务（翻译、修正拼写、缩短、改变语气）
+4. 通过 SSE 流式传输结果，事件格式与 v1 相同
+5. 通过 `ask_user` 机制暂停/恢复（基础设施就绪，在阶段 2+ 中使用）
+6.通过`/v2/agent/stop`取消正在运行的任务
+7.通过NestJS网关代理到前端
 
-What Phase 1 does NOT do (deferred to Phase 2+):
-- Level 2/3 tasks fall back to simple_edit (no planning/blueprint/review)
-- Worker delegation (no `plan_worker`, `write_worker`, `review_worker`)
-- Evidence acquisition (stays in v1 LangGraph path)
-- Asset map building
-- Multi-section writing
-- Review and revision loops
+第 1 阶段不做什么（推迟到第 2+ 阶段）：
+- 2/3 级任务退回到 simple_edit（无计划/蓝图/审查）
+- 工人代表团（无 `plan_worker`、`write_worker`、`review_worker`）
+- 证据获取（保留在 v1 LangGraph 路径中）
+- 资产地图构建
+- 多节写作
+- 审查和修订循环

@@ -1,7 +1,7 @@
 # Wiki 前台目录展示设计
 
 > 日期: 2026-02-28
-> 分支: feater-dir-refactor
+> 路径：feater-dir-refactor
 > 状态: 已批准
 
 ## 需求概述
@@ -31,14 +31,14 @@ Wiki 前台（VitePress）需要支持目录/主题层级展示：
 请求: `{ spaceSlug: string }`
 返回: `{ items: [{ id, name, slug, icon?, position }] }`
 
-从 directories 表查询，过滤 deletedAt=null，按 position 排序。
+从目录表查询，过滤deletedAt=null，按位置排序。
 
 ### 3. 修改 `POST /api/public-wiki/sidebar`
 
 新增可选参数 `directoryId`。
 
-传入 directoryId 时：
-- 查询该目录下的 topics + pages
+确定directoryId时：
+- 查询该目录下的主题+页面
 - 返回带 nodeType 的混合树（topic 节点包含其下页面，无 topic 的页面直接列出）
 - 排序保持后端 Docmost 中的顺序
 
@@ -69,10 +69,10 @@ Wiki 前台（VitePress）需要支持目录/主题层级展示：
 - 新增 `getDirectories(spaceSlug)` 方法
 - `getSidebar` 增加可选 `directoryId` 参数
 
-### 3. Composable (useDocmostSidebar.ts)
+### 3. 可组合 (useDocmostSidebar.ts)
 
 新增状态:
-- `directories: Record<string, DocmostDirectory[]>` — 按 spaceSlug 缓存
+- `directories: Record<string, DocmostDirectory[]>` — 单击 spaceSlug 服务器
 - `selectedDirectory: Record<string, string>` — 当前选中目录 ID
 
 新增方法:
@@ -80,11 +80,11 @@ Wiki 前台（VitePress）需要支持目录/主题层级展示：
 - `selectDirectory(spaceSlug, directoryId)` — 选择目录并重载侧边栏
 
 修改逻辑:
-- `loadSpaces()` 后，对 hasDirectories=true 的空间自动加载目录
-- `mapToSidebarItems` 识别 nodeType='topic' → 映射为分组标题（无 link）
+- `loadSpaces()`后，对hasDirectories=true 的空间自动加载目录
+- `mapToSidebarItems` 识别nodeType='topic' → 映射为分组标题（无链接）
 - `buildSidebarForRoute` 使用选中的目录过滤
 
-### 4. NavBar (NavBar.vue)
+### 4.导航栏（NavBar.vue）
 
 - 有目录的空间：复用现有 `.nav-dropdown` 组件，items 为目录列表
 - 点击目录：调用 `selectDirectory`，导航到空间路由
@@ -100,14 +100,14 @@ Wiki 前台（VitePress）需要支持目录/主题层级展示：
 
 ## 文件变更清单
 
-### 后端 (apps/server/src/core/public-wiki/)
-- `public-wiki.service.ts` — 新增 getDirectories(), 修改 getSidebarTree()
-- `public-wiki.controller.ts` — 新增 directories 端点
+### 工作室 (apps/server/src/core/public-wiki/)
+- `public-wiki.service.ts` — 新增 getDirectories()、修改 getSidebarTree()
+- `public-wiki.controller.ts` — 新增目录端点
 - `dto/public-wiki.dto.ts` — 新增 PublicDirectoriesDto
 
 ### 前端 (wiki/docs/.vitepress/theme/)
-- `types/index.ts` — 新增 DocmostDirectory, 扩展现有类型
-- `services/docmost.ts` — 新增 getDirectories(), 修改 getSidebar()
+- `types/index.ts` — 新增 DocmostDirectory，扩展现有类型
+- `services/docmost.ts` — 新增 getDirectories()、修改 getSidebar()
 - `composables/useDocmostSidebar.ts` — 核心逻辑改动
 - `components/NavBar.vue` — 目录下拉菜单
 - `components/SideBar.vue` — 可能需微调（主要逻辑在 composable 中）

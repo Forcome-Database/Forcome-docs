@@ -1,79 +1,79 @@
-# Phase 5: Polish & Optimization — Implementation Plan
+# 阶段 5：打磨与优化实施计划
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **对于智能体执行者：** 要求：使用 superpowers:subagent-driven-development （如果子代理可用）或 superpowers:executing-plans 来实施此计划。步骤使用复选框 (`- [ ]`) 语法进行跟踪。
 
-**Goal:** Add model routing, style learning, single-chapter rewrite, multi-document merge optimization, frontend UI refinements, performance optimizations, and clean up old LangGraph code.
+**目标：** 添加模型路由、风格学习、单章重写、多文档合并优化、前端 UI 细化、性能优化以及清理旧的 LangGraph 代码。
 
-**Architecture:** Model routing enables different LLM models for different workers (strong model for Orchestrator, fast model for SectionWriter). Style learning extracts writing patterns from workspace documents. Frontend gets animation polish and responsive improvements.
+**架构：** 模型路由为不同的工作人员启用不同的LLM模型（Orchestrator的强模型，SectionWriter的快速模型）。风格学习从工作区文档中提取写作模式。前端获得动画优化和响应式改进。
 
-**Tech Stack:** PydanticAI (multi-model), Mantine UI transitions, Redis caching
-
----
-
-## File Structure Overview
-
-### New files (agent-service)
-
-| File | Purpose |
-|------|---------|
-| `agent-service/app/orchestrator/model_router.py` | Multi-model routing configuration |
-| `agent-service/app/workers/style_analyzer.py` | Workspace style learning worker |
-| `agent-service/tests/orchestrator/test_model_router.py` | Model router tests |
-| `agent-service/tests/workers/test_style_analyzer.py` | Style analyzer tests |
-| `agent-service/tests/test_e2e_final.py` | Final integration test suite |
-
-### New files (frontend)
-
-| File | Purpose |
-|------|---------|
-| `docs/ai-creator-v2-architecture.md` | New architecture documentation |
-
-### Modified files
-
-| File | Change |
-|------|--------|
-| `agent-service/app/orchestrator/llm_factory.py` | Support multiple model instances |
-| `agent-service/app/orchestrator/engine.py` | Add rewrite_section tool |
-| `agent-service/app/orchestrator/tools/write_tools.py` | Add rewrite_section implementation |
-| `agent-service/app/orchestrator/tools/complexity.py` | Multi-document merge proposals |
-| `agent-service/app/main.py` | Remove old endpoints, rename v2 to / |
-| `agent-service/pyproject.toml` | Remove langgraph dependency |
-| `apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx` | Input area redesign |
-| `apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx` | Animation polish |
-| `apps/client/src/ee/ai/services/ai-create-runner.utils.ts` | SSE streaming optimization |
-| `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts` | Update endpoint paths |
-| `docker-compose.yml` | Update if new dependencies |
-
-### Deleted files
-
-| File | Reason |
-|------|--------|
-| `agent-service/app/agent/graph.py` | Old LangGraph orchestration |
-| `agent-service/app/agent/nodes/*.py` | Old LangGraph node files |
-| `agent-service/app/agent/state.py` | Old TypedDict state |
-| `agent-service/app/agent/quality_checks.py` | Replaced by evaluator worker |
-| `agent-service/app/agent/cancellation.py` | Replaced by new cancellation |
-| `agent-service/app/agent/document_strategy.py` | Replaced by new models |
-| `agent-service/app/agent/events.py` | Replaced by new SSE protocol |
-| `agent-service/app/agent/evidence.py` | Replaced by AssetMap model |
-| `agent-service/app/agent/llm.py` | Replaced by llm_factory.py |
-| `apps/client/src/ee/ai/components/ai-creator/ai-creator-clarify-bubble.tsx` | Old clarify UI |
-| `apps/client/src/ee/ai/components/ai-creator/ai-creator-propose-bubble.tsx` | Old propose UI |
-| `apps/client/src/ee/ai/components/ai-creator/ai-creator-outline-bubble.tsx` | Old outline UI |
+**技术栈：** PydanticAI（多模型）、Mantine UI 转换、Redis 缓存
 
 ---
 
-## Chunk 1: Model Routing
+## 文件结构概述
 
-### Task 1: Create model router configuration
+### 新文件（代理服务）
 
-**Files:**
-- Create: `agent-service/app/orchestrator/model_router.py`
-- Test: `agent-service/tests/orchestrator/test_model_router.py`
+| 文件 | 用途 |
+|------|---------|
+| `agent-service/app/orchestrator/model_router.py` | 多模型路由配置 |
+| `agent-service/app/workers/style_analyzer.py` | 工作空间风格的学习工作者 |
+| `agent-service/tests/orchestrator/test_model_router.py` | 模型路由器测试 |
+| `agent-service/tests/workers/test_style_analyzer.py` | 风格分析器测试 |
+| `agent-service/tests/test_e2e_final.py` | 最终集成测试套件 |
 
-**Context:** Different workers benefit from different model strengths. The Orchestrator needs strong reasoning, SectionWriter needs speed, Evaluator needs balanced capability. This task creates a routing config that maps worker roles to model identifiers.
+### 新文件（前端）
 
-- [ ] **Step 1: Write failing tests for model router**
+| 文件 | 用途 |
+|------|---------|
+| `docs/ai-creator-v2-architecture.md` | 新架构文档 |
+
+### 修改文件
+
+| 文件 | 变更 |
+|------|--------|
+| `agent-service/app/orchestrator/llm_factory.py` | 支持多个模型实例 |
+| `agent-service/app/orchestrator/engine.py` | 添加rewrite_section工具 |
+| `agent-service/app/orchestrator/tools/write_tools.py` | 添加 rewrite_section 实现 |
+| `agent-service/app/orchestrator/tools/complexity.py` | 多文档合并提案 |
+| `agent-service/app/main.py` | 删除旧端点，将 v2 重命名为 / |
+| `agent-service/pyproject.toml` | 删除 langgraph 依赖 |
+| `apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx` | 输入区域重新设计 |
+| `apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx` | 动画打磨 |
+| `apps/client/src/ee/ai/services/ai-create-runner.utils.ts` | SSE 流优化 |
+| `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts` | 更新端点路径 |
+| `docker-compose.yml` | 更新是否有新的依赖项 |
+
+### 已删除的文件
+
+| 文件 | 原因 |
+|------|--------|
+| `agent-service/app/agent/graph.py` | 旧的 LangGraph 编排 |
+| `agent-service/app/agent/nodes/*.py` | 旧的 LangGraph 节点文件 |
+| `agent-service/app/agent/state.py` | 旧的 TypedDict 状态 |
+| `agent-service/app/agent/quality_checks.py` | 由评估员取代 |
+| `agent-service/app/agent/cancellation.py` | 被新的取消取代 |
+| `agent-service/app/agent/document_strategy.py` | 被新型号取代 |
+| `agent-service/app/agent/events.py` | 被新的SSE协议取代 |
+| `agent-service/app/agent/evidence.py` | 被AssetMap模型取代 |
+| `agent-service/app/agent/llm.py` | 替换为 llm_factory.py |
+| `apps/client/src/ee/ai/components/ai-creator/ai-creator-clarify-bubble.tsx` | 旧的清晰 UI |
+| `apps/client/src/ee/ai/components/ai-creator/ai-creator-propose-bubble.tsx` | 旧的提议 UI |
+| `apps/client/src/ee/ai/components/ai-creator/ai-creator-outline-bubble.tsx` | 旧的大纲用户界面 |
+
+---
+
+## 分块 1：模型路由
+
+### 任务 1：创建 model router configuration
+
+**文件：**
+- 创建：`agent-service/app/orchestrator/model_router.py`
+- 测试： `agent-service/tests/orchestrator/test_model_router.py`
+
+**背景：** 不同的工人受益于不同的模型优势。 Orchestrator需要强大的推理能力，SectionWriter需要速度，Evaluator需要平衡能力。此任务创建一个将辅助角色映射到模型标识符的路由配置。
+
+- [ ] **第 1 步：为模型路由器编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_model_router.py
@@ -117,7 +117,7 @@ def test_unknown_role_returns_default():
     assert router.get_model("unknown_role") == "gpt-4o"
 ```
 
-- [ ] **Step 2: Implement ModelRouter**
+- [ ] **第 2 步：实施 ModelRouter**
 
 ```python
 # agent-service/app/orchestrator/model_router.py
@@ -181,13 +181,13 @@ class ModelRouter:
         }
 ```
 
-- [ ] **Step 3: Run tests and verify**
+- [ ] **第 3 步：运行测试并验证**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_model_router.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_model_router.py -v`
 
-- [ ] **Step 4: Update llm_factory to accept model parameter from router**
+- [ ] **第 4 步：更新 llm_factory 以接受来自路由器的模型参数**
 
-Modify `agent-service/app/orchestrator/llm_factory.py` to add a `get_model(model_id: str | None = None)` overload that accepts an explicit model string. When `model_id` is provided, it uses that instead of reading from config. This enables the ModelRouter to pass role-specific models.
+修改 `agent-service/app/orchestrator/llm_factory.py` 以添加接受显式模型字符串的 `get_model(model_id: str | None = None)` 重载。当提供 `model_id` 时，它使用它而不是从配置中读取。这使得 ModelRouter 能够传递特定于角色的模型。
 
 ```python
 # In llm_factory.py, update get_model:
@@ -203,27 +203,27 @@ def get_model(model_id: str | None = None):
     # ... existing fallback to config ...
 ```
 
-- [ ] **Step 5: Update workers to accept model parameter**
+- [ ] **第 5 步：更新工作人员以接受模型参数**
 
-Each worker (SectionWriter, Evaluator, Fixer) should accept an optional `model` parameter. When provided, it overrides the default model. This was partially done in Phase 4; verify all workers support it.
+每个工作人员（SectionWriter、Evaluator、Fixer）都应该接受一个可选的 `model` 参数。当提供时，它会覆盖默认模型。这在第四阶段已部分完成；验证所有工人都支持它。
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/orchestrator/model_router.py agent-service/app/orchestrator/llm_factory.py agent-service/tests/orchestrator/test_model_router.py && git commit -m "feat(agent): implement model routing for worker-specific LLM assignment"`
+运行： `cd /e/test/Docmost && git add agent-service/app/orchestrator/model_router.py agent-service/app/orchestrator/llm_factory.py agent-service/tests/orchestrator/test_model_router.py && git commit -m "feat(agent): implement model routing for worker-specific LLM assignment"`
 
 ---
 
-## Chunk 2: Single Chapter Rewrite
+## 分块 2：单章节改写
 
-### Task 2: Implement rewrite_section tool
+### 任务 2：实现 rewrite_section tool
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/rewrite_tools.py`
-- Test: `agent-service/tests/orchestrator/test_rewrite_tools.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/rewrite_tools.py`
+- 测试： `agent-service/tests/orchestrator/test_rewrite_tools.py`
 
-**Context:** After document generation, users may want to rewrite a single section with specific feedback. This tool calls SectionWriter for just that section, preserving adjacent section context via the sliding window.
+**上下文：** 文档生成后，用户可能希望使用特定反馈重写单个部分。该工具仅针对该部分调用SectionWriter，通过滑动窗口保留相邻部分的上下文。
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **第 1 步：编写失败的测试**
 
 ```python
 # agent-service/tests/orchestrator/test_rewrite_tools.py
@@ -276,7 +276,7 @@ async def test_rewrite_section_provides_adjacent_context():
     # The adjacent context should be passed somehow (check args or kwargs)
 ```
 
-- [ ] **Step 2: Implement rewrite_section**
+- [ ] **第 2 步：实施 rewrite_section**
 
 ```python
 # agent-service/app/orchestrator/tools/rewrite_tools.py
@@ -372,27 +372,27 @@ async def rewrite_section(
     return updated
 ```
 
-- [ ] **Step 3: Run tests and verify**
+- [ ] **第 3 步：运行测试并验证**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_rewrite_tools.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_rewrite_tools.py -v`
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/orchestrator/tools/rewrite_tools.py agent-service/tests/orchestrator/test_rewrite_tools.py && git commit -m "feat(agent): implement single chapter rewrite tool"`
+运行： `cd /e/test/Docmost && git add agent-service/app/orchestrator/tools/rewrite_tools.py agent-service/tests/orchestrator/test_rewrite_tools.py && git commit -m "feat(agent): implement single chapter rewrite tool"`
 
 ---
 
-## Chunk 3: Multi-Document Merge Optimization
+## 分块 3：多文档合并优化
 
-### Task 3: Implement multi-document merge proposals
+### 任务 3：实现 multi-document merge proposals
 
-**Files:**
-- Modify: `agent-service/app/orchestrator/tools/complexity.py`
-- Test: `agent-service/tests/orchestrator/test_multi_merge.py`
+**文件：**
+- 修改：`agent-service/app/orchestrator/tools/complexity.py`
+- 测试： `agent-service/tests/orchestrator/test_multi_merge.py`
 
-**Context:** When a user provides multiple source documents (Level 3), the Orchestrator should propose 2-3 possible document structures, deduplicate assets, and flag content conflicts.
+**上下文：** 当用户提供多个源文档（级别 3）时，Orchestrator 应提出 2-3 种可能的文档结构、删除重复资产并标记内容冲突。
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **第 1 步：编写失败的测试**
 
 ```python
 # agent-service/tests/orchestrator/test_multi_merge.py
@@ -428,7 +428,7 @@ async def test_propose_merged_structures():
     assert 2 <= len(proposals) <= 3
 ```
 
-- [ ] **Step 2: Implement deduplicate_assets and propose_merged_structures**
+- [ ] **第 2 步：实施 deduplicate_assets 和 suggest_merged_structs**
 
 Add to `agent-service/app/orchestrator/tools/complexity.py`:
 
@@ -483,27 +483,27 @@ Consider different orderings and groupings. Output as JSON array of objects with
     return proposals[:3]  # cap at 3
 ```
 
-- [ ] **Step 3: Run tests and verify**
+- [ ] **第 3 步：运行测试并验证**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_multi_merge.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_multi_merge.py -v`
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/orchestrator/tools/complexity.py agent-service/tests/orchestrator/test_multi_merge.py && git commit -m "feat(agent): implement multi-document merge proposals and asset deduplication"`
+运行： `cd /e/test/Docmost && git add agent-service/app/orchestrator/tools/complexity.py agent-service/tests/orchestrator/test_multi_merge.py && git commit -m "feat(agent): implement multi-document merge proposals and asset deduplication"`
 
 ---
 
-## Chunk 4: Style Learning
+## 分块 4：风格学习
 
-### Task 4: Implement workspace style analyzer
+### 任务 4：实现 workspace style analyzer
 
-**Files:**
-- Create: `agent-service/app/workers/style_analyzer.py`
-- Test: `agent-service/tests/workers/test_style_analyzer.py`
+**文件：**
+- 创建：`agent-service/app/workers/style_analyzer.py`
+- 测试： `agent-service/tests/workers/test_style_analyzer.py`
 
-**Context:** Style learning reads recent workspace pages to extract writing patterns, producing a style guide string injected into SectionWriter prompts. Controlled by workspace AI settings.
+**上下文：** 风格学习读取最近的工作区页面以提取写作模式，生成注入到SectionWriter提示中的风格指南字符串。由工作区 AI 设置控制。
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **第 1 步：编写失败的测试**
 
 ```python
 # agent-service/tests/workers/test_style_analyzer.py
@@ -545,7 +545,7 @@ async def test_analyze_style_reads_pages():
     assert len(guide) > 0
 ```
 
-- [ ] **Step 2: Implement style analyzer**
+- [ ] **第 2 步：实施样式分析器**
 
 ```python
 # agent-service/app/workers/style_analyzer.py
@@ -683,26 +683,26 @@ async def analyze_style(
     return guide
 ```
 
-- [ ] **Step 3: Run tests and verify**
+- [ ] **第 3 步：运行测试并验证**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_style_analyzer.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_style_analyzer.py -v`
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/workers/style_analyzer.py agent-service/tests/workers/test_style_analyzer.py && git commit -m "feat(agent): implement workspace style learning analyzer"`
+运行： `cd /e/test/Docmost && git add agent-service/app/workers/style_analyzer.py agent-service/tests/workers/test_style_analyzer.py && git commit -m "feat(agent): implement workspace style learning analyzer"`
 
 ---
 
-## Chunk 5: Frontend UI Polish — Animations and Transitions
+## 分块 5：前端 UI 润色：动画与过渡
 
-### Task 5: Add animations and loading states
+### 任务 5：添加 animations and loading states
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx`
 
-**Context:** Add Mantine Transition for modal open/close, skeleton loading states, and smooth scroll behavior.
+**上下文：** 添加 Mantine Transition 以实现模式打开/关闭、骨架加载状态和平滑滚动行为。
 
-- [ ] **Step 1: Add skeleton loading for review state**
+- [ ] **第 1 步：添加审核状态的骨架加载**
 
 ```tsx
 // Add to ai-creator-panel.tsx imports:
@@ -715,7 +715,7 @@ import { Skeleton, Transition } from '@mantine/core';
 // <Skeleton height={40} radius="sm" mt="sm" />  // issue placeholder
 ```
 
-- [ ] **Step 2: Add smooth scroll to section completion**
+- [ ] **第 2 步：添加平滑滚动以完成部分**
 
 ```typescript
 // When a section_complete SSE event arrives:
@@ -725,7 +725,7 @@ const scrollToSection = (sectionId: string) => {
 };
 ```
 
-- [ ] **Step 3: Add responsive breakpoint for ReviewModal**
+- [ ] **第 3 步：为ReviewModal添加响应断点**
 
 ```tsx
 // In ReviewModal.tsx, make it full screen on mobile:
@@ -736,22 +736,22 @@ const isMobile = useMediaQuery('(max-width: 768px)');
 // <Modal ... fullScreen={isMobile} size={isMobile ? undefined : "xl"}>
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/ && git commit -m "feat(client): add animations, skeleton loading, and responsive breakpoints"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/ && git commit -m "feat(client): add animations, skeleton loading, and responsive breakpoints"`
 
 ---
 
-## Chunk 6: Frontend UI Polish — Input Area Redesign
+## 分块 6：前端 UI 润色：输入区重设计
 
-### Task 6: Redesign AiCreatorInput
+### 任务 6：Redesign AiCreatorInput
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
 
-**Context:** Improve the input area with icon-grid template selection, visual complexity indicator, and drag-and-drop file upload.
+**上下文：** 通过图标网格模板选择、视觉复杂性指示器和拖放文件上传来改进输入区域。
 
-- [ ] **Step 1: Replace template dropdown with icon grid**
+- [ ] **第 1 步：用图标网格替换模板下拉列表**
 
 ```tsx
 // Replace the existing template Combobox/Select with a visual grid:
@@ -763,7 +763,7 @@ import { SimpleGrid, UnstyledButton, Stack, Text, ThemeIcon } from '@mantine/cor
 // Selected template highlighted with primary color border
 ```
 
-- [ ] **Step 2: Add visual complexity level indicator**
+- [ ] **第 2 步：添加视觉复杂程度指示器**
 
 ```tsx
 // Add a badge showing the estimated complexity level:
@@ -776,7 +776,7 @@ import { Badge } from '@mantine/core';
 // Display as: <Badge size="sm" color={levelColor}>L{level}</Badge>
 ```
 
-- [ ] **Step 3: Redesign file upload as drag-and-drop zone**
+- [ ] **第 3 步：将文件上传重新设计为拖放区域**
 
 ```tsx
 // Replace basic file input with Mantine Dropzone:
@@ -795,7 +795,7 @@ import { Dropzone } from '@mantine/dropzone';
 // </Dropzone>
 ```
 
-- [ ] **Step 4: Replace deep mode toggle with automatic detection**
+- [ ] **第 4 步：用自动检测替换深度模式切换**
 
 ```tsx
 // Remove the explicit "deep mode" toggle switch
@@ -804,23 +804,23 @@ import { Dropzone } from '@mantine/dropzone';
 // This value is sent with the request instead of a manual toggle
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx && git commit -m "feat(client): redesign input area with icon grid templates and drag-drop upload"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx && git commit -m "feat(client): redesign input area with icon grid templates and drag-drop upload"`
 
 ---
 
-## Chunk 7: Performance — SSE Streaming Optimization
+## 分块 7：性能：SSE 流式优化
 
-### Task 7: Optimize SSE event streaming
+### 任务 7：Optimize SSE event streaming
 
-**Files:**
-- Modify: `agent-service/app/main.py` (or SSE utility module)
-- Modify: `apps/client/src/ee/ai/services/ai-create-runner.utils.ts`
+**文件：**
+- 修改：`agent-service/app/main.py`（或SSE实用模块）
+- 修改：`apps/client/src/ee/ai/services/ai-create-runner.utils.ts`
 
-**Context:** Reduce SSE overhead by batching content_delta events, debouncing step events, and adding heartbeat to prevent proxy timeouts.
+**上下文：** 通过批处理 content_delta 事件、消除步骤事件以及添加心跳以防止代理超时来减少 SSE 开销。
 
-- [ ] **Step 1: Implement server-side event batching**
+- [ ] **第 1 步：实现服务器端事件批处理**
 
 ```python
 # Add to the SSE event queue handler in main.py (or create a utility):
@@ -859,7 +859,7 @@ class SSEBatcher:
         self._flush_task = None
 ```
 
-- [ ] **Step 2: Implement SSE heartbeat**
+- [ ] **第 2 步：实现SSE心跳**
 
 ```python
 # Add heartbeat to the SSE endpoint:
@@ -870,7 +870,7 @@ async def heartbeat_loop(send_func, interval: int = 15):
         await send_func(":heartbeat\n\n")
 ```
 
-- [ ] **Step 3: Add step event debouncing**
+- [ ] **第 3 步：添加步进事件去抖动**
 
 ```python
 # Debounce step_start / step_progress events:
@@ -890,22 +890,22 @@ class StepDebouncer:
         return False
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/main.py apps/client/src/ee/ai/services/ai-create-runner.utils.ts && git commit -m "perf(agent): add SSE batching, heartbeat, and step event debouncing"`
+运行： `cd /e/test/Docmost && git add agent-service/app/main.py apps/client/src/ee/ai/services/ai-create-runner.utils.ts && git commit -m "perf(agent): add SSE batching, heartbeat, and step event debouncing"`
 
 ---
 
-## Chunk 8: Performance — Parallel Asset Parsing
+## 分块 8：性能：并行素材解析
 
-### Task 8: Optimize asset parsing with parallelism and caching
+### 任务 8：Optimize asset parsing with parallelism and caching
 
-**Files:**
-- Modify: `agent-service/app/orchestrator/tools/complexity.py` (or asset parsing module)
+**文件：**
+- 修改：`agent-service/app/orchestrator/tools/complexity.py`（或资产解析模块）
 
-**Context:** When multiple files are uploaded, parsing them sequentially is slow. Use asyncio.gather with a semaphore for parallel parsing. Cache parsed results in Redis.
+**上下文：** 当上传多个文件时，顺序解析它们的速度很慢。使用 asyncio.gather 和信号量进行并行解析。将解析结果缓存在 Redis 中。
 
-- [ ] **Step 1: Implement parallel parsing with semaphore**
+- [ ] **第一步：利用信号量实现并行解析**
 
 ```python
 import asyncio
@@ -933,7 +933,7 @@ async def parse_all_assets(files: list[dict]) -> list[dict]:
     return await asyncio.gather(*tasks, return_exceptions=True)
 ```
 
-- [ ] **Step 2: Add Redis caching for parsed assets**
+- [ ] **第 2 步：为解析的资产添加Redis缓存**
 
 ```python
 import json
@@ -956,7 +956,7 @@ async def get_or_parse_asset(file_data: bytes, filename: str, redis_client) -> d
     return result
 ```
 
-- [ ] **Step 3: Implement parallel VLM calls for images**
+- [ ] **第 3 步：实现图像的并行 VLM 调用**
 
 ```python
 _VLM_SEMAPHORE = asyncio.Semaphore(3)  # max 3 concurrent VLM calls
@@ -974,63 +974,63 @@ async def describe_all_images(images: list[dict]) -> list[str]:
     return await asyncio.gather(*tasks, return_exceptions=True)
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/orchestrator/tools/complexity.py && git commit -m "perf(agent): add parallel asset parsing with Redis caching and VLM batching"`
+运行： `cd /e/test/Docmost && git add agent-service/app/orchestrator/tools/complexity.py && git commit -m "perf(agent): add parallel asset parsing with Redis caching and VLM batching"`
 
 ---
 
-## Chunk 9: Clean Up Old LangGraph Code
+## 分块 9：清理旧 LangGraph 代码
 
-### Task 9: Remove old agent code and endpoints
+### 任务 9：移除 old agent code and endpoints
 
-**Files:**
-- Delete: `agent-service/app/agent/graph.py`
-- Delete: `agent-service/app/agent/nodes/clarifier.py`
-- Delete: `agent-service/app/agent/nodes/evidence_acquirer.py`
-- Delete: `agent-service/app/agent/nodes/evidence_gate.py`
-- Delete: `agent-service/app/agent/nodes/explorer.py`
-- Delete: `agent-service/app/agent/nodes/outliner.py`
-- Delete: `agent-service/app/agent/nodes/planner.py`
-- Delete: `agent-service/app/agent/nodes/proposer.py`
-- Delete: `agent-service/app/agent/nodes/reviewer.py`
-- Delete: `agent-service/app/agent/nodes/writer.py`
-- Delete: `agent-service/app/agent/state.py`
-- Delete: `agent-service/app/agent/quality_checks.py`
-- Delete: `agent-service/app/agent/cancellation.py`
-- Delete: `agent-service/app/agent/document_strategy.py`
-- Delete: `agent-service/app/agent/events.py`
-- Delete: `agent-service/app/agent/evidence.py`
-- Delete: `agent-service/app/agent/llm.py`
-- Modify: `agent-service/app/main.py`
-- Modify: `agent-service/pyproject.toml`
+**文件：**
+- 删除：`agent-service/app/agent/graph.py`
+- 删除：`agent-service/app/agent/nodes/clarifier.py`
+- 删除：`agent-service/app/agent/nodes/evidence_acquirer.py`
+- 删除：`agent-service/app/agent/nodes/evidence_gate.py`
+- 删除：`agent-service/app/agent/nodes/explorer.py`
+- 删除：`agent-service/app/agent/nodes/outliner.py`
+- 删除：`agent-service/app/agent/nodes/planner.py`
+- 删除：`agent-service/app/agent/nodes/proposer.py`
+- 删除：`agent-service/app/agent/nodes/reviewer.py`
+- 删除：`agent-service/app/agent/nodes/writer.py`
+- 删除：`agent-service/app/agent/state.py`
+- 删除：`agent-service/app/agent/quality_checks.py`
+- 删除：`agent-service/app/agent/cancellation.py`
+- 删除：`agent-service/app/agent/document_strategy.py`
+- 删除：`agent-service/app/agent/events.py`
+- 删除：`agent-service/app/agent/evidence.py`
+- 删除：`agent-service/app/agent/llm.py`
+- 修改：`agent-service/app/main.py`
+- 修改：`agent-service/pyproject.toml`
 
-**IMPORTANT:** Before deleting, verify that no new code imports from the old modules. Run a full grep first.
+**重要：** 在删除之前，请验证是否没有从旧模块导入新代码。首先运行完整的 grep。
 
-- [ ] **Step 1: Verify no new code depends on old modules**
+- [ ] **第 1 步：验证没有新代码依赖于旧模块**
 
-Run: `cd /e/test/Docmost/agent-service && grep -r "from app.agent" app/orchestrator/ app/workers/ app/models/ --include="*.py" || echo "No dependencies found"`
+运行： `cd /e/test/Docmost/agent-service && grep -r "from app.agent" app/orchestrator/ app/workers/ app/models/ --include="*.py" || echo "No dependencies found"`
 
-If any imports are found, they must be migrated first before deletion.
+如果发现任何导入，则必须先将其迁移，然后再删除。
 
-- [ ] **Step 2: Remove old endpoints from main.py**
+- [ ] **第 2 步：从 main.py 中删除旧端点**
 
-In `agent-service/app/main.py`, remove:
-- `POST /agent/run` endpoint
-- `POST /agent/resume` endpoint
-- `POST /agent/stop` endpoint
-- Any imports from `app.agent.*`
+在 `agent-service/app/main.py` 中，删除：
+- `POST /agent/run` 端点
+- `POST /agent/resume` 端点
+- `POST /agent/stop` 端点
+- 来自 `app.agent.*` 的任何进口
 
-- [ ] **Step 3: Rename v2 endpoints to root**
+- [ ] **步骤 3：将 v2 端点重命名为 root**
 
 In `agent-service/app/main.py`:
 - `POST /v2/agent/run` → `POST /agent/run`
 - `POST /v2/agent/resume` → `POST /agent/resume`
 - `POST /v2/agent/stop` → `POST /agent/stop`
 
-- [ ] **Step 4: Delete old agent files**
+- [ ] **第 4 步：删除旧代理文件**
 
-Run:
+运行：
 ```bash
 cd /e/test/Docmost/agent-service
 rm -f app/agent/graph.py
@@ -1044,11 +1044,11 @@ rm -f app/agent/llm.py
 rm -rf app/agent/nodes/
 ```
 
-Keep `app/agent/__init__.py` if other code still references the package, or delete it if fully cleaned.
+如果其他代码仍然引用该包，则保留 `app/agent/__init__.py`；如果完全清理，则将其删除。
 
-- [ ] **Step 5: Remove langgraph from dependencies**
+- [ ] **第 5 步：从依赖项中删除 langgraph**
 
-Edit `agent-service/pyproject.toml`, remove:
+编辑`agent-service/pyproject.toml`，删除：
 ```
 "langgraph>=0.2",
 "langchain-core>=0.3",
@@ -1057,11 +1057,11 @@ Edit `agent-service/pyproject.toml`, remove:
 "langgraph-checkpoint-postgres>=2.0",
 ```
 
-Keep `httpx`, `pydantic-ai`, and other non-LangGraph dependencies.
+保留 `httpx`、`pydantic-ai` 和其他非 LangGraph 依赖项。
 
-- [ ] **Step 6: Delete old frontend components**
+- [ ] **第 6 步：删除旧的前端组件**
 
-Run:
+运行：
 ```bash
 cd /e/test/Docmost
 rm -f apps/client/src/ee/ai/components/ai-creator/ai-creator-clarify-bubble.tsx
@@ -1069,85 +1069,85 @@ rm -f apps/client/src/ee/ai/components/ai-creator/ai-creator-propose-bubble.tsx
 rm -f apps/client/src/ee/ai/components/ai-creator/ai-creator-outline-bubble.tsx
 ```
 
-Remove any imports of these components from `ai-creator-panel.tsx` or `ai-creator-messages.tsx`.
+从 `ai-creator-panel.tsx` 或 `ai-creator-messages.tsx` 中删除这些组件的所有导入。
 
-- [ ] **Step 7: Update NestJS gateway endpoint paths**
+- [ ] **步骤 7：更新 NestJS 网关端点路径**
 
-Modify `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts`:
-- Change `/v2/agent/run` → `/agent/run` in the proxy URL construction
-- Change `/v2/agent/resume` → `/agent/resume`
-- Change `/v2/agent/stop` → `/agent/stop`
+修改`apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts`：
+- 更改代理 URL 构造中的 `/v2/agent/run` → `/agent/run`
+- 更改 `/v2/agent/resume` → `/agent/resume`
+- 更改 `/v2/agent/stop` → `/agent/stop`
 
-- [ ] **Step 8: Verify nothing is broken**
+- [ ] **第 8 步：验证没有任何损坏**
 
-Run: `cd /e/test/Docmost/agent-service && python -c "from app.orchestrator.engine import *; print('orchestrator OK')"`
-Run: `cd /e/test/Docmost && pnpm typecheck` (if available)
+运行： `cd /e/test/Docmost/agent-service && python -c "from app.orchestrator.engine import *; print('orchestrator OK')"`
+运行：`cd /e/test/Docmost && pnpm typecheck`（如果可用）
 
-- [ ] **Step 9: Commit**
+- [ ] **第 9 步：提交**
 
-Run: `cd /e/test/Docmost && git add -A && git commit -m "refactor(agent): remove old LangGraph code and rename v2 endpoints to root"`
-
----
-
-## Chunk 10: Documentation Update
-
-### Task 10: Update documentation
-
-**Files:**
-- Modify: `CLAUDE.md` — Update AI Agent section
-- Modify: `docs/ai-agent-refactor-details.md` — Update architecture description
-- Create: `docs/ai-creator-v2-architecture.md` — New architecture documentation
-- Modify: `docker-compose.yml` — Update if dependencies changed
-
-- [ ] **Step 1: Update CLAUDE.md AI Agent section**
-
-Replace the existing AI Agent section with updated information:
-- Remove references to LangGraph
-- Update framework to PydanticAI
-- Update architecture: Orchestrator → Workers (SectionWriter, Evaluator, Fixer, StyleAnalyzer)
-- Update endpoint paths (remove v2 prefix)
-- Update dependency list
-
-- [ ] **Step 2: Update docs/ai-agent-refactor-details.md**
-
-Update architecture diagram and file listings to reflect the new structure:
-- `app/orchestrator/` — Core engine, tools, prompts, model router
-- `app/workers/` — SectionWriter, Evaluator, Fixer, StyleAnalyzer
-- `app/models/` — Pydantic v2 data models
-- Remove references to old `app/agent/` directory
-
-- [ ] **Step 3: Create docs/ai-creator-v2-architecture.md**
-
-Document the new architecture:
-- Orchestrator + Worker pattern
-- Model routing configuration
-- SSE event protocol
-- Review flow (evaluate → auto-fix → user decision → targeted fix)
-- Style learning pipeline
-- Frontend component hierarchy (ReviewModal, BlueprintModal, LiveDraft)
-
-- [ ] **Step 4: Update docker-compose.yml**
-
-Check if `pyproject.toml` changes require updating the Dockerfile or docker-compose:
-- Remove langgraph-related system dependencies if any
-- Verify pydantic-ai is installed correctly in Docker build
-
-- [ ] **Step 5: Commit**
-
-Run: `cd /e/test/Docmost && git add CLAUDE.md docs/ docker-compose.yml && git commit -m "docs: update documentation for AI Creator v2 architecture"`
+运行： `cd /e/test/Docmost && git add -A && git commit -m "refactor(agent): remove old LangGraph code and rename v2 endpoints to root"`
 
 ---
 
-## Chunk 11: Final Integration Test Suite
+## 分块 10：文档更新
 
-### Task 11: Create comprehensive integration tests
+### 任务 10：更新 documentation
 
-**Files:**
-- Create: `agent-service/tests/test_e2e_final.py`
+**文件：**
+- 修改：`CLAUDE.md` — 更新 AI 代理部分
+- 修改：`docs/ai-agent-refactor-details.md` — 更新架构描述
+- 创建：`docs/ai-creator-v2-architecture.md` — 新架构文档
+- 修改：`docker-compose.yml` — 如果依赖项发生更改则更新
 
-**Context:** End-to-end tests validating the complete pipeline across all three complexity levels.
+- [ ] **第 1 步：更新 CLAUDE.md AI Agent 部分**
 
-- [ ] **Step 1: Write Level 1 integration test**
+用更新的信息替换现有的 AI Agent 部分：
+- 删除对 LangGraph 的引用
+- 更新 PydanticAI 框架
+- 更新架构：Orchestrator → Workers（SectionWriter、Evaluator、Fixer、StyleAnalyzer）
+- 更新端点路径（删除 v2 前缀）
+- 更新依赖列表
+
+- [ ] **步骤 2：更新 docs/ai-agent-refactor-details.md**
+
+更新架构图和文件列表以反映新结构：
+- `app/orchestrator/` — 核心引擎、工具、提示、模型路由器
+- `app/workers/` — 节编写器、评估器、修复器、样式分析器
+- `app/models/` — Pydantic v2 数据模型
+- 删除对旧 `app/agent/` 目录的引用
+
+- [ ] **步骤 3：创建 docs/ai-creator-v2-architecture.md**
+
+记录新架构：
+- Orchestrator + Worker 模式
+- 模型路由配置
+- SSE事件协议
+- 审核流程（评估 → 自动修复 → 用户决策 → 有针对性的修复）
+- 风格学习管道
+- 前端组件层次结构（ReviewModal、BlueprintModal、LiveDraft）
+
+- [ ] **第 4 步：更新 docker-compose.yml**
+
+检查 `pyproject.toml` 更改是否需要更新 Dockerfile 或 docker-compose：
+- 删除与 langgraph 相关的系统依赖项（如果有）
+- 验证 pydantic-ai 是否在 Docker 构建中正确安装
+
+- [ ] **第 5 步：提交**
+
+运行： `cd /e/test/Docmost && git add CLAUDE.md docs/ docker-compose.yml && git commit -m "docs: update documentation for AI Creator v2 architecture"`
+
+---
+
+## 分块 11：最终集成测试套件
+
+### 任务 11：创建 comprehensive integration tests
+
+**文件：**
+- 创建：`agent-service/tests/test_e2e_final.py`
+
+**上下文：** 端到端测试验证所有三个复杂级别的完整管道。
+
+- [ ] **第 1 步：编写 1 级集成测试**
 
 ```python
 # agent-service/tests/test_e2e_final.py
@@ -1200,7 +1200,7 @@ class TestLevel1Integration:
         mock.assert_called_once()
 ```
 
-- [ ] **Step 2: Write Level 2 integration test**
+- [ ] **第 2 步：编写 2 级集成测试**
 
 ```python
 class TestLevel2Integration:
@@ -1234,7 +1234,7 @@ class TestLevel2Integration:
         assert "brief" in str(events_captured).lower() or result is not None
 ```
 
-- [ ] **Step 3: Write Level 3 integration test**
+- [ ] **第 3 步：编写 3 级集成测试**
 
 ```python
 class TestLevel3Integration:
@@ -1274,7 +1274,7 @@ class TestLevel3Integration:
         assert len(events_captured) > 0
 ```
 
-- [ ] **Step 4: Write word count consistency test**
+- [ ] **第 4 步：编写字数一致性测试**
 
 ```python
 class TestQualityMetrics:
@@ -1314,38 +1314,38 @@ class TestQualityMetrics:
         assert report.asset_reuse_rate >= 0.80
 ```
 
-- [ ] **Step 5: Run all tests**
+- [ ] **第 5 步：运行所有测试**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_e2e_final.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_e2e_final.py -v`
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/tests/test_e2e_final.py && git commit -m "test(agent): add final integration test suite for all complexity levels"`
+运行： `cd /e/test/Docmost && git add agent-service/tests/test_e2e_final.py && git commit -m "test(agent): add final integration test suite for all complexity levels"`
 
 ---
 
-## Summary
+## 总结
 
-| Chunk | Tasks | Key Deliverables |
+| Chunk | Tasks | 关键成果 |
 |-------|-------|-----------------|
-| 1 | Task 1 | Model routing with per-worker model assignment |
-| 2 | Task 2 | Single chapter rewrite with sliding window context |
-| 3 | Task 3 | Multi-document merge proposals and asset deduplication |
-| 4 | Task 4 | Workspace style learning from recent pages |
-| 5 | Task 5 | Frontend animations, skeleton loading, responsive |
-| 6 | Task 6 | Input area redesign: icon grid, level indicator, drag-drop |
-| 7 | Task 7 | SSE batching, heartbeat, step debouncing |
-| 8 | Task 8 | Parallel asset parsing with Redis cache |
-| 9 | Task 9 | Remove old LangGraph code, rename endpoints |
-| 10 | Task 10 | Documentation updates |
-| 11 | Task 11 | Final integration test suite (L1/L2/L3) |
+| 1 | 任务 1 | 具有每个工作人员模型分配的模型路由 |
+| 2 | 任务 2 | 使用滑动窗口上下文重写单章 |
+| 3 | 任务 3 | 多文档合并提案和资产重复数据删除 |
+| 4 | 任务 4 | 从最近的页面学习工作区风格 |
+| 5 | 任务 5 | 前端动画、骨架加载、响应式 |
+| 6 | 任务 6 | 输入区域重新设计：图标网格、级别指示器、拖放 |
+| 7 | 任务 7 | SSE批处理、心跳、步骤去抖动 |
+| 8 | 任务 8 | 使用Redis缓存进行并行资产解析 |
+| 9 | 任务 9 | 删除旧的 LangGraph 代码，重命名端点 |
+| 10 | 任务 10 | 文档更新 |
+| 11 | 任务 11 | 最终集成测试套件（L1/L2/L3） |
 
-**Total estimated time:** 2-3 weeks
+**预计总时间：** 2-3 周
 
-**Key design decisions:**
-- Model routing via env vars (ORCHESTRATOR_MODEL, WRITER_MODEL, etc.) — zero-code config change
-- Style learning is opt-in per workspace — avoids unwanted style imposition
-- SSE batching at 50ms reduces event count by ~10x for content streaming
-- Old LangGraph removal is the final step — ensures nothing breaks during migration
-- Integration tests use mocks but verify the full pipeline flow and timing constraints
-- Asset deduplication by content hash prevents duplicate processing of same file from different sources
+**关键设计决策：**
+- 通过环境变量（ORCHESTRATOR_MODEL、WRITER_MODEL 等）进行模型路由 — 零代码配置更改
+- 风格学习可以根据工作空间选择加入——避免不必要的风格强加
+- 50 毫秒的 SSE 批处理将内容流的事件计数减少了约 10 倍
+- 旧的 LangGraph 删除是最后一步 - 确保迁移过程中不会出现任何中断
+- 集成测试使用模拟，但验证完整的管道流程和时序约束
+- 通过内容哈希进行资产重复数据删除，防止对不同来源的同一文件进行重复处理

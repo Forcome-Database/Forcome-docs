@@ -3,14 +3,14 @@
 > 日期：2026-03-02
 > 状态：已批准
 > 分支：feater-dingding-user2
-> 参考：feater-dingding-user（首次实现，缺少 DB 迁移，有登录/菜单 bug）
+> 参考：feater-dingding-user（首次实现，缺少DB迁移，有登录/菜单bug）
 
 ## 1. 目标
 
 为 Docmost + Wiki 集成钉钉用户体系：
 
 1. **Wiki 前台**：Web 钉钉扫码登录 + 钉钉 H5 免登，登录后才能访问内容
-2. **Docmost 后台**：通过 Wiki 登录后 Cookie 共享实现无感 SSO
+2. **Docmost后台**：通过Wiki登录后Cookie 共享实现无感SSO
 3. **离职处理**：钉钉事件回调自动停用 + 管理员手动停用，文档保留不丢失
 
 ## 2. 决策记录
@@ -21,7 +21,7 @@
 | 钉钉应用类型 | 企业内部应用，单 corpId |
 | 架构方案 | 方案 A：复用现有 `auth_providers` + `auth_accounts` SSO 框架 |
 | 登录方式 | 仅钉钉登录（移除/隐藏邮箱密码），管理员保留邮箱+密码备用入口 |
-| 首次登录默认角色 | MEMBER |
+| 首次登录默认角色 | 会员 |
 | Wiki 访问权限 | 登录后才能访问（不再公开） |
 | 用户标识 | unionId（最稳定跨应用标识），存储在 auth_accounts.provider_user_id |
 | 离职处理 | 钉钉事件回调自动停用 + 管理员手动，文档保留 |
@@ -139,7 +139,7 @@ VALUES (:docmostUserId, :dingtalkUnionId, :providerId, :workspaceId);
   → 自动进入内容页面
 ```
 
-### 5c. Docmost 后台 SSO
+### 5c。 Docmost后台SSO
 
 ```
 用户 → 点击 Wiki 的「后台管理」
@@ -180,22 +180,22 @@ apps/server/src/database/
 
 | 端点 | 方法 | 认证 | 用途 |
 |------|------|------|------|
-| `POST /api/auth/dingtalk/config` | POST | @Public | 返回 corpId/appKey（前端构建授权 URL） |
-| `POST /api/auth/dingtalk/callback` | POST | @Public | OAuth2 授权码换 JWT |
-| `POST /api/auth/dingtalk/h5-login` | POST | @Public | H5 免登码换 JWT |
+| `POST /api/auth/dingtalk/config` | POST | @公共 | 返回corpId/appKey（前端部署授权URL） |
+| `POST /api/auth/dingtalk/callback` | POST | @公共 | OAuth2授权码换JWT |
+| `POST /api/auth/dingtalk/h5-login` | POST | @公共 | H5 免登码换 JWT |
 | `POST /api/auth/dingtalk/user-info` | POST | JWT | 获取当前登录用户信息（含 role） |
 | `POST /api/auth/dingtalk/event` | POST | @Public（钉钉签名验证） | 钉钉事件订阅回调（离职等） |
 
 ### 6.3 关键服务
 
 **DingTalkApiService** — 钉钉 HTTP API 封装：
-- `getCorpAccessToken()` — Redis 缓存 7200s（含 300s buffer）
-- `getUserAccessToken(authCode)` — OAuth2 换 token
+- `getCorpAccessToken()` — Redis服务器7200s（含300s缓冲区）
+- `getUserAccessToken(authCode)` — OAuth2 换令牌
 - `getUserInfoByToken(token)` — /contact/users/me
 - `getUserInfoByCode(code)` — H5 免登码换身份
 - `getUserDetail(userid)` — 用户详情
 
-**DingTalkService** — 核心业务：
+**钉钉服务** — 核心业务：
 - `handleOAuthCallback(authCode, workspaceId)` — Web 扫码登录
 - `handleH5Login(code, workspaceId)` — H5 免登
 - `findOrCreateUser(info, workspaceId)` — 查找/创建/绑定用户
@@ -221,7 +221,7 @@ wiki/docs/.vitepress/theme/
 ### 7.2 修改文件
 
 - `wiki/docs/.vitepress/theme/index.ts` — 添加登录路由 + 认证守卫
-- `wiki/docs/.vitepress/theme/components/NavBar.vue` — 登录按钮 → UserMenu
+- `wiki/docs/.vitepress/theme/components/NavBar.vue` — 登录按钮 → 用户菜单
 - `wiki/docs/.vitepress/theme/Layout.vue` — 初始化 auth
 - `wiki/package.json` — 添加 `dingtalk-jsapi` 依赖
 
@@ -243,7 +243,7 @@ onBeforePageLoad:
 - 「后台管理」入口（仅 admin/owner 角色可见）
 - 「退出登录」
 
-## 8. Docmost 前端改造
+## 8. Docmost 引进改造
 
 最小改动：
 - `apps/client/src/lib/api-client.ts` 的 401 拦截器重定向到 wiki 登录
@@ -286,7 +286,7 @@ DELETE FROM auth_providers WHERE type = 'dingtalk';
 |--------|--------|--------|
 | DB 迁移 | 不需要（正确） | 同样不需要（运行时 ensureProvider 自动种子） |
 | Redis 注入 | `@InjectRedis()` | `RedisService.getOrThrow()`（与项目一致） |
-| 登录/菜单 bug | 有 fix commit | 从零重写避免 |
+| 登录/菜单 bug | 有修复提交 | 从零重写避免 |
 | 离职处理 | 基础实现 | 完善钉钉事件签名验证 |
-| auth_providers Repo | 放在 `database/repos/` | 同（正确位置） |
-| 自动种子 | ensureProvider | 保留，增加幂等保护 |
+| auth_providers 仓库 | 放在 `database/repos/` | 同（正确位置） |
+| 自动种子 | 确保提供者 | 保留，增加幂等保护 |

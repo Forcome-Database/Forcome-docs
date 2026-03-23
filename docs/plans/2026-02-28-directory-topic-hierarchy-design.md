@@ -12,15 +12,15 @@
 
 | 维度 | 决策 |
 |------|------|
-| 层级结构 | Space → Directory(扁平) → Topic(扁平) → Page(可嵌套) |
-| 嵌套方式 | Directory/Topic 均为一级扁平，Page 保留 parent_page_id 无限嵌套 |
+| 层级结构 | 空间 → 目录（底层） → 主题（底层） → 页面（可底层） |
+| 嵌套方式 | 目录/主题 最初一级洗衣，页面保留parent_page_id 无限洗衣 |
 | 权限模式 | **一期：纯继承 Space 权限**（二期加覆盖能力） |
-| 架构方案 | 独立表（directories + topics，**一期无 member 表**） |
-| 侧边栏 | 分组折叠式（Directory/Topic/Page 混合树） |
-| 管理入口 | **SpaceSettingsModal 内新增 Tab**（非独立路由） |
+| 架构方案 | 独立表（目录+主题，**一期无成员表**） |
+| 侧边栏 | 背包折叠式（目录/主题/页面混合树） |
+| 管理入口 | **SpaceSettingsModal 内新增选项卡**（非独立路由） |
 | URL 路由 | 不变，保持 /s/:spaceSlug/p/:pageSlug |
-| 删除 Directory | 级联删除其下 Topic，页面变未分类 |
-| 删除 Topic | 页面保留在 Directory 下（topic_id=null） |
+| 删除目录 | 级联删除其下 Topic，页面变未分类 |
+| 删除 Topic | 页面保留在目录下（topic_id=null） |
 
 ### 1.2 实体关系
 
@@ -40,7 +40,7 @@ Workspace
 
 ### 2.1 新增表
 
-#### directories 表
+#### 目录表
 
 ```sql
 CREATE TABLE directories (
@@ -62,7 +62,7 @@ CREATE TABLE directories (
 CREATE INDEX idx_directories_space ON directories(space_id) WHERE deleted_at IS NULL;
 ```
 
-#### topics 表
+#### 主题表
 
 ```sql
 CREATE TABLE topics (
@@ -86,7 +86,7 @@ CREATE INDEX idx_topics_directory ON topics(directory_id) WHERE deleted_at IS NU
 CREATE INDEX idx_topics_space ON topics(space_id) WHERE deleted_at IS NULL;
 ```
 
-#### directory_members 表
+#### Directory_members 表
 
 ```sql
 CREATE TABLE directory_members (
@@ -131,7 +131,7 @@ CREATE INDEX idx_pages_directory_id ON pages(directory_id) WHERE deleted_at IS N
 CREATE INDEX idx_pages_topic_id ON pages(topic_id) WHERE deleted_at IS NULL;
 ```
 
-### 2.3 修改 page_embeddings 表
+#修改## 2.3 page_embeddings 表
 
 ```sql
 ALTER TABLE page_embeddings ADD COLUMN "directoryId" UUID;
@@ -144,9 +144,9 @@ CREATE INDEX idx_page_embeddings_topic ON page_embeddings("topicId");
 
 | 操作 | 行为 |
 |------|------|
-| 删除 Directory | CASCADE 删除其下所有 Topic；pages.directory_id SET NULL, pages.topic_id SET NULL |
-| 删除 Topic | pages.topic_id SET NULL（页面保留在 Directory 下） |
-| 删除 Space | CASCADE 删除 directories（继而 CASCADE 删除 topics） |
+| 删除目录 | CASCADE 删除其下所有Topic；pages.directory_id SET NULL,pages.topic_id SET NULL |
+| 删除 Topic | pages.topic_id SET NULL（页面保留在目录下） |
+| 删除 Space | CASCADE删除目录（继而CASCADE删除主题） |
 
 ### 2.5 Kysely 类型扩展
 
@@ -172,9 +172,9 @@ export interface Pages {
 
 ---
 
-## 3. API/Service 设计
+## 3. API/服务设计
 
-### 3.1 Directory Module
+### 3.1 目录模块
 
 路径：`apps/server/src/core/directory/`
 
@@ -182,15 +182,15 @@ export interface Pages {
 
 | 端点 | 用途 | 权限 |
 |------|------|------|
-| `/list` | 获取 Space 下目录列表 | Space Read |
-| `/info` | 获取目录详情 | Directory Read |
-| `/create` | 创建目录 | Space Manage (Admin) |
-| `/update` | 更新目录 | Directory Manage |
-| `/delete` | 删除目录 | Directory Manage |
-| `/members` | 获取成员列表 | Directory Read |
-| `/members/add` | 添加成员 | Directory Manage |
-| `/members/remove` | 移除成员 | Directory Manage |
-| `/members/change-role` | 修改角色 | Directory Manage |
+| `/list` | 获取 Space 下目录列表 | 空间阅读 |
+| `/info` | 获取目录详情 | 目录读取 |
+| `/create` | 创建目录 | 空间管理（管理员） |
+| `/update` | 更新目录 | 目录管理 |
+| `/delete` | 删除目录 | 目录管理 |
+| `/members` | 获取成员列表 | 目录读取 |
+| `/members/add` | 添加成员 | 目录管理 |
+| `/members/remove` | 移除成员 | 目录管理 |
+| `/members/change-role` | 修改角色 | 目录管理 |
 
 #### DTO
 
@@ -216,7 +216,7 @@ class DirectoryListDto {
 }
 ```
 
-### 3.2 Topic Module
+### 3.2 主题模块
 
 路径：`apps/server/src/core/topic/`
 
@@ -224,15 +224,15 @@ class DirectoryListDto {
 
 | 端点 | 用途 | 权限 |
 |------|------|------|
-| `/list` | 获取 Directory 下主题列表 | Directory Read |
-| `/info` | 获取主题详情 | Topic Read |
-| `/create` | 创建主题 | Directory Manage (Admin) |
-| `/update` | 更新主题 | Topic Manage |
-| `/delete` | 删除主题 | Topic Manage |
-| `/members` | 获取成员列表 | Topic Read |
-| `/members/add` | 添加成员 | Topic Manage |
-| `/members/remove` | 移除成员 | Topic Manage |
-| `/members/change-role` | 修改角色 | Topic Manage |
+| `/list` | 获取 Directory 下主题列表 | 目录读取 |
+| `/info` | 获取主题详情 | 主题阅读 |
+| `/create` | 创建主题 | 目录管理（管理员） |
+| `/update` | 更新主题 | 主题管理 |
+| `/delete` | 删除主题 | 主题管理 |
+| `/members` | 获取成员列表 | 主题阅读 |
+| `/members/add` | 添加成员 | 主题管理 |
+| `/members/remove` | 移除成员 | 主题管理 |
+| `/members/change-role` | 修改角色 | 主题管理 |
 
 #### DTO
 
@@ -250,7 +250,7 @@ class UpdateTopicDto extends PartialType(CreateTopicDto) {
 }
 ```
 
-### 3.3 修改现有 Page API
+#修改## 3.3 现有页面API
 
 #### CreatePageDto 扩展
 
@@ -263,8 +263,8 @@ class CreatePageDto {
 ```
 
 校验逻辑：
-- topicId 存在时可省略 directoryId（从 topic 推导）
-- directoryId 存在但 topicId 不存在 → 页面挂 Directory 下
+- topicId 存在时可简洁directoryId（从主题推导）
+- DirectoryId 存在但 topicId 不存在 → 页面挂目录下
 
 #### SidebarPagesDto 扩展
 
@@ -288,7 +288,7 @@ class MovePageDto {
 }
 ```
 
-#### Breadcrumbs 返回值扩展
+#### 面包屑返回值扩展
 
 ```typescript
 interface PageBreadcrumbsResponse {
@@ -322,7 +322,7 @@ AND (:topicId IS NULL OR p.topic_id = :topicId)
 
 ## 4. 权限系统设计
 
-### 4.1 CASL Subject 扩展
+### 4.1 CASL 主题扩展
 
 ```typescript
 enum SpaceCaslSubject {
@@ -335,7 +335,7 @@ enum SpaceCaslSubject {
 }
 ```
 
-### 4.2 DirectoryAbilityFactory
+### 4.2 目录能力工厂
 
 ```typescript
 class DirectoryAbilityFactory {
@@ -405,7 +405,7 @@ type SpaceTreeNode = {
 
 #### 数据加载流程
 
-1. 加载 Space 下的 Directory 列表
+1.加载空间下的目录列表
 2. 加载未分类根页面（filterUncategorized=true）
 3. 展开 Directory → 加载其下 Topic + 未分类页面
 4. 展开 Topic → 加载其下根页面
@@ -430,11 +430,11 @@ Space: Engineering
 
 #### 拖拽规则
 
-- Page → Directory：设置 directory_id，清空 topic_id
-- Page → Topic：设置 topic_id 和 directory_id
-- Page → 未分类区域：清空 directory_id 和 topic_id
-- Directory：只能在 Space 内排序
-- Topic：只能在 Directory 内排序
+- 页面→目录：设置directory_id，清空topic_id
+- 页面→主题：设置topic_id和directory_id
+- 页面→未分类区域：清空directory_id 和 topic_id
+- 目录：只能在空间内排序
+- 主题：只能在目录内排序
 
 ### 5.2 面包屑改造
 
@@ -442,11 +442,11 @@ Space: Engineering
 [Directory?] > [Topic?] > [Page1?] > ... > [CurrentPage]
 ```
 
-面包屑 API 返回 directory/topic 可选字段，前端 prepend 到现有 page 链前。
+面包片 API 返回目录/主题 任选字段，前置前置到现有页面链前。
 
 ### 5.3 移动页面模态框改造
 
-级联 Select：Space → Directory → Topic
+等级联选择：空间→目录→主题
 
 ```
 MovePageModal
@@ -490,48 +490,48 @@ apps/client/src/pages/settings/space/
 
 ### 6.1 全文搜索
 
-- tsvector 无需变化（仍索引 title + text_content）
-- 搜索 WHERE 子句新增 directory_id/topic_id 可选过滤
-- 新增 pages 表的 directory_id/topic_id 索引
+- tsvector 变化（仍索引 title + text_content）
+- 搜索WHERE子句新增directory_id/topic_id 任选过滤
+- 添加页面表的directory_id/topic_id 索引
 
 ### 6.2 向量搜索
 
 - page_embeddings 新增 directoryId/topicId 字段
 - 页面创建/更新 embedding 时写入对应 ID
-- 新增 PAGE_CATEGORY_CHANGED 事件：移动页面分类时同步 embedding
+- 新增 PAGE_CATEGORY_CHANGED 事件：移动页面分类时同步嵌入
 - 向量搜索 WHERE 子句新增可选过滤
 
 ### 6.3 权限对搜索的影响
 
 当前设计中权限只能缩小，最低角色为 Reader（仍可读），因此：
-- 用户能看到 Space → 能搜到该 Space 所有 Directory/Topic 下的页面
-- directory_members/topic_members 覆盖只影响写/管理权限，不影响搜索可见性
+- 用户能看到空间 → 能搜到该空间所有目录/主题下的页面
+-directory_members/topic_members 覆盖只影响写入/管理权限，不影响搜索可见性
 
 ---
 
 ## 7. 数据迁移方案
 
-### 7.1 Schema 迁移
+### 7.1 模式迁移
 
 单个迁移文件：`20260228T120000-directories-topics.ts`
 
-1. 创建 directories/topics/directory_members/topic_members 表
-2. ALTER pages 新增 directory_id/topic_id
+1.创建目录/topics/directory_members/topic_members表
+2. ALTER页面新增directory_id/topic_id
 3. 创建所有索引
 
-### 7.2 Embedding 回填
+### 7.2 嵌入回填
 
-异步队列任务：遍历已有 page_embeddings，根据关联 page 的 directory_id/topic_id 回填。
+异步队列任务：遍历现有page_embeddings，根据关联页面的directory_id/topic_id回填。
 
 ### 7.3 兼容性保证
 
 | 场景 | 处理 |
 |------|------|
-| 存量页面无 directory_id/topic_id | NULL = 未分类，完全兼容 |
+| 存量页面无directory_id/topic_id | NULL = 未分类，完全兼容 |
 | 存量 page_embeddings | NULL，搜索不过滤时正常匹配 |
 | 旧版 sidebar-pages 调用 | 无新参数时返回全部页面 |
 | 页面 URL | 不变 |
-| 面包屑 API | directory/topic 字段可选 |
+| 面包屑 API | 目录/主题 字段可选 |
 
 ---
 
@@ -541,11 +541,11 @@ apps/client/src/pages/settings/space/
 
 | 路径 | 说明 |
 |------|------|
-| `apps/server/src/core/directory/` | Directory 模块（controller/service/dto） |
+| `apps/server/src/core/directory/` | 目录模块（controller/service/dto） |
 | `apps/server/src/core/topic/` | Topic 模块 |
-| `apps/server/src/database/repos/directory/` | Directory Repo |
-| `apps/server/src/database/repos/topic/` | Topic Repo |
-| `apps/server/src/core/casl/abilities/directory-ability.factory.ts` | Directory 权限 |
+| `apps/server/src/database/repos/directory/` | 目录仓库 |
+| `apps/server/src/database/repos/topic/` | 主题仓库 |
+| `apps/server/src/core/casl/abilities/directory-ability.factory.ts` | 目录权限 |
 | `apps/server/src/core/casl/abilities/topic-ability.factory.ts` | Topic 权限 |
 | `apps/server/src/database/migrations/20260228T120000-directories-topics.ts` | 迁移 |
 
@@ -553,19 +553,19 @@ apps/client/src/pages/settings/space/
 
 | 路径 | 修改内容 |
 |------|---------|
-| `apps/server/src/app.module.ts` | 注册 DirectoryModule/TopicModule |
+| `apps/server/src/app.module.ts` | 注册 目录模块/主题模块 |
 | `apps/server/src/database/types/db.d.ts` | 新增类型 |
 | `apps/server/src/database/types/entity.types.ts` | 新增类型导出 |
-| `apps/server/src/core/page/page.controller.ts` | breadcrumbs/sidebar 扩展 |
+| `apps/server/src/core/page/page.controller.ts` | 面包屑/侧边栏扩展 |
 | `apps/server/src/core/page/services/page.service.ts` | 创建/移动页面适配 |
 | `apps/server/src/core/page/dto/*.ts` | DTO 扩展 |
 | `apps/server/src/database/repos/page/page.repo.ts` | 查询条件扩展 |
 | `apps/server/src/core/search/search.service.ts` | 搜索过滤扩展 |
 | `apps/server/src/core/search/dto/search.dto.ts` | DTO 扩展 |
 | `apps/server/src/ee/ai/services/ai-search.service.ts` | 向量搜索过滤 |
-| `apps/server/src/ee/ai/ai-queue.processor.ts` | embedding 同步 |
+| `apps/server/src/ee/ai/ai-queue.processor.ts` | 嵌入同步 |
 | `apps/server/src/database/listeners/page.listener.ts` | 新事件处理 |
-| `apps/server/src/core/casl/interfaces/space-ability.type.ts` | Subject 扩展 |
+| `apps/server/src/core/casl/interfaces/space-ability.type.ts` | 主题扩展 |
 
 ### 8.3 前端新增文件
 

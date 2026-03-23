@@ -1,72 +1,72 @@
-# Wiki AI Chat UX Polish Implementation Plan
+# Wiki AI Chat UX 润色实施计划
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **对于智能体执行者：** 要求：使用 superpowers:subagent-driven-development （如果子代理可用）或 superpowers:executing-plans 来实施此计划。步骤使用复选框 (`- [ ]`) 语法进行跟踪。
 
-**Goal:** Ship a frontend-first polish pass for the public wiki `AI Ask` panel that adds contextual onboarding, a clearer composer status model, a stronger source summary, a non-destructive history drawer, and clearer retry/stop recovery.
+**目标：** 为公开 wiki `AI Ask` 面板提供前端优先的润色迭代，该面板添加了上下文入门、更清晰的输入区状态模型、更强大的源摘要、非破坏性历史记录抽屉以及更清晰的重试/停止恢复。
 
-**Architecture:** Keep the current `AIChat.vue` integration and streaming contract, but move the highest-value decision logic into small pure TypeScript helpers that can be covered with `node:test` via `tsx --test`. UI composition stays in the VitePress theme layer, with one new history drawer component and focused CSS additions instead of a full panel rewrite.
+**架构：** 保留当前的 `AIChat.vue` 集成和流式协议，但将最高价值的决策逻辑移至小型纯 TypeScript 帮助程序中，这些帮助程序可以通过 `tsx --test` 用 `node:test` 覆盖。 UI 组合保留在 VitePress 主题层中，带有一个新的历史抽屉组件和集中的 CSS 添加，而不是整个面板重写。
 
-**Tech Stack:** Vue 3 + VitePress theme components, TypeScript, `ant-design-x-vue`, `node:test`, `tsx --test`, `vue-tsc`, VitePress docs build.
+**技术栈：** Vue 3 + VitePress 主题组件、TypeScript、`ant-design-x-vue`、`node:test`、`tsx --test`、`vue-tsc`、VitePress 文档构建。
 
 ---
 
-## File Structure
+## 文件结构
 
-### Tested UI view-model helpers
+### 经过测试的 UI 视图模型助手
 
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-welcome.ts`
-  - Build page-aware welcome prompts and the grounding hint string.
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-welcome.test.ts`
-  - Cover page-aware prompt generation and generic fallback behavior.
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-status.ts`
-  - Build the composer status row model from `pageTitle`, `isLoading`, `error`, `pendingImageCount`, and input state.
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-status.test.ts`
-  - Cover idle, image-ready, loading, and error states.
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-sources.ts`
-  - Normalize page citations into visible source cards and a one-line source summary for public wiki.
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-sources.test.ts`
-  - Cover current-page-only, current-page-plus-related-pages, related-pages-only, and asset-only citation cases.
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-history.ts`
-  - Normalize history entries for drawer display and mark the current route.
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-history.test.ts`
-  - Cover current-entry tagging and preview truncation behavior.
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-recovery.ts`
-  - Derive retryable payload and recovery action visibility from message state.
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts`
-  - Cover retryable last-user-message detection and stop/retry visibility.
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-welcome.ts`
+  - 构建页面感知的欢迎提示和基础提示字符串。
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-welcome.test.ts`
+  - 封面页面感知提示生成和通用后备行为。
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-status.ts`
+  - 根据 `pageTitle`、`isLoading`、`error`、`pendingImageCount` 和输入状态构建 输入区状态行模型。
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-status.test.ts`
+  - 涵盖空闲、图像就绪、加载和错误状态。
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-sources.ts`
+  - 将页面引用标准化为可见源卡和公共维基的一行源摘要。
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-sources.test.ts`
+  - 涵盖仅当前页面、当前页面加相关页面、仅相关页面和仅资产引用案例。
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-history.ts`
+  - 标准化抽屉显示的历史条目并标记当前路线。
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-history.test.ts`
+  - 涵盖当前条目标记并预览截断行为。
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-recovery.ts`
+  - 从消息状态导出可重试的有效负载和恢复操作可见性。
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts`
+  - 涵盖可重试的最后用户消息检测和停止/重试可见性。
 
-### UI components and styling
+### UI 组件和样式
 
-- Create: `wiki/docs/.vitepress/theme/components/AIChatHistoryDrawer.vue`
-  - Render history as a drawer overlay inside the panel instead of replacing the message region.
-- Modify: `wiki/docs/.vitepress/theme/components/AIChatWelcome.vue`
-  - Accept precomputed suggestions and grounding hint instead of hardcoded strings.
-- Modify: `wiki/docs/.vitepress/theme/components/AIChatSources.vue`
-  - Render a visible source summary strip and page-only source cards for public wiki.
-- Modify: `wiki/docs/.vitepress/theme/components/AIChat.vue`
-  - Consume all new helper models, add the composer status row and recovery actions, and integrate the history drawer.
-- Modify: `wiki/docs/.vitepress/theme/styles/ai-chat.css`
-  - Add status row, summary strip, drawer, and recovery action styles without regressing existing spacing or markdown rendering.
-- Modify: `wiki/docs/.vitepress/theme/types/index.ts`
-  - Add any small helper-facing exported types only if extraction becomes clearer with shared interfaces.
+- 创建：`wiki/docs/.vitepress/theme/components/AIChatHistoryDrawer.vue`
+  - 将历史记录渲染为面板内的抽屉覆盖层，而不是替换消息区域。
+- 修改：`wiki/docs/.vitepress/theme/components/AIChatWelcome.vue`
+  - 接受预先计算的建议和基础提示，而不是硬编码的字符串。
+- 修改：`wiki/docs/.vitepress/theme/components/AIChatSources.vue`
+  - 为公共维基呈现可见的源摘要条和仅页面源卡。
+- 修改：`wiki/docs/.vitepress/theme/components/AIChat.vue`
+  - 使用所有新的帮助器模型，添加作曲家状态行和恢复操作，并集成历史抽屉。
+- 修改：`wiki/docs/.vitepress/theme/styles/ai-chat.css`
+  - 添加状态行、摘要条、抽屉和恢复操作样式，而无需回归现有间距或 Markdown 渲染。
+- 修改：`wiki/docs/.vitepress/theme/types/index.ts`
+  - 仅当通过共享接口提取变得更加清晰时，才添加任何面向助手的小型导出类型。
 
-### Verification notes
+### 验证说明
 
-- The wiki package currently has pre-existing unrelated `vue-tsc` failures. Do not treat a non-zero `pnpm --dir wiki run type-check` exit as an automatic regression.
-- Use `docs:build` as the primary full-package compile check.
-- Use targeted `node:test` coverage for the new helper files as the main TDD loop.
+- wiki 包当前存在预先存在的不相关的 `vue-tsc` 故障。不要将非零 `pnpm --dir wiki run type-check` 退出视为自动回归。
+- 使用`docs:build`作为主要的全包编译检查。
+- 使用新帮助程序文件的目标 `node:test` 覆盖率作为主 TDD 循环。
 
-## Chunk 1: Welcome and Composer State
+## 分块 1：欢迎态与输入区状态
 
-### Task 1: Extract page-aware welcome-state logic with tests
+### 任务 1：提取页面感知的欢迎态逻辑并补测试
 
-**Files:**
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-welcome.ts`
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-welcome.test.ts`
-- Modify: `wiki/docs/.vitepress/theme/components/AIChatWelcome.vue`
-- Modify: `wiki/docs/.vitepress/theme/components/AIChat.vue`
+**文件：**
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-welcome.ts`
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-welcome.test.ts`
+- 修改：`wiki/docs/.vitepress/theme/components/AIChatWelcome.vue`
+- 修改：`wiki/docs/.vitepress/theme/components/AIChat.vue`
 
-- [ ] **Step 1: Write the failing welcome-state tests**
+- [ ] **第 1 步：编写失败的欢迎状态测试**
 
 ```ts
 import assert from "node:assert/strict";
@@ -103,13 +103,13 @@ test("buildAiChatWelcomeState falls back to generic prompts without a page title
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
-Run: `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-welcome.test.ts`
+运行： `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-welcome.test.ts`
 
-Expected: FAIL because `buildAiChatWelcomeState` does not exist yet.
+预期：失败，因为 `buildAiChatWelcomeState` 尚不存在。
 
-- [ ] **Step 3: Implement the minimal welcome-state helper**
+- [ ] **第 3 步：实现最小的欢迎状态助手**
 
 ```ts
 export interface AiChatWelcomeState {
@@ -126,44 +126,44 @@ export function buildAiChatWelcomeState(input: {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
-Run: `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-welcome.test.ts`
+运行： `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-welcome.test.ts`
 
-Expected: PASS with page-aware and generic welcome-state coverage.
+预期：通过页面感知和通用欢迎状态覆盖。
 
-- [ ] **Step 5: Wire the helper into `AIChatWelcome.vue` and `AIChat.vue`**
+- [ ] **第 5 步：将助手连接到 `AIChatWelcome.vue` 和 `AIChat.vue`**
 
-Implement these changes:
-- remove the hardcoded `suggestions` array from `AIChatWelcome.vue`
-- make `AIChatWelcome.vue` accept `suggestions` and `groundingHint` props
-- in `AIChat.vue`, compute `welcomeState` from `pageTitle` and pass it down
-- keep the empty-state CTA flow unchanged: clicking a suggestion still calls `@ask`
+实施这些更改：
+- 从 `AIChatWelcome.vue` 中删除硬编码的 `suggestions` 数组
+- 让`AIChatWelcome.vue`接受`suggestions`和`groundingHint`道具
+- 在`AIChat.vue`中，从`pageTitle`计算`welcomeState`并将其传递下来
+- 保持空状态 CTA 流程不变：点击建议仍会调用 `@ask`
 
-- [ ] **Step 6: Run the docs build smoke test**
+- [ ] **第 6 步：运行文档构建冒烟测试**
 
-Run: `pnpm --dir wiki run docs:build`
+运行： `pnpm --dir wiki run docs:build`
 
-Expected: PASS and include the updated `AIChatWelcome` prop contract without VitePress compile errors.
+预期：通过并包含更新的 `AIChatWelcome` 道具合约，没有 VitePress 编译错误。
 
-- [ ] **Step 7: Commit**
+- [ ] **第 7 步：提交**
 
 ```bash
 git add wiki/docs/.vitepress/theme/utils/ai-chat-welcome.ts wiki/docs/.vitepress/theme/utils/ai-chat-welcome.test.ts wiki/docs/.vitepress/theme/components/AIChatWelcome.vue wiki/docs/.vitepress/theme/components/AIChat.vue
 git commit -m "feat: add page-aware AI chat welcome state"
 ```
 
-### Task 2: Extract composer status and recovery models with tests
+### 任务 2：提取输入区状态与恢复模型并补测试
 
-**Files:**
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-status.ts`
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-status.test.ts`
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-recovery.ts`
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts`
-- Modify: `wiki/docs/.vitepress/theme/components/AIChat.vue`
-- Modify: `wiki/docs/.vitepress/theme/styles/ai-chat.css`
+**文件：**
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-status.ts`
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-status.test.ts`
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-recovery.ts`
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts`
+- 修改：`wiki/docs/.vitepress/theme/components/AIChat.vue`
+- 修改：`wiki/docs/.vitepress/theme/styles/ai-chat.css`
 
-- [ ] **Step 1: Write the failing status and recovery tests**
+- [ ] **第 1 步：编写失败状态和恢复测试**
 
 ```ts
 import assert from "node:assert/strict";
@@ -216,13 +216,13 @@ test("getAiChatRecoveryState exposes retry only after failure", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
-Run: `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-status.test.ts wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts`
+运行： `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-status.test.ts wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts`
 
-Expected: FAIL because the status and recovery helpers do not exist yet.
+预期：失败，因为状态和恢复助手尚不存在。
 
-- [ ] **Step 3: Implement the minimal helpers**
+- [ ] **第 3 步：实现最小助手**
 
 ```ts
 export interface AiChatComposerStatus {
@@ -252,53 +252,53 @@ export function getAiChatRecoveryState(input: {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
-Run: `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-status.test.ts wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts`
+运行： `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-status.test.ts wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts`
 
-Expected: PASS with loading, image-ready, error, and retryable-message coverage.
+预期：通过加载、图像就绪、错误和可重试消息覆盖。
 
-- [ ] **Step 5: Integrate status and recovery into the composer**
+- [ ] **第 5 步：将状态和恢复集成到 Composer 中**
 
-Implement these changes in `AIChat.vue`:
-- compute `composerStatus` and `recoveryState`
-- replace the always-on shortcut sentence with a dynamic status row
-- show shortcut help only when `composerStatus.showShortcutHint === true`
-- add an explicit text action row near the composer:
+在 `AIChat.vue` 中实施这些更改：
+- 计算 `composerStatus` 和 `recoveryState`
+- 用动态状态行替换永远在线的快捷语句
+- 仅当 `composerStatus.showShortcutHint === true` 时显示快捷方式帮助
+- 在作曲家附近添加显式文本操作行：
   - `停止生成` when `recoveryState.canStop === true`
   - `重试` when `recoveryState.canRetry === true`
-- keep the existing sender `@cancel="abort"` behavior, but do not rely on it as the only visible stop affordance
+- 保留现有的发送者 `@cancel="abort"` 行为，但不要依赖它作为唯一可见的停止功能
 
-Implement these style changes in `ai-chat.css`:
+在 `ai-chat.css` 中实现这些样式更改：
 - add `.ai-chat-status-row`
 - add `.ai-chat-status-actions`
-- add low-emphasis helper text styling for shortcuts
-- visually tie error/recovery messaging to the composer area rather than floating independently
+- 为快捷方式添加低强调帮助文本样式
+- 在视觉上将错误/恢复消息传递到作曲家区域，而不是独立浮动
 
-- [ ] **Step 6: Run the docs build smoke test**
+- [ ] **第 6 步：运行文档构建冒烟测试**
 
-Run: `pnpm --dir wiki run docs:build`
+运行： `pnpm --dir wiki run docs:build`
 
-Expected: PASS with the new footer status and recovery UI.
+预期：通过新的页脚状态和恢复 UI。
 
-- [ ] **Step 7: Commit**
+- [ ] **第 7 步：提交**
 
 ```bash
 git add wiki/docs/.vitepress/theme/utils/ai-chat-status.ts wiki/docs/.vitepress/theme/utils/ai-chat-status.test.ts wiki/docs/.vitepress/theme/utils/ai-chat-recovery.ts wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts wiki/docs/.vitepress/theme/components/AIChat.vue wiki/docs/.vitepress/theme/styles/ai-chat.css
 git commit -m "feat: add ai chat composer status and recovery actions"
 ```
 
-## Chunk 2: Source Trust and History Flow
+## 分块 2：来源可信度与历史流转
 
-### Task 3: Extract public-wiki source summary logic with tests
+### 任务 3：提取公开 wiki 来源摘要逻辑并补测试
 
-**Files:**
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-sources.ts`
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-sources.test.ts`
-- Modify: `wiki/docs/.vitepress/theme/components/AIChatSources.vue`
-- Modify: `wiki/docs/.vitepress/theme/styles/ai-chat.css`
+**文件：**
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-sources.ts`
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-sources.test.ts`
+- 修改：`wiki/docs/.vitepress/theme/components/AIChatSources.vue`
+- 修改：`wiki/docs/.vitepress/theme/styles/ai-chat.css`
 
-- [ ] **Step 1: Write the failing source-summary tests**
+- [ ] **第 1 步：编写失败的源代码摘要测试**
 
 ```ts
 import assert from "node:assert/strict";
@@ -346,13 +346,13 @@ test("buildAiChatSourceViewModel summarizes current page plus related pages", ()
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
-Run: `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-sources.test.ts`
+运行： `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-sources.test.ts`
 
-Expected: FAIL because the source view-model helper does not exist yet.
+预期：失败，因为源视图模型帮助器尚不存在。
 
-- [ ] **Step 3: Implement the minimal source helper**
+- [ ] **第 3 步：实现最小源助手**
 
 ```ts
 export interface AiChatSourceItem {
@@ -372,52 +372,52 @@ export function buildAiChatSourceViewModel(...) {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
-Run: `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-sources.test.ts`
+运行： `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-sources.test.ts`
 
-Expected: PASS with current-page, related-page, and asset-only public-wiki cases covered.
+预期：通过，涵盖当前页面、相关页面和仅限资产的公开 wiki 案例。
 
-- [ ] **Step 5: Integrate the source summary strip into `AIChatSources.vue`**
+- [ ] **第 5 步：将源摘要条集成到 `AIChatSources.vue`**
 
-Implement these changes:
-- replace inline normalization logic with `buildAiChatSourceViewModel(...)`
-- render the summary line before the disclosure button
-- keep the disclosure collapsed by default
-- render a small badge per source card:
+实施这些更改：
+- 用 `buildAiChatSourceViewModel(...)` 替换内联标准化逻辑
+- 在披露按钮之前呈现摘要行
+- 默认情况下将披露折叠起来
+- 为每个源卡渲染一个小徽章：
   - `当前页面`
   - `相关文档`
-- if `items.length === 0`, render nothing
+- 如果 `items.length === 0`，则不渲染任何内容
 
-Style updates in `ai-chat.css`:
+`ai-chat.css` 中的样式更新：
 - add `.ai-chat-sources-summary`
-- add badge styling for source cards
-- keep the source module quieter than the answer body
+- 为源卡添加徽章样式
+- 保持源模块比答案主体更安静
 
-- [ ] **Step 6: Run the docs build smoke test**
+- [ ] **第 6 步：运行文档构建冒烟测试**
 
-Run: `pnpm --dir wiki run docs:build`
+运行： `pnpm --dir wiki run docs:build`
 
-Expected: PASS with the stronger source trust UI.
+预期：通过更强大的源信任 UI。
 
-- [ ] **Step 7: Commit**
+- [ ] **第 7 步：提交**
 
 ```bash
 git add wiki/docs/.vitepress/theme/utils/ai-chat-sources.ts wiki/docs/.vitepress/theme/utils/ai-chat-sources.test.ts wiki/docs/.vitepress/theme/components/AIChatSources.vue wiki/docs/.vitepress/theme/styles/ai-chat.css
 git commit -m "feat: add ai chat source summary strip"
 ```
 
-### Task 4: Replace the full-screen history mode switch with an in-panel history drawer
+### 任务 4：用面板内历史抽屉替换全屏历史模式切换
 
-**Files:**
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-history.ts`
-- Create: `wiki/docs/.vitepress/theme/utils/ai-chat-history.test.ts`
-- Create: `wiki/docs/.vitepress/theme/components/AIChatHistoryDrawer.vue`
-- Modify: `wiki/docs/.vitepress/theme/components/AIChat.vue`
-- Modify: `wiki/docs/.vitepress/theme/styles/ai-chat.css`
-- Modify: `wiki/docs/.vitepress/theme/types/index.ts`
+**文件：**
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-history.ts`
+- 创建：`wiki/docs/.vitepress/theme/utils/ai-chat-history.test.ts`
+- 创建：`wiki/docs/.vitepress/theme/components/AIChatHistoryDrawer.vue`
+- 修改：`wiki/docs/.vitepress/theme/components/AIChat.vue`
+- 修改：`wiki/docs/.vitepress/theme/styles/ai-chat.css`
+- 修改：`wiki/docs/.vitepress/theme/types/index.ts`
 
-- [ ] **Step 1: Write the failing history helper tests**
+- [ ] **第 1 步：编写失败的历史帮助程序测试**
 
 ```ts
 import assert from "node:assert/strict";
@@ -459,13 +459,13 @@ test("buildAiChatHistoryDrawerItems trims noisy previews", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
-Run: `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-history.test.ts`
+运行： `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-history.test.ts`
 
-Expected: FAIL because the history drawer helper does not exist yet.
+预期：失败，因为历史抽屉助手尚不存在。
 
-- [ ] **Step 3: Implement the minimal history helper**
+- [ ] **第 3 步：实现最小历史记录助手**
 
 ```ts
 export interface AiChatHistoryDrawerItem extends HistoryEntry {
@@ -481,56 +481,56 @@ export function buildAiChatHistoryDrawerItems(input: {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
-Run: `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-history.test.ts`
+运行： `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-history.test.ts`
 
-Expected: PASS with current-route marking and preview clamping covered.
+预期：通过，并覆盖当前路线标记和预览夹紧。
 
-- [ ] **Step 5: Implement `AIChatHistoryDrawer.vue` and integrate it**
+- [ ] **第 5 步：实施 `AIChatHistoryDrawer.vue` 并集成它**
 
-Implement these changes:
-- create `AIChatHistoryDrawer.vue` with props:
+实施这些更改：
+- 使用道具创建 `AIChatHistoryDrawer.vue`：
   - `open`
   - `entries`
   - `currentRoutePath`
-- expose events:
+- 暴露事件：
   - `close`
   - `select`
-- render the drawer on top of the existing message region instead of replacing it
-- keep the current conversation visible underneath while the drawer is open
-- in `AIChat.vue`, replace `v-if="!showHistory"` / `v-else` full-region switching with:
-  - always-rendered message region
-  - conditionally rendered drawer overlay
+- 将抽屉呈现在现有消息区域的顶部而不是替换它
+- 当抽屉打开时，当前对话在下方可见
+- 在 `AIChat.vue` 中，将 `v-if="!showHistory"` / `v-else` 全区域切换替换为：
+  - 始终渲染的消息区域
+  - 有条件渲染的抽屉覆盖
 
-Style updates in `ai-chat.css`:
-- add absolute-positioned drawer container and backdrop within the panel
-- preserve pointer safety and keyboard-accessible close affordances
-- keep the existing history list card styles, but scope them inside the drawer
+`ai-chat.css` 中的样式更新：
+- 在面板内添加绝对定位的抽屉容器和背景
+- 保持指针安全和键盘可访问的近距离功能可供性
+- 保留现有的历史列表卡样式，但将它们范围限制在抽屉内
 
-- [ ] **Step 6: Run the docs build smoke test**
+- [ ] **第 6 步：运行文档构建冒烟测试**
 
-Run: `pnpm --dir wiki run docs:build`
+运行： `pnpm --dir wiki run docs:build`
 
-Expected: PASS with the drawer integrated and no VitePress SFC compile errors.
+预期：通过，抽屉集成且没有 VitePress SFC 编译错误。
 
-- [ ] **Step 7: Commit**
+- [ ] **第 7 步：提交**
 
 ```bash
 git add wiki/docs/.vitepress/theme/utils/ai-chat-history.ts wiki/docs/.vitepress/theme/utils/ai-chat-history.test.ts wiki/docs/.vitepress/theme/components/AIChatHistoryDrawer.vue wiki/docs/.vitepress/theme/components/AIChat.vue wiki/docs/.vitepress/theme/styles/ai-chat.css wiki/docs/.vitepress/theme/types/index.ts
 git commit -m "feat: move ai chat history into a drawer overlay"
 ```
 
-## Chunk 3: Final Integration and Regression Checks
+## 分块 3：最终集成与回归检查
 
-### Task 5: Tighten recovery wiring and finish regression coverage
+### 任务 5：收紧恢复链路并完成回归覆盖
 
-**Files:**
-- Modify: `wiki/docs/.vitepress/theme/components/AIChat.vue`
-- Modify: `wiki/docs/.vitepress/theme/styles/ai-chat.css`
-- Modify if needed: `wiki/docs/.vitepress/theme/types/index.ts`
+**文件：**
+- 修改：`wiki/docs/.vitepress/theme/components/AIChat.vue`
+- 修改：`wiki/docs/.vitepress/theme/styles/ai-chat.css`
+- 如果需要修改：`wiki/docs/.vitepress/theme/types/index.ts`
 
-- [ ] **Step 1: Write the last failing recovery regression test**
+- [ ] **第 1 步：编写最后一次失败的恢复回归测试**
 
 ```ts
 import assert from "node:assert/strict";
@@ -552,87 +552,87 @@ test("getAiChatRecoveryState does not expose retry while a response is streaming
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail if this case is still missing**
+- [ ] **第 2 步：运行测试以验证如果此案例仍然缺失，它们会失败**
 
-Run: `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts`
+运行： `pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts`
 
-Expected: FAIL if stop/retry precedence is not implemented correctly yet.
+预期：如果停止/重试优先级尚未正确实现，则失败。
 
-- [ ] **Step 3: Finish the recovery wiring in `AIChat.vue`**
+- [ ] **第 3 步：完成`AIChat.vue`**中的恢复接线
 
-Implement these changes:
-- make `retry()` reuse `recoveryState.retryMessage` instead of scanning ad hoc
-- ensure `abort()` clears only the streaming assistant placeholder and does not create a false error
-- ensure footer actions reflect the same underlying recovery model used by the helper tests
-- keep the existing `saveHistory()` behavior unchanged for completed messages only
+实施这些更改：
+- 使`retry()`重用`recoveryState.retryMessage`而不是临时扫描
+- 确保 `abort()` 仅清除流媒体助手占位符并且不会产生错误
+- 确保页脚操作反映辅助测试使用的相同底层恢复模型
+- 仅对于已完成的消息保持现有的 `saveHistory()` 行为不变
 
-- [ ] **Step 4: Run the helper test suite**
+- [ ] **第 4 步：运行帮助程序测试套件**
 
-Run:
+运行：
 
 ```bash
 pnpm exec tsx --test wiki/docs/.vitepress/theme/utils/ai-chat-welcome.test.ts wiki/docs/.vitepress/theme/utils/ai-chat-status.test.ts wiki/docs/.vitepress/theme/utils/ai-chat-sources.test.ts wiki/docs/.vitepress/theme/utils/ai-chat-history.test.ts wiki/docs/.vitepress/theme/utils/ai-chat-recovery.test.ts
 ```
 
-Expected: PASS for all new AI chat helper tests.
+预期：通过所有新的人工智能聊天助手测试。
 
-- [ ] **Step 5: Run the package build**
+- [ ] **第 5 步：运行包构建**
 
-Run: `pnpm --dir wiki run docs:build`
+运行： `pnpm --dir wiki run docs:build`
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 6: Run the package type-check and isolate touched-file regressions**
+- [ ] **第 6 步：运行包类型检查并隔离接触文件回归**
 
-Run:
+运行：
 
 ```powershell
 pnpm --dir wiki run type-check 2>&1 | Tee-Object -FilePath .tmp-wiki-ai-chat-typecheck.log
 rg "AIChat|AIChatSources|AIChatWelcome|AIChatHistoryDrawer|ai-chat-(welcome|status|sources|history|recovery)" .tmp-wiki-ai-chat-typecheck.log
 ```
 
-Expected:
-- first command may still exit non-zero because of pre-existing unrelated wiki issues
-- second command prints no matches from newly touched AI chat files
+预计：
+- 由于预先存在的不相关的 wiki 问题，第一个命令可能仍会以非零值退出
+- 第二个命令不会打印新触摸的 AI 聊天文件中的任何匹配项
 
-- [ ] **Step 7: Run manual UI verification**
+- [ ] **第 7 步：运行手动 UI 验证**
 
-Run the wiki locally and verify:
+在本地运行 wiki 并验证：
 
-1. Open a doc page and open `AI Ask`.
-2. Confirm welcome suggestions include the page title.
-3. Send a prompt and confirm the status row changes to `正在生成回答...`.
-4. Confirm source summary appears before expanding sources.
-5. Open history and confirm the current chat remains visible beneath the drawer.
-6. Trigger a failed request and confirm `重试` appears.
-7. Start a streaming answer and confirm `停止生成` appears instead of `重试`.
+1. 打开文档页面并打开`AI Ask`。
+2. 确认欢迎建议包括页面标题。
+3. 发送提示并确认状态行更改为 `正在生成回答...`。
+4. 在扩展源之前确认源摘要出现。
+5. 打开历史记录并确认当前聊天在抽屉下方仍然可见。
+6. 触发失败的请求并确认出现`重试`。
+7. 开始串流应答并确认出现 `停止生成` 而不是 `重试`。
 
-Suggested command: `pnpm --dir wiki run docs:dev`
+建议命令：`pnpm --dir wiki run docs:dev`
 
-- [ ] **Step 8: Commit**
+- [ ] **第 8 步：提交**
 
 ```bash
 git add wiki/docs/.vitepress/theme/components/AIChat.vue wiki/docs/.vitepress/theme/styles/ai-chat.css wiki/docs/.vitepress/theme/types/index.ts wiki/docs/.vitepress/theme/utils/ai-chat-*.ts wiki/docs/.vitepress/theme/utils/ai-chat-*.test.ts wiki/docs/.vitepress/theme/components/AIChatHistoryDrawer.vue
 git commit -m "feat: polish wiki ai chat interactions"
 ```
 
-## Local Review Notes
+## 本地评审笔记
 
-- Keep this phase frontend-first. Do not expand into new SSE event types or backend retrieval-progress plumbing unless an additive field becomes truly necessary.
-- Preserve the current public wiki rule that the visible source UI shows page sources only. Asset citations may still exist in backend data for answer generation, but they must not become visible cards here.
-- Avoid opportunistic refactors to unrelated theme files while touching `AIChat.vue`.
-- If `types/index.ts` needs shared helper types, add only the smallest shared types used by multiple files.
+- 保持此阶段前端优先。除非真正需要附加字段，否则不要扩展到新的 SSE 事件类型或后端检索进度管道。
+- 保留当前公开 wiki 规则，即可见源 UI 仅显示页面源。资产引用可能仍然存在于用于生成答案的后端数据中，但它们不得成为此处可见的卡片。
+- 避免在接触 `AIChat.vue` 时对不相关的主题文件进行机会性重构。
+- 如果 `types/index.ts` 需要共享帮助器类型，则仅添加多个文件使用的最小共享类型。
 
-## Plan Review Checklist
+## 计划审查清单
 
-Use this checklist for local review before executing the plan:
+在executing-plans之前，请使用此清单进行本地审查：
 
-- no task requires a new backend contract unless explicitly called out as additive
-- every new helper has a matching `node:test` file
-- every UI integration task has a `docs:build` verification step
-- the pre-existing wiki `type-check` failures are documented so execution does not block on unrelated errors
-- visible source cards remain page-only in public wiki
+- 没有任务需要新的后端合约，除非明确称为附加合约
+- 每个新助手都有一个匹配的 `node:test` 文件
+- 每个 UI 集成任务都有一个 `docs:build` 验证步骤
+- 记录了预先存在的 wiki `type-check` 失败，因此执行不会因不相关的错误而阻塞
+- 可见源卡在公共维基中仅保留页面
 
-## Execution Handoff
+## 执行交接
 
-Plan complete and saved to `docs/superpowers/plans/2026-03-23-wiki-ai-chat-ux-polish-implementation.md`. Ready to execute.
+计划已完成并保存至 `docs/superpowers/plans/2026-03-23-wiki-ai-chat-ux-polish-implementation.md`。准备执行。

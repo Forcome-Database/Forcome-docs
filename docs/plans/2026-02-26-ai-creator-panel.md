@@ -1,29 +1,29 @@
-# AI Creator Panel Implementation Plan
+# AI Creator面板实施计划
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **对于Claude：** 必须使用的子技能：使用超能力：executing-plans来逐个任务地实施该计划。
 
-**Goal:** Add an AI Creator panel to the right sidebar with three modes: Create (file upload + template + streaming write), Edit (replace selection), Chat (dialog without editing).
+**目标：** 在右侧边栏添加一个AI Creator面板，具有三种模式：创建（文件上传+模板+流式写入）、编辑（替换选择）、聊天（无需编辑的对话框）。
 
-**Architecture:** Extend existing Aside panel with new `"ai-creator"` tab. Frontend: 8 new React components + Jotai atoms. Backend: 1 new SSE endpoint for file-based creation, reuse existing `/ai/generate/stream` for edit/chat modes. New `AiFileService` handles PDF/image (base64) and Word (mammoth → markdown).
+**架构：** 使用新的 `"ai-creator"` 选项卡扩展现有的 Aside 面板。前端：8 个新的 React 组件 + Jotai 原子。后端：1 个新的 SSE 端点用于基于文件的创建，重用现有的 `/ai/generate/stream` 进行编辑/聊天模式。新的 `AiFileService` 处理 PDF/图像 (base64) 和 Word (mammoth → markdown)。
 
-**Tech Stack:** React 18, Mantine 8, Jotai, TipTap 3, NestJS 11, Fastify multipart, Vercel AI SDK v6, mammoth
+**技术栈：** React 18、Mantine 8、Jotai、TipTap 3、NestJS 11、Fastify multipart、Vercel AI SDK v6、mammoth
 
 ---
 
-### Task 1: Backend — Install mammoth and create AiFileService
+### 任务 1：后端 — 安装 mammoth and create AiFileService
 
-**Files:**
-- Modify: `apps/server/package.json` — add mammoth dependency
-- Create: `apps/server/src/ee/ai/services/ai-file.service.ts`
+**文件：**
+- 修改：`apps/server/package.json` — 添加猛犸象依赖项
+- 创建：`apps/server/src/ee/ai/services/ai-file.service.ts`
 
-**Step 1: Install mammoth**
+**第 1 步：安装猛犸象**
 
-Run: `cd apps/server && pnpm add mammoth`
-Expected: mammoth added to dependencies
+运行： `cd apps/server && pnpm add mammoth`
+预期：猛犸象已添加到依赖项中
 
-**Step 2: Create AiFileService**
+**第二步：创建AiFileService**
 
-Create `apps/server/src/ee/ai/services/ai-file.service.ts`:
+创建`apps/server/src/ee/ai/services/ai-file.service.ts`：
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
@@ -81,7 +81,7 @@ export class AiFileService {
 }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/server/package.json pnpm-lock.yaml apps/server/src/ee/ai/services/ai-file.service.ts
@@ -90,15 +90,15 @@ git commit -m "feat(ai): add AiFileService for PDF/Word/image processing"
 
 ---
 
-### Task 2: Backend — Create templates and creator DTO
+### 任务 2：后端 — 创建 templates and creator DTO
 
-**Files:**
-- Create: `apps/server/src/ee/ai/constants/ai-templates.ts`
-- Create: `apps/server/src/ee/ai/dto/ai-creator.dto.ts`
+**文件：**
+- 创建：`apps/server/src/ee/ai/constants/ai-templates.ts`
+- 创建：`apps/server/src/ee/ai/dto/ai-creator.dto.ts`
 
-**Step 1: Create templates constant**
+**第 1 步：创建模板常量**
 
-Create `apps/server/src/ee/ai/constants/ai-templates.ts`:
+创建`apps/server/src/ee/ai/constants/ai-templates.ts`：
 
 ```typescript
 export interface AiTemplate {
@@ -171,9 +171,9 @@ export const AI_TEMPLATES: Record<string, AiTemplate> = {
 };
 ```
 
-**Step 2: Create DTO**
+**第 2 步：创建DTO**
 
-Create `apps/server/src/ee/ai/dto/ai-creator.dto.ts`:
+创建`apps/server/src/ee/ai/dto/ai-creator.dto.ts`：
 
 ```typescript
 import { IsNotEmpty, IsOptional, IsString, IsIn } from 'class-validator';
@@ -206,7 +206,7 @@ export class AiCreatorGenerateDto {
 }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/constants/ai-templates.ts apps/server/src/ee/ai/dto/ai-creator.dto.ts
@@ -215,14 +215,14 @@ git commit -m "feat(ai): add AI templates and creator DTO"
 
 ---
 
-### Task 3: Backend — Add streamWithFiles to AiService
+### 任务 3：后端 — 添加 streamWithFiles to AiService
 
-**Files:**
-- Modify: `apps/server/src/ee/ai/services/ai.service.ts:1-115` — add streamWithFiles method
+**文件：**
+- 修改：`apps/server/src/ee/ai/services/ai.service.ts:1-115` — 添加streamWithFiles方法
 
-**Step 1: Add streamWithFiles method**
+**第 1 步：添加streamWithFiles方法**
 
-Add to `ai.service.ts` after the `generateStream` method (after line 92):
+在 `generateStream` 方法之后添加到 `ai.service.ts`（第 92 行之后）：
 
 ```typescript
 async *streamWithFiles(
@@ -277,13 +277,13 @@ async *streamWithFiles(
 }
 ```
 
-Also add the import at top of file:
+还要在文件顶部添加导入：
 
 ```typescript
 import { AiContentPart } from './ai-file.service';
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/services/ai.service.ts
@@ -292,15 +292,15 @@ git commit -m "feat(ai): add streamWithFiles method for multi-modal content"
 
 ---
 
-### Task 4: Backend — Add creator/generate endpoint to AiController
+### 任务 4：后端 — 添加 creator/generate endpoint to AiController
 
-**Files:**
-- Modify: `apps/server/src/ee/ai/ai.controller.ts:1-119` — add creatorGenerate endpoint
-- Modify: `apps/server/src/ee/ai/ai.module.ts:1-12` — register AiFileService
+**文件：**
+- 修改：`apps/server/src/ee/ai/ai.controller.ts:1-119` — 添加creatorGenerate端点
+- 修改：`apps/server/src/ee/ai/ai.module.ts:1-12` — 注册AiFileService
 
-**Step 1: Update AiModule to register AiFileService**
+**第 1 步：更新AiModule以注册AiFileService**
 
-Modify `ai.module.ts`:
+修改`ai.module.ts`：
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -318,9 +318,9 @@ import { AiFileService } from './services/ai-file.service';
 export class AiModule {}
 ```
 
-**Step 2: Add creatorGenerate endpoint to AiController**
+**步骤2：将creatorGenerate端点添加到AiController**
 
-Add new imports and inject AiFileService, then add the endpoint after the existing `generateStream` method:
+添加新的导入并注入 AiFileService，然后在现有的 `generateStream` 方法之后添加端点：
 
 ```typescript
 // Additional imports at top:
@@ -415,7 +415,7 @@ async creatorGenerate(
 }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/ai.controller.ts apps/server/src/ee/ai/ai.module.ts
@@ -424,15 +424,15 @@ git commit -m "feat(ai): add creator/generate endpoint with file upload"
 
 ---
 
-### Task 5: Frontend — Create Jotai atoms and types
+### 任务 5：前端 — 创建 Jotai atoms and types
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts`
 
-**Step 1: Create types**
+**第 1 步：创建类型**
 
-Create `apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts`:
+创建`apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts`：
 
 ```typescript
 export type AiCreatorMode = 'create' | 'edit' | 'chat';
@@ -461,9 +461,9 @@ export const AI_TEMPLATE_OPTIONS: AiTemplate[] = [
 ];
 ```
 
-**Step 2: Create atoms**
+**第 2 步：创建原子**
 
-Create `apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`:
+创建`apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`：
 
 ```typescript
 import { atom } from 'jotai';
@@ -489,7 +489,7 @@ export const aiCreatorStreamingAtom = atom<boolean>(false);
 export const aiCreatorInsertModeAtom = atom<InsertMode>('append');
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/
@@ -498,14 +498,14 @@ git commit -m "feat(ai): add AI creator atoms and types"
 
 ---
 
-### Task 6: Frontend — Create AI creator service
+### 任务 6：前端 — 创建 AI creator service
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/services/ai-service.ts:1-92` — add creatorGenerate function
+**文件：**
+- 修改：`apps/client/src/ee/ai/services/ai-service.ts:1-92` — 添加creatorGenerate函数
 
-**Step 1: Add creatorGenerate to ai-service.ts**
+**第 1 步：将creatorGenerate添加到ai-service.ts**
 
-Add after the existing `generateAiContentStream` function:
+在现有的 `generateAiContentStream` 函数后添加：
 
 ```typescript
 export async function creatorGenerate(
@@ -601,7 +601,7 @@ export async function creatorGenerate(
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/services/ai-service.ts
@@ -610,21 +610,21 @@ git commit -m "feat(ai): add creatorGenerate service for file-based creation"
 
 ---
 
-### Task 7: Frontend — Wire AI Creator tab into Aside
+### 任务 7：前端 — Wire AI Creator tab into Aside
 
-**Files:**
-- Modify: `apps/client/src/components/layouts/global/aside.tsx:1-57` — add ai-creator case
-- Modify: `apps/client/src/features/page/components/header/page-header-menu.tsx:72-102` — add AI button
+**文件：**
+- 修改：`apps/client/src/components/layouts/global/aside.tsx:1-57` — 添加 ai-creator 案例
+- 修改：`apps/client/src/features/page/components/header/page-header-menu.tsx:72-102` — 添加AI按钮
 
-**Step 1: Add AI Creator button to page header**
+**第 1 步：将 AI Creator 按钮添加到页眉**
 
-In `page-header-menu.tsx`, add import at top:
+在`page-header-menu.tsx`中，在顶部添加导入：
 
 ```typescript
 import { IconSparkles } from "@tabler/icons-react";
 ```
 
-Add AI button between ShareModal and Comments button (after line 78, before line 80):
+在 ShareModal 和 Comments 按钮之间添加 AI 按钮（第 78 行之后，第 80 行之前）：
 
 ```tsx
 {!readOnly && (
@@ -640,15 +640,15 @@ Add AI button between ShareModal and Comments button (after line 78, before line
 )}
 ```
 
-**Step 2: Add AI Creator case to Aside**
+**第 2 步：将AI Creator案例添加到Aside**
 
-In `aside.tsx`, add import:
+在`aside.tsx`中，添加导入：
 
 ```typescript
 import AiCreatorPanel from "@/ee/ai/components/ai-creator/ai-creator-panel";
 ```
 
-Add case in the switch statement (after the `"toc"` case):
+在 switch 语句中添加 case（在 `"toc"` case 之后）：
 
 ```typescript
 case "ai-creator":
@@ -657,7 +657,7 @@ case "ai-creator":
   break;
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/components/layouts/global/aside.tsx apps/client/src/features/page/components/header/page-header-menu.tsx
@@ -666,12 +666,12 @@ git commit -m "feat(ai): wire AI Creator button and aside tab"
 
 ---
 
-### Task 8: Frontend — Build AiCreatorPanel (main container)
+### 任务 8：前端 — 构建 AiCreatorPanel (main container)
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx`
 
-**Step 1: Create main panel component**
+**第 1 步：创建主面板组件**
 
 ```typescript
 import { useEffect, useCallback } from 'react';
@@ -753,7 +753,7 @@ export default function AiCreatorPanel() {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx
@@ -762,13 +762,13 @@ git commit -m "feat(ai): create AiCreatorPanel main container"
 
 ---
 
-### Task 9: Frontend — Build mode switch and selection preview
+### 任务 9：前端 — 构建 mode switch and selection preview
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-mode-switch.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-selection.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-mode-switch.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-selection.tsx`
 
-**Step 1: Create mode switch**
+**第 1 步：创建模式开关**
 
 ```typescript
 import { SegmentedControl, Box } from '@mantine/core';
@@ -804,7 +804,7 @@ export function AiCreatorModeSwitch() {
 }
 ```
 
-**Step 2: Create selection preview**
+**第 2 步：创建选择预览**
 
 ```typescript
 import { Box, Text } from '@mantine/core';
@@ -840,7 +840,7 @@ export function AiCreatorSelection() {
 }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-mode-switch.tsx apps/client/src/ee/ai/components/ai-creator/ai-creator-selection.tsx
@@ -849,13 +849,13 @@ git commit -m "feat(ai): add mode switch and selection preview components"
 
 ---
 
-### Task 10: Frontend — Build messages list and message item
+### 任务 10：前端 — 构建 messages list and message item
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-messages.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-messages.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx`
 
-**Step 1: Create message item**
+**第 1 步：创建消息项**
 
 ```typescript
 import { ActionIcon, Box, Group, Text, Tooltip } from '@mantine/core';
@@ -936,7 +936,7 @@ export function AiCreatorMessageItem({ message }: Props) {
 }
 ```
 
-**Step 2: Create messages list**
+**第 2 步：创建消息列表**
 
 ```typescript
 import { Box, Text, Loader, Group } from '@mantine/core';
@@ -988,7 +988,7 @@ export function AiCreatorMessages() {
 }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-messages.tsx apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx
@@ -997,13 +997,13 @@ git commit -m "feat(ai): add messages list and message item components"
 
 ---
 
-### Task 11: Frontend — Build file list and template selector
+### 任务 11：前端 — 构建 file list and template selector
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-file-list.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-templates.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-file-list.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-templates.tsx`
 
-**Step 1: Create file list**
+**第 1 步：创建文件列表**
 
 ```typescript
 import { ActionIcon, Badge, Group } from '@mantine/core';
@@ -1047,7 +1047,7 @@ export function AiCreatorFileList() {
 }
 ```
 
-**Step 2: Create template selector**
+**第 2 步：创建模板选择器**
 
 ```typescript
 import { Select } from '@mantine/core';
@@ -1077,7 +1077,7 @@ export function AiCreatorTemplates() {
 }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-file-list.tsx apps/client/src/ee/ai/components/ai-creator/ai-creator-templates.tsx
@@ -1086,14 +1086,14 @@ git commit -m "feat(ai): add file list and template selector components"
 
 ---
 
-### Task 12: Frontend — Build AiCreatorInput (the core interaction component)
+### 任务 12：前端 — 构建 AiCreatorInput (the core interaction component)
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
 
-**Step 1: Create input component**
+**第 1 步：创建输入组件**
 
-This is the most complex component — handles file upload, prompt submission, and stream management for all three modes.
+这是最复杂的组件——处理所有三种模式的文件上传、提示提交和流管理。
 
 ```typescript
 import { useCallback, useRef, useState } from 'react';
@@ -1464,7 +1464,7 @@ export function AiCreatorInput() {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx
@@ -1473,12 +1473,12 @@ git commit -m "feat(ai): add AiCreatorInput with file upload, templates, and str
 
 ---
 
-### Task 13: Frontend — Add AI writing highlight decoration
+### 任务 13：前端 — 添加 AI writing highlight decoration
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator.module.css`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator.module.css`
 
-**Step 1: Create CSS module for AI creator**
+**第 1 步：为AI Creator创建CSS模块**
 
 ```css
 .aiWritingHighlight {
@@ -1491,9 +1491,9 @@ git commit -m "feat(ai): add AiCreatorInput with file upload, templates, and str
 }
 ```
 
-Note: Full ProseMirror Decoration integration for real-time highlighting can be added as a follow-up. The current implementation uses the simpler approach of inserting complete content after stream ends, which works with native TipTap undo.
+注意：用于实时突出显示的完整 ProseMirror Decoration 集成可以作为后续添加。当前的实现使用更简单的方法，即在流结束后插入完整的内容，该方法与本机 TipTap 撤消配合使用。
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator.module.css
@@ -1502,41 +1502,41 @@ git commit -m "feat(ai): add AI writing highlight styles"
 
 ---
 
-### Task 14: Verify and fix — Run build, test, fix issues
+### 任务 14：验证并修复 — 运行 build, test, fix issues
 
-**Step 1: Run frontend type check**
+**第 1 步：运行前端类型检查**
 
-Run: `cd apps/client && npx tsc --noEmit`
-Expected: No type errors. Fix any that appear.
+运行： `cd apps/client && npx tsc --noEmit`
+预期：没有类型错误。修复出现的任何问题。
 
-**Step 2: Run backend type check**
+**第 2 步：运行后端类型检查**
 
-Run: `cd apps/server && npx tsc --noEmit`
-Expected: No type errors. Fix any that appear.
+运行： `cd apps/server && npx tsc --noEmit`
+预期：没有类型错误。修复出现的任何问题。
 
-**Step 3: Run dev servers and test manually**
+**步骤 3：运行开发服务器并手动测试**
 
-Run: `pnpm dev`
+运行： `pnpm dev`
 
-Manual testing checklist:
-- [ ] AI Creator button appears in page header (sparkles icon)
-- [ ] Clicking opens right panel with "AI Creator" title
-- [ ] Panel shows create mode by default (no selection)
-- [ ] File upload works (PDF, Word, images)
-- [ ] Template dropdown shows 5 options
-- [ ] Selecting text in editor switches to edit mode
-- [ ] [Edit | Chat] toggle appears with selection
-- [ ] Clearing selection returns to create mode
-- [ ] Create mode: sends to `/api/ai/creator/generate`, content appears in editor
-- [ ] Edit mode: sends to `/api/ai/generate/stream`, replaces selection
-- [ ] Chat mode: AI response appears in panel, not in editor
-- [ ] Copy and Insert buttons work on chat messages
-- [ ] Stop button works during streaming
-- [ ] Ctrl+Z undoes AI-inserted content
-- [ ] "Page has existing content" hint shows append/overwrite toggle
-- [ ] Comment/TOC buttons still work independently
+手动测试清单：
+- [ ] AI Creator 按钮出现在页面标题中（闪烁图标）
+- [ ] 单击打开带有“AI Creator”标题的右侧面板
+- [ ] 面板默认显示创建模式（无需选择）
+- [ ] 文件上传作品（PDF、Word、图像）
+- [ ] 模板下拉列表显示 5 个选项
+- [ ] 在编辑器中选择文本切换到编辑模式
+- [ ] [编辑 | Chat] 切换随选择一起出现
+- [ ] 清除选择返回创建模式
+- [ ] 创建模式：发送到`/api/ai/creator/generate`，内容出现在编辑器中
+- [ ] 编辑模式：发送到 `/api/ai/generate/stream`，替换选择
+- [ ] 聊天模式：AI 回复出现在面板中，而不是编辑器中
+- [ ] 复制和插入按钮适用于聊天消息
+- [ ] 停止按钮在流媒体期间起作用
+- [ ] Ctrl+Z 撤消 AI 插入的内容
+- [ ]“页面已存在内容”提示显示追加/覆盖切换
+- [ ] 评审/目录按钮仍然独立工作
 
-**Step 4: Final commit**
+**第 4 步：最终提交**
 
 ```bash
 git add -A
@@ -1545,9 +1545,9 @@ git commit -m "feat(ai): complete AI Creator panel with create/edit/chat modes"
 
 ---
 
-## Summary of All Files
+## 所有文件的摘要
 
-### New files (11):
+### 新文件（11）：
 1. `apps/server/src/ee/ai/services/ai-file.service.ts`
 2. `apps/server/src/ee/ai/constants/ai-templates.ts`
 3. `apps/server/src/ee/ai/dto/ai-creator.dto.ts`
@@ -1563,11 +1563,11 @@ git commit -m "feat(ai): complete AI Creator panel with create/edit/chat modes"
 13. `apps/client/src/ee/ai/components/ai-creator/ai-creator-templates.tsx`
 14. `apps/client/src/ee/ai/components/ai-creator/ai-creator.module.css`
 
-### Modified files (5):
-1. `apps/server/package.json` — add mammoth
-2. `apps/server/src/ee/ai/ai.module.ts` — register AiFileService
-3. `apps/server/src/ee/ai/ai.controller.ts` — add creator/generate endpoint
-4. `apps/server/src/ee/ai/services/ai.service.ts` — add streamWithFiles
-5. `apps/client/src/components/layouts/global/aside.tsx` — add ai-creator tab
-6. `apps/client/src/features/page/components/header/page-header-menu.tsx` — add AI button
-7. `apps/client/src/ee/ai/services/ai-service.ts` — add creatorGenerate function
+###修改文件(5):
+1. `apps/server/package.json` — 添加猛犸象
+2. `apps/server/src/ee/ai/ai.module.ts` — 注册AiFileService
+3. `apps/server/src/ee/ai/ai.controller.ts` — 添加创建者/生成端点
+4. `apps/server/src/ee/ai/services/ai.service.ts` — 添加streamWithFiles
+5. `apps/client/src/components/layouts/global/aside.tsx` — 添加 ai-creator 选项卡
+6. `apps/client/src/features/page/components/header/page-header-menu.tsx` — 添加AI按钮
+7. `apps/client/src/ee/ai/services/ai-service.ts` — 添加creatorGenerate函数

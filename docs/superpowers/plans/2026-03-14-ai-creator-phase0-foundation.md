@@ -1,29 +1,29 @@
-# Phase 0: Foundation — Implementation Plan
+# 阶段 0：基础设施实施计划
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **对于智能体执行者：** 要求：使用 superpowers:subagent-driven-development （如果子代理可用）或 superpowers:executing-plans 来实施此计划。步骤使用复选框 (`- [ ]`) 语法进行跟踪。
 
-**Goal:** Set up PydanticAI infrastructure, define all Pydantic data models, design new SSE event protocol, and scaffold frontend components. This phase creates zero behavioral changes — it only adds new code alongside the existing LangGraph system.
+**目标：** 建立 PydanticAI 基础设施，定义所有 Pydantic 数据模型，设计新的 SSE 事件协议和搭建前端组件骨架。此阶段创建零行为变化 - 它仅在现有 LangGraph 系统旁边添加新代码。
 
-**Architecture:** PydanticAI replaces LangGraph as the agent orchestration framework. Structured Pydantic models replace the 45-field TypedDict (`agent-service/app/agent/state.py:AgentState`). A new SSE event protocol enables richer frontend interactions (Brief, Blueprint, Review). All new code lives in `agent-service/app/models/`, `agent-service/app/orchestrator/`, `agent-service/app/utils/`, and `apps/client/src/ee/ai/types/` — the existing `app/agent/` directory is untouched.
+**架构：** PydanticAI 取代 LangGraph 作为智能体编排框架。结构化 Pydantic 模型取代了 45 字段 TypedDict (`agent-service/app/agent/state.py:AgentState`)。新的 SSE 事件协议可实现更丰富的前端交互（简要、蓝图、评审）。所有新代码都位于 `agent-service/app/models/`、`agent-service/app/orchestrator/`、`agent-service/app/utils/` 和 `apps/client/src/ee/ai/types/` 中 - 现有的 `app/agent/` 目录保持不变。
 
-**Tech Stack:** Python 3.12, PydanticAI, Pydantic v2, FastAPI, TypeScript, React, Mantine UI
+**技术栈：** Python 3.12、PydanticAI、Pydantic v2、FastAPI、TypeScript、React、Mantine UI
 
-**Estimated Duration:** 1-2 weeks
+**预计耗时：** 1-2 周
 
-**Key Constraint:** The existing LangGraph system (`app/agent/`) MUST remain fully functional throughout this phase. All new code is additive.
+**关键约束：** 现有的 LangGraph 系统 (`app/agent/`) 必须在整个阶段保持完整功能。所有新代码都是附加的。
 
 ---
 
-## Chunk 1: Dependencies and Infrastructure
+## 分块 1：依赖与基础设施
 
-### Task 1: Install PydanticAI and set up dependencies
+### 任务 1：安装 PydanticAI and set up dependencies
 
-**Files:**
-- Modify: `agent-service/pyproject.toml`
+**文件：**
+- 修改：`agent-service/pyproject.toml`
 
-- [ ] **Step 1: Add pydantic-ai to dependencies**
+- [ ] **第 1 步：将 pydantic-ai 添加到依赖项**
 
-Edit `agent-service/pyproject.toml`, add `pydantic-ai` to the `dependencies` list:
+编辑`agent-service/pyproject.toml`，将`pydantic-ai`添加到`dependencies`列表中：
 
 ```toml
 [project]
@@ -52,38 +52,38 @@ dependencies = [
 ]
 ```
 
-Note: `langgraph` and related dependencies are kept — they will be removed in Phase 6 after migration is complete.
+注意：`langgraph` 和相关依赖项将被保留 - 它们将在迁移完成后的第 6 阶段被删除。
 
-- [ ] **Step 2: Install and verify import**
+- [ ] **第 2 步：安装并验证导入**
 
-Run: `cd /e/test/Docmost/agent-service && pip install -e ".[dev]"`
-Run: `cd /e/test/Docmost/agent-service && python -c "import pydantic_ai; print('pydantic_ai', pydantic_ai.__version__)"`
-Expected: prints version without error
+运行： `cd /e/test/Docmost/agent-service && pip install -e ".[dev]"`
+运行： `cd /e/test/Docmost/agent-service && python -c "import pydantic_ai; print('pydantic_ai', pydantic_ai.__version__)"`
+预期：打印版本没有错误
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/pyproject.toml && git commit -m "chore(agent): add pydantic-ai dependency"`
+运行： `cd /e/test/Docmost && git add agent-service/pyproject.toml && git commit -m "chore(agent): add pydantic-ai dependency"`
 
 ---
 
-## Chunk 2: Pydantic Data Models
+## 分块 2：Pydantic 数据模型
 
-### Task 2: Create models package and CreationBrief
+### 任务 2：创建 models package and CreationBrief
 
-**Files:**
-- Create: `agent-service/app/models/__init__.py`
-- Create: `agent-service/app/models/brief.py`
-- Create: `agent-service/tests/test_models/__init__.py`
-- Create: `agent-service/tests/test_models/test_brief.py`
+**文件：**
+- 创建：`agent-service/app/models/__init__.py`
+- 创建：`agent-service/app/models/brief.py`
+- 创建：`agent-service/tests/test_models/__init__.py`
+- 创建：`agent-service/tests/test_models/test_brief.py`
 
-- [ ] **Step 1: Create models package init**
+- [ ] **第 1 步：创建模型包初始化**
 
 ```python
 # agent-service/app/models/__init__.py
 """Pydantic v2 data models for the AI Creator v2 orchestrator."""
 ```
 
-- [ ] **Step 2: Create test directory and write failing tests for CreationBrief**
+- [ ] **第 2 步：创建测试目录并为 CreationBrief 编写失败测试**
 
 ```python
 # agent-service/tests/test_models/__init__.py
@@ -189,12 +189,12 @@ def test_brief_serialization_roundtrip():
     assert restored == brief
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [ ] **第 3 步：运行测试以验证它们是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_brief.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'app.models.brief'`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_brief.py -v`
+预期：失败并显示 `ModuleNotFoundError: No module named 'app.models.brief'`
 
-- [ ] **Step 4: Implement CreationBrief**
+- [ ] **第 4 步：实施 CreationBrief**
 
 ```python
 # agent-service/app/models/brief.py
@@ -260,24 +260,24 @@ class CreationBrief(BaseModel):
     )
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **第 5 步：运行测试以验证其通过**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_brief.py -v`
-Expected: ALL 6 PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_brief.py -v`
+预期：全部 6 项通过
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/models/__init__.py agent-service/app/models/brief.py agent-service/tests/test_models/__init__.py agent-service/tests/test_models/test_brief.py && git commit -m "feat(agent): add CreationBrief Pydantic model with tests"`
+运行： `cd /e/test/Docmost && git add agent-service/app/models/__init__.py agent-service/app/models/brief.py agent-service/tests/test_models/__init__.py agent-service/tests/test_models/test_brief.py && git commit -m "feat(agent): add CreationBrief Pydantic model with tests"`
 
 ---
 
-### Task 3: Create AssetItem and AssetMap models
+### 任务 3：创建 AssetItem and AssetMap models
 
-**Files:**
-- Create: `agent-service/app/models/asset_map.py`
-- Create: `agent-service/tests/test_models/test_asset_map.py`
+**文件：**
+- 创建：`agent-service/app/models/asset_map.py`
+- 创建：`agent-service/tests/test_models/test_asset_map.py`
 
-- [ ] **Step 1: Write failing tests for AssetItem and AssetMap**
+- [ ] **第 1 步：为 AssetItem 和 AssetMap 编写失败测试**
 
 ```python
 # agent-service/tests/test_models/test_asset_map.py
@@ -374,12 +374,12 @@ def test_asset_map_serialization_roundtrip():
     assert restored == am
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_asset_map.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'app.models.asset_map'`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_asset_map.py -v`
+预期：失败并显示 `ModuleNotFoundError: No module named 'app.models.asset_map'`
 
-- [ ] **Step 3: Implement AssetItem and AssetMap**
+- [ ] **第 3 步：实现AssetItem和AssetMap**
 
 ```python
 # agent-service/app/models/asset_map.py
@@ -437,24 +437,24 @@ class AssetMap(BaseModel):
     )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_asset_map.py -v`
-Expected: ALL 7 PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_asset_map.py -v`
+预期：全部 7 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/models/asset_map.py agent-service/tests/test_models/test_asset_map.py && git commit -m "feat(agent): add AssetItem and AssetMap Pydantic models with tests"`
+运行： `cd /e/test/Docmost && git add agent-service/app/models/asset_map.py agent-service/tests/test_models/test_asset_map.py && git commit -m "feat(agent): add AssetItem and AssetMap Pydantic models with tests"`
 
 ---
 
-### Task 4: Create Blueprint models
+### 任务 4：创建 Blueprint models
 
-**Files:**
-- Create: `agent-service/app/models/blueprint.py`
-- Create: `agent-service/tests/test_models/test_blueprint.py`
+**文件：**
+- 创建：`agent-service/app/models/blueprint.py`
+- 创建：`agent-service/tests/test_models/test_blueprint.py`
 
-- [ ] **Step 1: Write failing tests for Blueprint**
+- [ ] **第 1 步：为蓝图编写失败测试**
 
 ```python
 # agent-service/tests/test_models/test_blueprint.py
@@ -579,12 +579,12 @@ def test_blueprint_serialization_roundtrip():
     assert restored == bp
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_blueprint.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'app.models.blueprint'`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_blueprint.py -v`
+预期：失败并显示 `ModuleNotFoundError: No module named 'app.models.blueprint'`
 
-- [ ] **Step 3: Implement Blueprint models**
+- [ ] **第 3 步：实施蓝图模型**
 
 ```python
 # agent-service/app/models/blueprint.py
@@ -669,26 +669,26 @@ class CreationBlueprint(BaseModel):
         return self
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_blueprint.py -v`
-Expected: ALL 8 PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_blueprint.py -v`
+预期：全部 8 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/models/blueprint.py agent-service/tests/test_models/test_blueprint.py && git commit -m "feat(agent): add Blueprint Pydantic models (VisualPlan, SectionPlan, CreationBlueprint) with tests"`
+运行： `cd /e/test/Docmost && git add agent-service/app/models/blueprint.py agent-service/tests/test_models/test_blueprint.py && git commit -m "feat(agent): add Blueprint Pydantic models (VisualPlan, SectionPlan, CreationBlueprint) with tests"`
 
 ---
 
-### Task 5: Create Draft and Review models
+### 任务 5：创建 Draft and Review models
 
-**Files:**
-- Create: `agent-service/app/models/draft.py`
-- Create: `agent-service/app/models/review.py`
-- Create: `agent-service/tests/test_models/test_draft.py`
-- Create: `agent-service/tests/test_models/test_review.py`
+**文件：**
+- 创建：`agent-service/app/models/draft.py`
+- 创建：`agent-service/app/models/review.py`
+- 创建：`agent-service/tests/test_models/test_draft.py`
+- 创建：`agent-service/tests/test_models/test_review.py`
 
-- [ ] **Step 1: Write failing tests for SectionDraft**
+- [ ] **第 1 步：为SectionDraft 编写失败测试**
 
 ```python
 # agent-service/tests/test_models/test_draft.py
@@ -750,7 +750,7 @@ def test_section_draft_serialization_roundtrip():
     assert restored == draft
 ```
 
-- [ ] **Step 2: Write failing tests for ReviewIssue and ReviewReport**
+- [ ] **第 2 步：为 ReviewIssue 和 ReviewReport 编写失败测试**
 
 ```python
 # agent-service/tests/test_models/test_review.py
@@ -866,12 +866,12 @@ def test_review_report_serialization_roundtrip():
     assert restored == report
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [ ] **第 3 步：运行测试以验证它们是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_draft.py tests/test_models/test_review.py -v`
-Expected: FAIL with `ModuleNotFoundError`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_draft.py tests/test_models/test_review.py -v`
+预期：失败并显示 `ModuleNotFoundError`
 
-- [ ] **Step 4: Implement SectionDraft**
+- [ ] **第 4 步：实施SectionDraft**
 
 ```python
 # agent-service/app/models/draft.py
@@ -903,7 +903,7 @@ class SectionDraft(BaseModel):
     )
 ```
 
-- [ ] **Step 5: Implement ReviewIssue and ReviewReport**
+- [ ] **步骤 5：实施 ReviewIssue 和 ReviewReport**
 
 ```python
 # agent-service/app/models/review.py
@@ -949,24 +949,24 @@ class ReviewReport(BaseModel):
     summary: str = Field(..., description="Human-readable summary of the review")
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [ ] **第 6 步：运行测试以验证其通过**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_draft.py tests/test_models/test_review.py -v`
-Expected: ALL 12 PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_draft.py tests/test_models/test_review.py -v`
+预期：全部 12 项通过
 
-- [ ] **Step 7: Commit**
+- [ ] **第 7 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/models/draft.py agent-service/app/models/review.py agent-service/tests/test_models/test_draft.py agent-service/tests/test_models/test_review.py && git commit -m "feat(agent): add SectionDraft, ReviewIssue, ReviewReport Pydantic models with tests"`
+运行： `cd /e/test/Docmost && git add agent-service/app/models/draft.py agent-service/app/models/review.py agent-service/tests/test_models/test_draft.py agent-service/tests/test_models/test_review.py && git commit -m "feat(agent): add SectionDraft, ReviewIssue, ReviewReport Pydantic models with tests"`
 
 ---
 
-### Task 6: Create SSE Event models
+### 任务 6：创建 SSE Event models
 
-**Files:**
-- Create: `agent-service/app/models/events.py`
-- Create: `agent-service/tests/test_models/test_events.py`
+**文件：**
+- 创建：`agent-service/app/models/events.py`
+- 创建：`agent-service/tests/test_models/test_events.py`
 
-- [ ] **Step 1: Write failing tests for SSE event models**
+- [ ] **第 1 步：为 SSE 事件模型编写失败测试**
 
 ```python
 # agent-service/tests/test_models/test_events.py
@@ -1112,12 +1112,12 @@ def test_sse_event_union_discrimination():
         assert "type" in parsed
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_events.py -v`
-Expected: FAIL with `ModuleNotFoundError`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_events.py -v`
+预期：失败并显示 `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement SSE Event models**
+- [ ] **步骤 3：实施 SSE 事件模型**
 
 ```python
 # agent-service/app/models/events.py
@@ -1208,24 +1208,24 @@ def serialize_sse_event(event: SSEEvent) -> str:
     raise TypeError(f"Expected a Pydantic BaseModel, got {type(event)}")
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_events.py -v`
-Expected: ALL 14 PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_events.py -v`
+预期：全部 14 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/models/events.py agent-service/tests/test_models/test_events.py && git commit -m "feat(agent): add SSE v2 event Pydantic models with serialize_sse_event utility"`
+运行： `cd /e/test/Docmost && git add agent-service/app/models/events.py agent-service/tests/test_models/test_events.py && git commit -m "feat(agent): add SSE v2 event Pydantic models with serialize_sse_event utility"`
 
 ---
 
-### Task 7: Create CreationState — unified state container
+### 任务 7：创建 CreationState — unified state container
 
-**Files:**
-- Create: `agent-service/app/models/state.py`
-- Create: `agent-service/tests/test_models/test_state.py`
+**文件：**
+- 创建：`agent-service/app/models/state.py`
+- 创建：`agent-service/tests/test_models/test_state.py`
 
-- [ ] **Step 1: Write failing tests for CreationState**
+- [ ] **第 1 步：为 CreationState 编写失败测试**
 
 ```python
 # agent-service/tests/test_models/test_state.py
@@ -1391,12 +1391,12 @@ def test_state_serialization_roundtrip():
     assert len(restored.asset_map.items) == 1
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_state.py -v`
-Expected: FAIL with `ModuleNotFoundError`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_state.py -v`
+预期：失败并显示 `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement CreationState**
+- [ ] **第 3 步：实现 CreationState**
 
 ```python
 # agent-service/app/models/state.py
@@ -1501,28 +1501,28 @@ class CreationState(BaseModel):
     )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_state.py -v`
-Expected: ALL 9 PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_state.py -v`
+预期：全部 9 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/models/state.py agent-service/tests/test_models/test_state.py && git commit -m "feat(agent): add CreationState unified state container replacing TypedDict"`
+运行： `cd /e/test/Docmost && git add agent-service/app/models/state.py agent-service/tests/test_models/test_state.py && git commit -m "feat(agent): add CreationState unified state container replacing TypedDict"`
 
 ---
 
-## Chunk 3: Utilities
+## 分块 3：Utilities
 
-### Task 8: Create Chinese-aware word counting utility
+### 任务 8：创建 Chinese-aware word counting utility
 
-**Files:**
-- Create: `agent-service/app/utils/__init__.py`
-- Create: `agent-service/app/utils/text.py`
-- Create: `agent-service/tests/test_utils/__init__.py`
-- Create: `agent-service/tests/test_utils/test_text.py`
+**文件：**
+- 创建：`agent-service/app/utils/__init__.py`
+- 创建：`agent-service/app/utils/text.py`
+- 创建：`agent-service/tests/test_utils/__init__.py`
+- 创建：`agent-service/tests/test_utils/test_text.py`
 
-- [ ] **Step 1: Write failing tests for count_words**
+- [ ] **第 1 步：为 count_words 编写失败测试**
 
 ```python
 # agent-service/tests/test_utils/__init__.py
@@ -1593,12 +1593,12 @@ def test_count_words_long_text():
     assert count_words(chinese) == 100
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_utils/test_text.py -v`
-Expected: FAIL with `ModuleNotFoundError`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_utils/test_text.py -v`
+预期：失败并显示 `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement count_words**
+- [ ] **第 3 步：实施 count_words**
 
 ```python
 # agent-service/app/utils/__init__.py
@@ -1639,29 +1639,29 @@ def count_words(text: str) -> int:
     return chinese_chars + english_words
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_utils/test_text.py -v`
-Expected: ALL 10 PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_utils/test_text.py -v`
+预期：全部 10 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/utils/__init__.py agent-service/app/utils/text.py agent-service/tests/test_utils/__init__.py agent-service/tests/test_utils/test_text.py && git commit -m "feat(agent): add Chinese-aware word counting utility (count_words)"`
+运行： `cd /e/test/Docmost && git add agent-service/app/utils/__init__.py agent-service/app/utils/text.py agent-service/tests/test_utils/__init__.py agent-service/tests/test_utils/test_text.py && git commit -m "feat(agent): add Chinese-aware word counting utility (count_words)"`
 
 ---
 
-## Chunk 4: Frontend TypeScript Types
+## 分块 4：前端 TypeScript 类型
 
-### Task 9: Create TypeScript type definitions mirroring Python models
+### 任务 9：创建 TypeScript type definitions mirroring Python models
 
-**Files:**
-- Create: `apps/client/src/ee/ai/types/brief.types.ts`
-- Create: `apps/client/src/ee/ai/types/blueprint.types.ts`
-- Create: `apps/client/src/ee/ai/types/review.types.ts`
-- Create: `apps/client/src/ee/ai/types/draft.types.ts`
-- Create: `apps/client/src/ee/ai/types/events-v2.types.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/types/brief.types.ts`
+- 创建：`apps/client/src/ee/ai/types/blueprint.types.ts`
+- 创建：`apps/client/src/ee/ai/types/review.types.ts`
+- 创建：`apps/client/src/ee/ai/types/draft.types.ts`
+- 创建：`apps/client/src/ee/ai/types/events-v2.types.ts`
 
-- [ ] **Step 1: Create brief.types.ts**
+- [ ] **第 1 步：创建brief.types.ts**
 
 ```typescript
 // apps/client/src/ee/ai/types/brief.types.ts
@@ -1687,7 +1687,7 @@ export interface CreationBrief {
 }
 ```
 
-- [ ] **Step 2: Create blueprint.types.ts**
+- [ ] **第 2 步：创建blueprint.types.ts**
 
 ```typescript
 // apps/client/src/ee/ai/types/blueprint.types.ts
@@ -1724,7 +1724,7 @@ export interface CreationBlueprint {
 }
 ```
 
-- [ ] **Step 3: Create review.types.ts**
+- [ ] **第 3 步：创建review.types.ts**
 
 ```typescript
 // apps/client/src/ee/ai/types/review.types.ts
@@ -1760,7 +1760,7 @@ export interface ReviewReport {
 }
 ```
 
-- [ ] **Step 4: Create draft.types.ts**
+- [ ] **第 4 步：创建draft.types.ts**
 
 ```typescript
 // apps/client/src/ee/ai/types/draft.types.ts
@@ -1782,7 +1782,7 @@ export interface SectionDraft {
 }
 ```
 
-- [ ] **Step 5: Create events-v2.types.ts**
+- [ ] **第 5 步：创建events-v2.types.ts**
 
 ```typescript
 // apps/client/src/ee/ai/types/events-v2.types.ts
@@ -1834,28 +1834,28 @@ export type SSEEventV2 =
   | CompletionEvent;
 ```
 
-- [ ] **Step 6: Verify TypeScript compiles (no syntax errors)**
+- [ ] **第 6 步：验证 TypeScript 是否编译（无语法错误）**
 
-Run: `cd /e/test/Docmost && npx tsc --noEmit apps/client/src/ee/ai/types/brief.types.ts apps/client/src/ee/ai/types/blueprint.types.ts apps/client/src/ee/ai/types/review.types.ts apps/client/src/ee/ai/types/draft.types.ts apps/client/src/ee/ai/types/events-v2.types.ts 2>&1 || echo "Note: tsc may need project context; verify no syntax errors manually"`
+运行： `cd /e/test/Docmost && npx tsc --noEmit apps/client/src/ee/ai/types/brief.types.ts apps/client/src/ee/ai/types/blueprint.types.ts apps/client/src/ee/ai/types/review.types.ts apps/client/src/ee/ai/types/draft.types.ts apps/client/src/ee/ai/types/events-v2.types.ts 2>&1 || echo "Note: tsc may need project context; verify no syntax errors manually"`
 
-- [ ] **Step 7: Commit**
+- [ ] **第 7 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/types/brief.types.ts apps/client/src/ee/ai/types/blueprint.types.ts apps/client/src/ee/ai/types/review.types.ts apps/client/src/ee/ai/types/draft.types.ts apps/client/src/ee/ai/types/events-v2.types.ts && git commit -m "feat(client): add TypeScript types for AI Creator v2 (Brief, Blueprint, Review, Draft, Events)"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/types/brief.types.ts apps/client/src/ee/ai/types/blueprint.types.ts apps/client/src/ee/ai/types/review.types.ts apps/client/src/ee/ai/types/draft.types.ts apps/client/src/ee/ai/types/events-v2.types.ts && git commit -m "feat(client): add TypeScript types for AI Creator v2 (Brief, Blueprint, Review, Draft, Events)"`
 
 ---
 
-## Chunk 5: Frontend Component Scaffolding
+## 分块 5：前端组件脚手架
 
-### Task 10: Scaffold frontend component directories
+### 任务 10：搭建 前端 component directories
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/smart-brief/SmartBriefCard.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/blueprint/BlueprintModal.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/live-draft/DraftProgressBar.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/review/ReviewModal.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftPanel.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/smart-brief/SmartBriefCard.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/blueprint/BlueprintModal.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/live-draft/DraftProgressBar.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/review/ReviewModal.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftPanel.tsx`
 
-- [ ] **Step 1: Create SmartBriefCard placeholder**
+- [ ] **第 1 步：创建 SmartBriefCard 占位符**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/smart-brief/SmartBriefCard.tsx
@@ -1880,7 +1880,7 @@ export function SmartBriefCard() {
 }
 ```
 
-- [ ] **Step 2: Create BlueprintModal placeholder**
+- [ ] **第 2 步：创建 BlueprintModal 占位符**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/blueprint/BlueprintModal.tsx
@@ -1910,7 +1910,7 @@ export function BlueprintModal({ opened, onClose }: BlueprintModalProps) {
 }
 ```
 
-- [ ] **Step 3: Create DraftProgressBar placeholder**
+- [ ] **第 3 步：创建 DraftProgressBar 占位符**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/live-draft/DraftProgressBar.tsx
@@ -1936,7 +1936,7 @@ export function DraftProgressBar() {
 }
 ```
 
-- [ ] **Step 4: Create ReviewModal placeholder**
+- [ ] **第 4 步：创建 ReviewModal 占位符**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/review/ReviewModal.tsx
@@ -1966,7 +1966,7 @@ export function ReviewModal({ opened, onClose }: ReviewModalProps) {
 }
 ```
 
-- [ ] **Step 5: Create DraftPanel placeholder**
+- [ ] **第 5 步：创建 DraftPanel 占位符**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftPanel.tsx
@@ -1991,27 +1991,27 @@ export function DraftPanel() {
 }
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/smart-brief/SmartBriefCard.tsx apps/client/src/ee/ai/components/ai-creator/blueprint/BlueprintModal.tsx apps/client/src/ee/ai/components/ai-creator/live-draft/DraftProgressBar.tsx apps/client/src/ee/ai/components/ai-creator/review/ReviewModal.tsx apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftPanel.tsx && git commit -m "feat(client): scaffold AI Creator v2 components (SmartBrief, Blueprint, DraftProgress, Review, DraftPanel)"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/smart-brief/SmartBriefCard.tsx apps/client/src/ee/ai/components/ai-creator/blueprint/BlueprintModal.tsx apps/client/src/ee/ai/components/ai-creator/live-draft/DraftProgressBar.tsx apps/client/src/ee/ai/components/ai-creator/review/ReviewModal.tsx apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftPanel.tsx && git commit -m "feat(client): scaffold AI Creator v2 components (SmartBrief, Blueprint, DraftProgress, Review, DraftPanel)"`
 
 ---
 
-## Chunk 6: Orchestrator Scaffolding
+## 分块 6：编排器脚手架
 
-### Task 11: Create Orchestrator and Workers scaffolding
+### 任务 11：创建 Orchestrator and Workers scaffolding
 
-**Files:**
-- Create: `agent-service/app/orchestrator/__init__.py`
-- Create: `agent-service/app/orchestrator/engine.py`
-- Create: `agent-service/app/orchestrator/prompts.py`
-- Create: `agent-service/app/orchestrator/tools.py`
-- Create: `agent-service/app/workers/__init__.py`
-- Create: `agent-service/tests/test_orchestrator/__init__.py`
-- Create: `agent-service/tests/test_orchestrator/test_engine.py`
-- Create: `agent-service/tests/test_orchestrator/test_prompts.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/__init__.py`
+- 创建：`agent-service/app/orchestrator/engine.py`
+- 创建：`agent-service/app/orchestrator/prompts.py`
+- 创建：`agent-service/app/orchestrator/tools.py`
+- 创建：`agent-service/app/workers/__init__.py`
+- 创建：`agent-service/tests/test_orchestrator/__init__.py`
+- 创建：`agent-service/tests/test_orchestrator/test_engine.py`
+- 创建：`agent-service/tests/test_orchestrator/test_prompts.py`
 
-- [ ] **Step 1: Write failing tests for orchestrator scaffolding**
+- [ ] **第 1 步：为 Orchestrator 搭建骨架编写失败测试**
 
 ```python
 # agent-service/tests/test_orchestrator/__init__.py
@@ -2044,12 +2044,12 @@ def test_system_prompt_exists():
     assert len(ORCHESTRATOR_SYSTEM_PROMPT) > 100
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_orchestrator/ -v`
-Expected: FAIL with `ModuleNotFoundError`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_orchestrator/ -v`
+预期：失败并显示 `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement orchestrator package init**
+- [ ] **第 3 步：实施 Orchestrator 包初始化**
 
 ```python
 # agent-service/app/orchestrator/__init__.py
@@ -2060,7 +2060,7 @@ agent-driven architecture. During migration, both systems coexist.
 """
 ```
 
-- [ ] **Step 4: Implement CreationOrchestrator scaffold**
+- [ ] **第 4 步：实施CreationOrchestrator搭建骨架**
 
 ```python
 # agent-service/app/orchestrator/engine.py
@@ -2119,7 +2119,7 @@ class CreationOrchestrator:
         raise NotImplementedError("Phase 1 will implement the orchestration pipeline")
 ```
 
-- [ ] **Step 5: Implement ORCHESTRATOR_SYSTEM_PROMPT**
+- [ ] **第 5 步：实施 ORCHESTRATOR_SYSTEM_PROMPT**
 
 ```python
 # agent-service/app/orchestrator/prompts.py
@@ -2182,7 +2182,7 @@ relevant to the content.
 """
 ```
 
-- [ ] **Step 6: Implement tools registry scaffold**
+- [ ] **第 6 步：实施工具注册表搭建骨架**
 
 ```python
 # agent-service/app/orchestrator/tools.py
@@ -2212,7 +2212,7 @@ REGISTERED_TOOLS: list[str] = []
 """List of tool names registered with the orchestrator. Populated at import time in Phase 1."""
 ```
 
-- [ ] **Step 7: Create workers package init**
+- [ ] **第 7 步：创建worker包init**
 
 ```python
 # agent-service/app/workers/__init__.py
@@ -2226,12 +2226,12 @@ This package is a scaffold. Workers will be implemented in Phases 1-4.
 """
 ```
 
-- [ ] **Step 8: Run tests to verify they pass**
+- [ ] **第 8 步：运行测试以验证其通过**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_orchestrator/ -v`
-Expected: ALL 3 PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_orchestrator/ -v`
+预期：全部 3 项通过
 
-- [ ] **Step 9: Update models __init__.py with re-exports**
+- [ ] **第 9 步：通过重新导出更新模型 __init__.py**
 
 ```python
 # agent-service/app/models/__init__.py
@@ -2277,7 +2277,7 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 10: Write import test for re-exports**
+- [ ] **第 10 步：编写再导出的导入测试**
 
 ```python
 # agent-service/tests/test_models/test_imports.py
@@ -2314,85 +2314,85 @@ def test_import_all_from_models():
     ])
 ```
 
-- [ ] **Step 11: Run all tests to verify everything works together**
+- [ ] **第 11 步：运行所有测试以验证一切都能协同工作**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/ tests/test_utils/ tests/test_orchestrator/ -v`
-Expected: ALL PASS (should be ~50+ tests total)
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/ tests/test_utils/ tests/test_orchestrator/ -v`
+预期：全部通过（总共应该有约 50+ 次测试）
 
-- [ ] **Step 12: Commit**
+- [ ] **第 12 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/orchestrator/__init__.py agent-service/app/orchestrator/engine.py agent-service/app/orchestrator/prompts.py agent-service/app/orchestrator/tools.py agent-service/app/workers/__init__.py agent-service/app/models/__init__.py agent-service/tests/test_orchestrator/__init__.py agent-service/tests/test_orchestrator/test_engine.py agent-service/tests/test_orchestrator/test_prompts.py agent-service/tests/test_models/test_imports.py && git commit -m "feat(agent): scaffold orchestrator (engine, prompts, tools) and workers package with tests"`
+运行： `cd /e/test/Docmost && git add agent-service/app/orchestrator/__init__.py agent-service/app/orchestrator/engine.py agent-service/app/orchestrator/prompts.py agent-service/app/orchestrator/tools.py agent-service/app/workers/__init__.py agent-service/app/models/__init__.py agent-service/tests/test_orchestrator/__init__.py agent-service/tests/test_orchestrator/test_engine.py agent-service/tests/test_orchestrator/test_prompts.py agent-service/tests/test_models/test_imports.py && git commit -m "feat(agent): scaffold orchestrator (engine, prompts, tools) and workers package with tests"`
 
 ---
 
-## Completion Checklist
+## 完成清单
 
-When all tasks are done, verify:
+完成所有任务后，验证：
 
-- [ ] `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/ tests/test_utils/ tests/test_orchestrator/ -v` — all tests pass
-- [ ] `cd /e/test/Docmost/agent-service && python -c "from app.models import CreationState; print('OK')"` — models importable
-- [ ] `cd /e/test/Docmost/agent-service && python -c "from app.orchestrator.engine import CreationOrchestrator; print('OK')"` — orchestrator importable
-- [ ] `cd /e/test/Docmost/agent-service && python -c "from app.utils.text import count_words; print(count_words('Hello 你好'))"` — prints 3
-- [ ] Existing LangGraph system still works: `cd /e/test/Docmost/agent-service && python -c "from app.agent.graph import build_agent_graph; print('OK')"`
-- [ ] Frontend types exist: `ls apps/client/src/ee/ai/types/{brief,blueprint,review,draft,events-v2}.types.ts`
-- [ ] Frontend components scaffolded: `ls apps/client/src/ee/ai/components/ai-creator/{smart-brief,blueprint,live-draft,review,draft-manager}/`
+- [ ] `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/ tests/test_utils/ tests/test_orchestrator/ -v` — 所有测试均通过
+- [ ] `cd /e/test/Docmost/agent-service && python -c "from app.models import CreationState; print('OK')"` — 可导入的模型
+- [ ] `cd /e/test/Docmost/agent-service && python -c "from app.orchestrator.engine import CreationOrchestrator; print('OK')"` — 协调器可导入
+- [ ] `cd /e/test/Docmost/agent-service && python -c "from app.utils.text import count_words; print(count_words('Hello 你好'))"` — 打印 3
+- [ ] 现有的 LangGraph 系统仍然有效：`cd /e/test/Docmost/agent-service && python -c "from app.agent.graph import build_agent_graph; print('OK')"`
+- [ ] 存在前端类型：`ls apps/client/src/ee/ai/types/{brief,blueprint,review,draft,events-v2}.types.ts`
+- [ ] 搭建前端组件骨架：`ls apps/client/src/ee/ai/components/ai-creator/{smart-brief,blueprint,live-draft,review,draft-manager}/`
 
-## Files Created (Summary)
+## 创建的文件（摘要）
 
-### Python (agent-service/)
-| File | Purpose |
+### Python（代理服务/）
+| 文件 | 用途 |
 |------|---------|
-| `app/models/__init__.py` | Package init with re-exports |
-| `app/models/brief.py` | CreationBrief model |
-| `app/models/asset_map.py` | AssetItem, AssetMap models |
-| `app/models/blueprint.py` | VisualPlan, SectionPlan, CreationBlueprint models |
-| `app/models/draft.py` | SectionDraft model |
-| `app/models/review.py` | ReviewIssue, ReviewReport models |
-| `app/models/events.py` | SSE v2 event models + serialize_sse_event |
-| `app/models/state.py` | CreationState unified state container |
-| `app/utils/__init__.py` | Utils package init |
-| `app/utils/text.py` | count_words (CJK-aware) |
-| `app/orchestrator/__init__.py` | Orchestrator package init |
-| `app/orchestrator/engine.py` | CreationOrchestrator scaffold |
+| `app/models/__init__.py` | 重新导出的包初始化 |
+| `app/models/brief.py` | 创作简要模型 |
+| `app/models/asset_map.py` | AssetItem、AssetMap 模型 |
+| `app/models/blueprint.py` | VisualPlan、SectionPlan、CreationBlueprint 模型 |
+| `app/models/draft.py` | 剖面草图模型 |
+| `app/models/review.py` | ReviewIssue、ReviewReport 模型 |
+| `app/models/events.py` | SSE v2 事件模型+serialize_sse_event |
+| `app/models/state.py` | CreationState 统一状态容器 |
+| `app/utils/__init__.py` | 实用程序包初始化 |
+| `app/utils/text.py` | count_words（CJK 感知） |
+| `app/orchestrator/__init__.py` | Orchestrator 包初始化 |
+| `app/orchestrator/engine.py` | CreationOrchestrator 搭建骨架 |
 | `app/orchestrator/prompts.py` | ORCHESTRATOR_SYSTEM_PROMPT |
-| `app/orchestrator/tools.py` | Tool registry scaffold |
-| `app/workers/__init__.py` | Workers package init |
+| `app/orchestrator/tools.py` | 工具注册表搭建骨架 |
+| `app/workers/__init__.py` | 工人包初始化 |
 
-### Tests (agent-service/tests/)
-| File | Purpose |
+### 测试（代理服务/测试/）
+| 文件 | 用途 |
 |------|---------|
-| `tests/test_models/__init__.py` | Test package init |
-| `tests/test_models/test_brief.py` | CreationBrief tests (6) |
-| `tests/test_models/test_asset_map.py` | AssetItem/AssetMap tests (7) |
-| `tests/test_models/test_blueprint.py` | Blueprint tests (8) |
-| `tests/test_models/test_draft.py` | SectionDraft tests (4) |
-| `tests/test_models/test_review.py` | ReviewIssue/ReviewReport tests (8) |
-| `tests/test_models/test_events.py` | SSE event tests (14) |
-| `tests/test_models/test_state.py` | CreationState tests (9) |
-| `tests/test_models/test_imports.py` | Re-export verification (1) |
-| `tests/test_utils/__init__.py` | Test package init |
-| `tests/test_utils/test_text.py` | count_words tests (10) |
-| `tests/test_orchestrator/__init__.py` | Test package init |
-| `tests/test_orchestrator/test_engine.py` | Orchestrator scaffold tests (2) |
-| `tests/test_orchestrator/test_prompts.py` | Prompt constant tests (1) |
+| `tests/test_models/__init__.py` | 测试包初始化 |
+| `tests/test_models/test_brief.py` | 创建简单测试 (6) |
+| `tests/test_models/test_asset_map.py` | AssetItem/AssetMap 测试 (7) |
+| `tests/test_models/test_blueprint.py` | 蓝图测试 (8) |
+| `tests/test_models/test_draft.py` | 部分草案测试 (4) |
+| `tests/test_models/test_review.py` | ReviewIssue/ReviewReport 测试 (8) |
+| `tests/test_models/test_events.py` | SSE事件测试 (14) |
+| `tests/test_models/test_state.py` | 创建状态测试 (9) |
+| `tests/test_models/test_imports.py` | 再出口验证 (1) |
+| `tests/test_utils/__init__.py` | 测试包初始化 |
+| `tests/test_utils/test_text.py` | count_words 测试 (10) |
+| `tests/test_orchestrator/__init__.py` | 测试包初始化 |
+| `tests/test_orchestrator/test_engine.py` | Orchestrator 搭建骨架测试 (2) |
+| `tests/test_orchestrator/test_prompts.py` | 即时持续测试 (1) |
 
 ### TypeScript (apps/client/src/ee/ai/)
-| File | Purpose |
+| 文件 | 用途 |
 |------|---------|
-| `types/brief.types.ts` | CreationBrief interface |
-| `types/blueprint.types.ts` | Blueprint interfaces |
-| `types/review.types.ts` | Review interfaces |
-| `types/draft.types.ts` | SectionDraft interface |
-| `types/events-v2.types.ts` | SSE v2 event types |
-| `components/ai-creator/smart-brief/SmartBriefCard.tsx` | Placeholder |
-| `components/ai-creator/blueprint/BlueprintModal.tsx` | Placeholder |
-| `components/ai-creator/live-draft/DraftProgressBar.tsx` | Placeholder |
-| `components/ai-creator/review/ReviewModal.tsx` | Placeholder |
-| `components/ai-creator/draft-manager/DraftPanel.tsx` | Placeholder |
+| `types/brief.types.ts` | 创建简要界面 |
+| `types/blueprint.types.ts` | 蓝图接口 |
+| `types/review.types.ts` | 检查接口 |
+| `types/draft.types.ts` | 剖面图界面 |
+| `types/events-v2.types.ts` | SSE v2 事件类型 |
+| `components/ai-creator/smart-brief/SmartBriefCard.tsx` | 占位符 |
+| `components/ai-creator/blueprint/BlueprintModal.tsx` | 占位符 |
+| `components/ai-creator/live-draft/DraftProgressBar.tsx` | 占位符 |
+| `components/ai-creator/review/ReviewModal.tsx` | 占位符 |
+| `components/ai-creator/draft-manager/DraftPanel.tsx` | 占位符 |
 
-### Modified
-| File | Change |
+### 修改
+| 文件 | 变更 |
 |------|--------|
-| `agent-service/pyproject.toml` | Added `pydantic-ai>=0.2` dependency |
+| `agent-service/pyproject.toml` | 添加了 `pydantic-ai>=0.2` 依赖项 |
 
-**Total: 30 new files, 1 modified file, ~70 tests**
+**总计：30 个新文件，1 个修改文件，约 70 个测试**

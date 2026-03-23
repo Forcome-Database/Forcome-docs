@@ -47,7 +47,7 @@ interface AiAnswerRequest {
 }
 ```
 
-**后端**：将 history 注入 prompt 的 messages 数组（改 `streamText({ prompt })` 为 `streamText({ messages })`）
+**前端**：将历史注入提示的消息写入（改 `streamText({ prompt })` 为 `streamText({ messages })`）
 
 ```typescript
 // ai-search.service.ts
@@ -147,15 +147,15 @@ AIChat.vue (1069 行) → 拆分为：
 | `styles/ai-chat.css` | **新建** — 抽离样式 |
 | `composables/useAIChat.ts` | **修改** — 删除 useAIChat() 函数体 |
 | `components/AIChatMessage.vue` | **删除** |
-| `services/docmost.ts` | **修改** — aiAnswers 增加 history 参数 |
-| `types/index.ts` | **修改** — ChatMessage 增加 sources 字段 |
+| `services/docmost.ts` | **修改** — aiAnswers 增加历史参数 |
+| `types/index.ts` | **修改** — ChatMessage 增加sources字段 |
 
 ### 后端
 | 文件 | 操作 |
 |------|------|
-| `core/public-wiki/dto/public-wiki.dto.ts` | **修改** — DTO 增加 history 字段 |
-| `core/public-wiki/public-wiki.controller.ts` | **修改** — 传递 history |
-| `core/public-wiki/public-wiki.service.ts` | **修改** — 传递 history |
+| `core/public-wiki/dto/public-wiki.dto.ts` | **修改** — DTO 增加历史字段 |
+| `core/public-wiki/public-wiki.controller.ts` | **修改** — 提交历史记录 |
+| `core/public-wiki/public-wiki.service.ts` | **修改** — 提交历史记录 |
 | `ee/ai/services/ai-search.service.ts` | **修改** — prompt→messages，加阈值，加语言检测 |
 
 ### 不变

@@ -1,226 +1,226 @@
-# AI Creator Document-Task Redesign
+# AI Creator 文档-任务重新设计
 
 > Date: 2026-03-20
-> Status: Drafted, pending user review
-> Priority: document transform > selection rewrite > blank-page drafting
-> Decision: replace chat-first AI Creator with document-task-first architecture
+> 状态：已起草，待用户审核
+> 优先级：文档转换 > 选择重写 > 空白页起草
+> 决策：用文档任务优先的架构取代聊天优先的 AI Creator
 
-## 1. Executive Summary
+## 1. 执行摘要
 
-The current AI Creator is not failing because the models are too weak. It is failing because three fundamentally different jobs are forced into one shared chat/workbench shell:
+目前的 AI Creator 并没有因为模型太弱而失败。它之所以失败，是因为三项根本不同的工作被强制放入一个共享的聊天/工作台 shell 中：
 
-1. Selection rewrite
-2. Document transform
-3. Blank-page drafting
+1.选择重写
+2. 文档转换
+3. 空白页起草
 
-That coupling causes the visible problems:
+这种耦合会导致明显的问题：
 
-- UI overload
-- selection rewrite conflicting with previous conversation context
-- document optimization behaving like full redrafting
-- section-by-section writing producing coherence drift
-- source images and structure being lost during repeated optimization
+- 用户界面过载
+- 选择重写与之前的对话上下文冲突
+- 文档优化表现得像完全重新起草
+- 逐节写作产生连贯性漂移
+- 重复优化过程中源图像和结构丢失
 
-The redesign should not hide chat. It should remove chat as the default product metaphor.
+重新设计不应隐藏聊天。它应该删除聊天作为默认的产品隐喻。
 
-The new default should be:
+新的默认值应该是：
 
-- inline rewrite for local selection tasks
-- a right-side document operation center for document-level tasks
-- an expert collaboration layer that opens only when workflow automation is insufficient
+- 本地选择任务的内联重写
+- 右侧文档操作中心，用于文档级任务
+- 仅当工作流程自动化不足时才打开的专家协作层
 
-## 2. Critical Judgment
+## 2. 批判性判断
 
-### 2.1 What is wrong with the current design
+### 2.1 当前设计有什么问题
 
-The current design is not the best solution for the product's primary job.
+当前的设计并不是该产品主要工作的最佳解决方案。
 
-The core problem is that it models document operations as message history. That is the wrong abstraction. A document task should be represented as:
+核心问题是它将文档操作建模为消息历史记录。这是错误的抽象。文档任务应表示为：
 
-- intent
-- source scope
-- preservation mode
-- structured summary
+- 意图
+- 来源范围
+- 保存模式
+- 结构化摘要
 - plan
-- diff set
-- pending accepted changes
-- apply and rollback
+- 差异集
+- 待接受的更改
+- 应用和回滚
 
 not as:
 
-- user messages
-- assistant messages
-- activity log
-- long-lived conversation context
+- 用户消息
+- 助理消息
+- 活动日志
+- 长期对话上下文
 
-### 2.2 Why the current section-writer default is wrong
+### 2.2 为什么当前的section-writer默认值是错误的
 
-Section-by-section writing should not remain the default path for document optimization.
+分段写作不应成为文档优化的默认路径。
 
-For strict-preservation document transform, the right primitive is not:
+对于严格保留文档转换，正确的原语不是：
 
 - brief
-- blueprint
-- section writer
+- 蓝图
+- 章节作者
 - merge
 
-The right primitive is:
+正确的原语是：
 
-- parse structure and assets
-- generate block or asset aware changes
-- review diffs
-- apply accepted changes safely
+- 解析结构和资产
+- 生成块或资产感知更改
+- 审查差异
+- 安全地应用已接受的更改
 
-Section writing can remain useful, but only for:
+章节写作仍然有用，但仅限于：
 
-- blank-page drafting
-- multi-document synthesis
-- relaxed large-scope rewrite
+- 空白页起草
+- 多文档合成
+- 轻松的大范围重写
 
-### 2.3 Why uploaded documents should use MinerU-first
+### 2.3 为什么上传的文件要使用MinerU-first
 
-For uploaded PDF and DOC workflows, MinerU-first with Docling fallback is the right parsing strategy.
+对于上传的 PDF 和 DOC 工作流程，MinerU-first 和 Docling 后备是正确的解析策略。
 
-Reason:
+原因：
 
-- the highest-sensitivity failure is broken image-to-text correspondence
-- strict preservation requires layout blocks, image blocks, heading structure, and local surrounding text
-- plain text extraction is not sufficient
+- 最敏感的故障是图像到文本的对应关系被破坏
+- 严格保存需要布局块、图像块、标题结构和局部周围文本
+- 纯文本提取是不够的
 
-Therefore:
+因此：
 
-- uploaded document optimize: MinerU-first, Docling fallback
-- current page optimize: editor block tree and page structure first, not MinerU
+- 上传文档优化：MinerU-first，Docling后备
+- 当前页面优化：首先编辑区块树和页面结构，而不是MinerU
 
-## 3. Confirmed Product Requirements
+## 3. 确认的产品要求
 
-### 3.1 Priority and scope
+### 3.1 优先级和范围
 
-- All three scenarios remain in scope
-- Priority order is:
-  1. document transform
-  2. selection rewrite
-  3. blank-page drafting
+- 所有三种情况仍在范围内
+- 优先顺序为：
+  1. 文档转换
+  2.选择重写
+  3.空白页起草
 
-### 3.2 Document transform requirements
+### 3.2 文档转换要求
 
-- Support two modes:
-  - strict preservation
-  - relaxed optimization
-- Default mode is strict preservation
-- Strict preservation should preserve structure, images, tables, and code blocks as much as possible
-- Relaxed optimization may reorder structure, but must not break meaning or image-text correspondence
-- Uploaded-source optimization and current-page optimization share one main product flow
-- Uploaded sources are the default primary input when files are provided
-- Current page only participates in uploaded-source optimization when explicitly requested
-- Current-page optimization is lighter than uploaded-source optimization, but it must still preserve at least images and tables
+- 支持两种模式：
+  - 严格保存
+  - 轻松优化
+- 默认模式是严格保存
+- 严格保存应尽可能保留结构、图像、表格和代码块
+- 宽松的优化可以重新排序结构，但不得破坏含义或图文对应
+- 上传源优化和当前页优化共享一个主要产品流程
+- 提供文件时，上传的源是默认的主要输入
+- 当前页面仅在明确请求时参与上传源优化
+- 当前页面优化比上传源优化轻，但仍必须至少保留图像和表格
 
-### 3.3 Review and apply requirements
+### 3.3 查看并应用要求
 
-- Default review mode is diff-first
-- Review granularity is mixed:
-  - block-level by default
-  - expandable fine-grained text diffs inside text blocks
-- Accept and reject actions should build a pending change set
-- Final apply should be explicit
-- Final apply writes to the live document and must automatically create a rollback snapshot
+- 默认审核模式是 diff-first
+- 审核粒度参差不齐：
+  - 默认为块级
+  - 文本块内可扩展的细粒度文本差异
+- 接受和拒绝操作应该构建一个待定的更改集
+- 最终应用应该是明确的
+- 最终应用写入实时文档，并且必须自动创建回滚快照
 
-### 3.4 Selection rewrite requirements
+### 3.4 选择重写要求
 
-- Two interaction modes may coexist:
-  - inline editor-local preview flow
-  - panel-assisted flow when needed
-- Default selection rewrite remains inline
-- Selection rewrite must not inherit raw chat history
-- Selection rewrite may read:
-  - selection snapshot
-  - local context
-  - structured current document task summary
-- If a document task is active, ad hoc selection rewrite must still run as an isolated temporary operation
+- 两种交互模式可以共存：
+  - 内嵌编辑器-本地预览流程
+  - 需要时面板辅助流动
+- 默认选择重写保持内联
+- 选择重写不得继承原始聊天历史记录
+- 选择重写可能为：
+  - 选择快照
+  - 当地背景
+  - 结构化当前文档任务摘要
+- 如果文档任务处于活动状态，临时选择重写仍必须作为独立的临时操作运行
 
-### 3.5 Collaboration requirements
+### 3.5 协作要求
 
-- The right-side panel should default to document-level tasks only
-- The panel is not a general chat interface
-- The panel should behave as a document operation center by default
-- Complex tasks may auto-upgrade into an expert collaboration layer
-- The user must be able to turn deep collaboration off
-- The expert collaboration layer lives inside the right-side panel, not as a separate page
-- The collaboration layer must output structured decisions, not free-form history
+- 右侧面板应默认仅显示文档级任务
+- 面板不是一般的聊天界面
+- 面板默认应充当文档操作中心
+- 复杂的任务可以自动升级到专家协作层
+- 用户必须能够关闭深度协作
+- 专家协作层位于右侧面板内，而不是作为单独的页面
+- 协作层必须输出结构化决策，而不是自由格式的历史记录
 
-### 3.6 Blank-page drafting requirements
+### 3.6 空白页起草要求
 
-- Small drafting tasks may draft directly
-- Larger drafting tasks must confirm brief or outline first
-- Blank-page drafting is lower priority than document transform and selection rewrite
+- 小型起草任务可直接起草
+- 较大的起草任务必须首先确认概要或大纲
+- 空白页起草的优先级低于文档转换和选择重写
 
-## 4. Product Principle
+## 4.产品原理
 
-AI creation is no longer chat-centered. It is document-task-centered.
+AI 创作不再以聊天为中心。它以文档任务为中心。
 
-The product principle is:
+产品原理是：
 
-> Default to preservation-first, reviewable, rollback-safe workflows that act on the document. Only upgrade to controlled collaboration when workflows are insufficient.
+> 默认为作用于文档的保存优先、可审查、回滚安全的工作流程。仅当工作流程不足时才升级到受控协作。
 
-## 5. Information Architecture
+## 5.信息架构
 
-### 5.1 Layer 1: Inline Rewrite
+### 5.1 第 1 层：内联重写
 
-Purpose:
+目的：
 
-- local selection tasks only
+- 仅限本地选择任务
 
-Primary UX:
+主要用户体验：
 
-- replace
-- insert below
+- 更换
+- 在下面插入
 - retry
-- discard
+- 丢弃
 
-Properties:
+属性：
 
-- short-lived
-- no long-lived task history
-- no dependence on main panel message flow
+- 短暂的
+- 没有长期的任务历史记录
+- 不依赖主面板消息流
 
-### 5.2 Layer 2: Document Operation Center
+### 5.2 第二层：文档操作中心
 
-Purpose:
+目的：
 
-- current-page optimize
-- uploaded-document optimize
-- blank-page drafting
+- 当前页面优化
+- 上传文档优化
+- 空白页起草
 
-Default shape:
+默认形状：
 
-- task header
-- source scope
-- preservation mode toggle
-- structured task summary
-- plan preview when needed
-- diff review
-- pending change set
-- apply and rollback controls
+- 任务标题
+- 来源范围
+- 保存模式切换
+- 结构化任务摘要
+- 需要时进行计划预览
+- 差异审查
+- 待定更改集
+- 应用和回滚控制
 
-This layer is not a chat UI.
+该层不是聊天 UI。
 
-### 5.3 Layer 3: Expert Collaboration Layer
+### 5.3 第三层：专家协作层
 
-Purpose:
+目的：
 
-- clarify complex constraints
-- confirm high-impact plans
-- handle preservation downgrade requests
-- resolve multi-document conflicts
-- support complex synthesis tasks
+- 澄清复杂的约束
+- 确认高影响力计划
+- 处理保留降级请求
+- 解决多文档冲突
+- 支持复杂的合成任务
 
-It should appear only when needed, inside the document operation center, and should collapse back into structured task state after decisions are made.
+它应该仅在需要时出现在文档操作中心内部，并且应该在做出决策后折叠回结构化任务状态。
 
-## 6. State Model
+## 6. 状态模型
 
-### 6.1 Core object: DocumentTask
+### 6.1 核心对象：DocumentTask
 
-Recommended fields:
+推荐领域：
 
 - `taskId`
 - `taskType`
@@ -237,9 +237,9 @@ Recommended fields:
 - `rollbackRef`
 - `riskFlags`
 
-### 6.2 InlineRewriteTask
+### 6.2 内联重写任务
 
-Recommended fields:
+推荐领域：
 
 - `selectionSnapshot`
 - `localContext`
@@ -248,11 +248,11 @@ Recommended fields:
 - `actionType`
 - `status`
 
-This object must be independent from `DocumentTask`.
+该对象必须独立于 `DocumentTask`。
 
-### 6.3 ExpertCollabState
+### 6.3 专家协作状态
 
-Recommended fields:
+推荐领域：
 
 - `reason`
 - `question`
@@ -260,136 +260,136 @@ Recommended fields:
 - `recommendedOption`
 - `confirmedDecision`
 
-This is a sub-state of `DocumentTask`, not a top-level message stream.
+这是 `DocumentTask` 的子状态，而不是顶级消息流。
 
-## 7. Backend Engine Split
+## 7. 后端引擎拆分
 
-### 7.1 Inline Rewrite Engine
+### 7.1 内联重写引擎
 
-Used for:
+用于：
 
-- selection rewrite
-- local transformation
-- fast inline operations
+- 选择重写
+- 局部改造
+- 快速内联操作
 
-Behavior:
+行为：
 
-- single-step workflow
-- local context only
-- candidate result only
+- 单步工作流程
+- 仅本地上下文
+- 仅候选人结果
 
-This should stay separate from the document task engine.
+这应该与文档任务引擎分开。
 
-### 7.2 Document Task Engine
+### 7.2 文档任务引擎
 
-This is the main engine for document-level work.
+这是文档级工作的主要引擎。
 
-It should internally support two distinct strategies.
+它应该在内部支持两种不同的策略。
 
-#### A. Preservation Patch Flow
+#### A. 保存补丁流程
 
-Used for:
+用于：
 
-- strict-preservation document optimization
-- current-page optimization
-- uploaded-document optimization
+- 严格保存文档优化
+- 当前页面优化
+- 上传文档优化
 
-Behavior:
+行为：
 
-- parse structure and assets
-- map blocks and source assets
-- generate structured diffs
-- allow review
-- build pending accepted set
-- apply with rollback
+- 解析结构和资产
+- 地图块和源资产
+- 生成结构化差异
+- 允许审查
+- 构建待接受的集合
+- 应用回滚
 
-This flow must be the default for document transform.
+此流程必须是文档转换的默认流程。
 
-#### B. Draft and Synthesis Flow
+#### B. 草案和合成流程
 
-Used for:
+用于：
 
-- blank-page drafting
-- multi-document synthesis
-- relaxed large-scope rewrite
+- 空白页起草
+- 多文档合成
+- 轻松的大范围重写
 
-Behavior:
+行为：
 
 - brief
-- outline or plan
-- draft generation
-- evaluator and optimizer loop
-- review
+- 概要或计划
+- 草稿生成
+- 评估器和优化器循环
+- 回顾
 
-This is where section writing may still exist.
+这就是章节写作可能仍然存在的地方。
 
-### 7.3 Expert Collaboration as a sub-layer
+### 7.3 专家协作作为子层
 
-The collaboration layer is not a third engine. It is a controlled decision stage used by the document task engine when:
+协作层不是第三引擎。它是文档任务引擎在以下情况下使用的受控决策阶段：
 
-- impact is high
-- the plan needs confirmation
-- preservation cannot be guaranteed
-- multiple source documents conflict
+- 影响力高
+- 计划需要确认
+- 无法保证保存
+- 多个源文件冲突
 
-## 8. Parsing Strategy
+## 8. 解析策略
 
-### 8.1 Uploaded documents
+### 8.1 上传文件
 
 Use:
 
 - MinerU-first
-- Docling fallback
+- 文档后备
 
-The parser must preserve:
+解析器必须保留：
 
-- heading hierarchy
-- text blocks
-- image blocks
-- table blocks
-- code or structured blocks when possible
+- 标题层次结构
+- 文本块
+- 图像块
+- 桌子块
+- 可能的话代码或结构化块
 
-### 8.2 Current page
+### 8.2 当前页面
 
 Use:
 
-- editor block tree
-- ProseMirror or TipTap structure
-- existing page asset references
+- 编辑器块树
+- ProseMirror 或 TipTap 结构
+- 现有页面资源引用
 
-Do not route current-page optimization through MinerU.
+不要通过 MinerU 路由当前页面优化。
 
-## 9. Default Safety Rules
+## 9. 默认安全规则
 
-### 9.1 Images
+### 9.1 图片
 
-Strict preservation:
+严格保存：
 
-- if image placement is uncertain, keep the original image in the original position
+- 如果图像位置不确定，请将原始图像保留在原始位置
 
-Relaxed optimization:
+轻松优化：
 
-- prefer the original location
-- suggest relocation only when the current placement is clearly unsuitable
+- 更喜欢原来的位置
+- 仅当当前安置明显不合适时才建议搬迁
 
-### 9.2 Tables, code blocks, Mermaid
+### 9.2 表、代码块、Mermaid
 
-Strict preservation:
+严格保存：
 
-- if safe transformation is not possible, keep these blocks unchanged and optimize only surrounding content
+- 如果无法进行安全转换，请保持这些块不变并仅优化周围内容
 
-### 9.3 Mode downgrade
+### 9.3 模式降级
 
-If strict preservation cannot be maintained:
+如果不能严格保存：
 
-- do not silently downgrade
-- request explicit user confirmation before switching to relaxed optimization
+- 不要默默降级
+- 在切换到宽松优化之前请求明确的用户确认
 
-## 10. API Direction
+## 10. API 方向
 
-The new contract should revolve around document tasks and change sets, not raw assistant messages.
+新合同应围绕文档任务和变更集，而不是原始助理消息。
 
-Recommended endpoint families:
+推荐的端点系列：
 
 - `POST /api/ai/inline/rewrite`
 - `POST /api/ai/document-tasks`
@@ -400,7 +400,7 @@ Recommended endpoint families:
 - `POST /api/ai/document-tasks/:taskId/rollback`
 - `POST /api/ai/document-tasks/:taskId/collab`
 
-The dominant payloads should be:
+主要的有效负载应该是：
 
 - `taskSummary`
 - `confirmedDecisions`
@@ -413,78 +413,78 @@ The dominant payloads should be:
 
 not:
 
-- raw message history
-- merged markdown as the only output
+- 原始消息历史记录
+- 合并 markdown 作为唯一的输出
 
-## 11. Keep, Reposition, Retire
+## 11. 保留、重新定位、退休
 
 ### 11.1 Keep
 
-- inline AI menu capabilities
-- SSE and session infrastructure
-- MinerU-first parsing direction
-- rollback and conflict-recovery concepts
+- 内嵌人工智能菜单功能
+- SSE 和会话基础设施
+- MinerU-优先解析方向
+- 回滚和冲突恢复概念
 
-### 11.2 Reposition
+### 11.2 重新定位
 
 - brief
-- blueprint
-- review
-- evaluate
-- fix tools
+- 蓝图
+- 回顾
+- 评估
+- 修复工具
 
-These should serve synthesis and collaboration flows, not be the default center of document optimization.
+这些应该服务于综合和协作流程，而不是文档优化的默认中心。
 
-### 11.3 Retire as the default model
+### 11.3 作为默认模型退役
 
-- current AI Creator workbench shell
-- document tree plus live draft plus activity log as primary layout
-- document optimization defaulting to section writer and merge
-- chat history as the primary task state model
+- 当前的 AI Creator 工作台 shell
+- 文档树加上实时草稿加上活动日志作为主要布局
+- 文档优化默认为节编写器和合并
+- 聊天记录作为主要任务状态模型
 
-## 12. Migration Order
+## 12. 迁移顺序
 
-### Phase 1: front-end cutover
+### 阶段 1: front-end cutover
 
-- replace the current workbench UI
-- introduce the three-layer product model
-- isolate selection rewrite from document task state
+- 替换当前的工作台 UI
+- 介绍三层产品模型
+- 将选择重写与文档任务状态隔离
 
-### Phase 2: task-state cutover
+### 阶段 2: task-state cutover
 
-- introduce `DocumentTask`
-- replace message-first session state with task-first state
+- 介绍`DocumentTask`
+- 用任务优先状态替换消息优先会话状态
 
-### Phase 3: API shell cutover
+### 阶段 3: API shell cutover
 
-- add document-task endpoints
-- keep existing infrastructure behind adapters if needed
+- 添加文档任务端点
+- 如果需要，将现有基础设施保留在适配器后面
 
-### Phase 4: optimization engine cutover
+### 阶段 4: optimization engine cutover
 
-- make preservation patch flow the default for document transform
-- keep section-based generation only for synthesis scenarios
+- 使保存补丁流成为文档转换的默认值
+- 仅针对综合场景保留基于部分的生成
 
-### Phase 5: legacy cleanup
+### 阶段 5: legacy cleanup
 
-- retire the old AI Creator workbench shell
-- remove legacy creator entry roles
-- delete message glue that is no longer part of the main model
+- 淘汰旧的 AI Creator 工作台外壳
+- 删除旧的创建者条目角色
+- 删除不再属于主模型一部分的消息胶水
 
-## 13. Final Recommendation
+## 13. 最终建议
 
-The recommended redesign is:
+推荐的重新设计是：
 
-- not chat-hidden
-- not chat-reskinned
-- not section-writer-first
+- 不隐藏聊天
+- 不聊天重新换肤
+- 不是章节作者优先
 
 It is:
 
-- inline rewrite for local work
-- document-task-first operation center for document-level work
-- controlled expert collaboration only when workflow automation is insufficient
+- 本地工作的内联重写
+- 文件级工作的文件任务优先运营中心
+- 仅当工作流程自动化不足时才控制专家协作
 
-This is the most defensible path for the product's actual priority:
+这是产品实际优先级最可靠的路径：
 
-- preservation-first document optimization with reviewable, rollback-safe application.
+- 保存优先的文档优化，具有可审查、回滚安全的应用程序。

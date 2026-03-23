@@ -1,66 +1,66 @@
-# Phase 4: Review & Fix System — Implementation Plan
+# 阶段 4：审查与修复系统实施计划
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **对于智能体执行者：** 要求：使用 superpowers:subagent-driven-development （如果子代理可用）或 superpowers:executing-plans 来实施此计划。步骤使用复选框 (`- [ ]`) 语法进行跟踪。
 
-**Goal:** Build the separated evaluation + targeted fix system that replaces the current review-as-rewrite anti-pattern. Deterministic checks + LLM quality evaluation produce a structured ReviewReport. Users select which issues to fix. Fixer Worker does section-level repairs only.
+**目标：** 构建独立的评估+有针对性的修复系统，取代当前的“审查即重写”反模式。确定性检查+LLM 质量评估可生成结构化的审查报告。用户选择要修复的问题。 Fixer Worker 只进行部分级别的维修。
 
-**Architecture:** Evaluator Worker has two passes: deterministic (code-based checks for word count, asset coverage, Mermaid syntax, heading levels) and LLM-based (accuracy, completeness, style). Results merge into ReviewReport. Fixer Worker takes individual issues and fixes only the targeted section. Review Card frontend shows issue checkboxes.
+**架构：** Evaluator Worker 有两个阶段：确定性（基于代码的字数检查、资产覆盖范围、Mermaid 语法、标题级别）和基于 LLM 的（准确性、完整性、风格）。结果合并到 ReviewReport 中。 Fixer Worker 处理个别问题并仅修复目标部分。审核卡前端显示问题复选框。
 
-**Tech Stack:** PydanticAI, Pydantic v2, Mantine UI
+**技术栈：** PydanticAI、Pydantic v2、Mantine UI
 
 ---
 
-## File Structure Overview
+## 文件结构概述
 
-### New files (agent-service)
+### 新文件（代理服务）
 
-| File | Purpose |
+| 文件 | 用途 |
 |------|---------|
-| `agent-service/app/workers/evaluator.py` | Deterministic + LLM quality evaluation |
-| `agent-service/app/workers/fixer.py` | Auto-fix and targeted LLM fix |
-| `agent-service/app/orchestrator/tools/evaluate.py` | `evaluate_quality` orchestrator tool |
-| `agent-service/app/orchestrator/tools/fix_tools.py` | `fix_issues` orchestrator tool |
-| `agent-service/tests/workers/test_evaluator.py` | Evaluator worker tests |
-| `agent-service/tests/workers/test_fixer.py` | Fixer worker tests |
-| `agent-service/tests/orchestrator/test_evaluate_tool.py` | Evaluate tool tests |
-| `agent-service/tests/orchestrator/test_fix_tools.py` | Fix tools tests |
-| `agent-service/tests/test_e2e_review.py` | End-to-end review flow test |
+| `agent-service/app/workers/evaluator.py` | 确定性+LLM质量评估 |
+| `agent-service/app/workers/fixer.py` | 自动修复和有针对性的 LLM 修复 |
+| `agent-service/app/orchestrator/tools/evaluate.py` | `evaluate_quality` 编排工具 |
+| `agent-service/app/orchestrator/tools/fix_tools.py` | `fix_issues` 编排工具 |
+| `agent-service/tests/workers/test_evaluator.py` | 评估员测试 |
+| `agent-service/tests/workers/test_fixer.py` | 修理工测试 |
+| `agent-service/tests/orchestrator/test_evaluate_tool.py` | 评估工具测试 |
+| `agent-service/tests/orchestrator/test_fix_tools.py` | 修复工具测试 |
+| `agent-service/tests/test_e2e_review.py` | 端到端审核流程测试 |
 
-### New files (frontend)
+### 新文件（前端）
 
-| File | Purpose |
+| 文件 | 用途 |
 |------|---------|
-| `apps/client/src/ee/ai/components/ai-creator/review/ReviewModal.tsx` | Review modal with issue list |
-| `apps/client/src/ee/ai/components/ai-creator/review/ReviewScoreBoard.tsx` | Score display with dimension bars |
-| `apps/client/src/ee/ai/components/ai-creator/review/IssueCard.tsx` | Individual issue card component |
-| `apps/client/src/ee/ai/components/ai-creator/review/AutoFixSummary.tsx` | Collapsible auto-fix summary |
-| `apps/client/src/ee/ai/components/ai-creator/review/use-review-actions.ts` | Hook for issue selection and fix dispatch |
-| `apps/client/src/ee/ai/components/ai-creator/review/index.ts` | Barrel export |
+| `apps/client/src/ee/ai/components/ai-creator/review/ReviewModal.tsx` | 带有问题列表的审查模式 |
+| `apps/client/src/ee/ai/components/ai-creator/review/ReviewScoreBoard.tsx` | 带尺寸条的分数显示 |
+| `apps/client/src/ee/ai/components/ai-creator/review/IssueCard.tsx` | 单独发卡组件 |
+| `apps/client/src/ee/ai/components/ai-creator/review/AutoFixSummary.tsx` | 可折叠自动修复摘要 |
+| `apps/client/src/ee/ai/components/ai-creator/review/use-review-actions.ts` | 用于问题选择和修复调度的挂钩 |
+| `apps/client/src/ee/ai/components/ai-creator/review/index.ts` | 桶装出口 |
 
-### Modified files
+### 修改文件
 
-| File | Change |
+| 文件 | 变更 |
 |------|--------|
-| `agent-service/app/models/review.py` | Add ReviewIssue, ReviewReport models (from Phase 0) |
-| `agent-service/app/orchestrator/engine.py` | Register evaluate_quality and fix_issues tools |
-| `agent-service/app/orchestrator/prompts.py` | Add evaluator and fixer system prompts |
-| `apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx` | Integrate ReviewModal trigger |
-| `apps/client/src/ee/ai/services/ai-create-runner.utils.ts` | Handle review_report and fix_applied SSE events |
-| `apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts` | Add ReviewIssue, ReviewReport TS types |
+| `agent-service/app/models/review.py` | 添加 ReviewIssue、ReviewReport 模型（来自第 0 阶段） |
+| `agent-service/app/orchestrator/engine.py` | 注册evaluate_quality和fix_issues工具 |
+| `agent-service/app/orchestrator/prompts.py` | 添加评估器和修复器系统提示 |
+| `apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx` | 集成 ReviewModal 触发器 |
+| `apps/client/src/ee/ai/services/ai-create-runner.utils.ts` | 处理 review_report 和 fix_applied SSE 事件 |
+| `apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts` | 添加 ReviewIssue、ReviewReport TS 类型 |
 
 ---
 
-## Chunk 1: Evaluator Worker — Deterministic Checks
+## 分块 1：Evaluator Worker：确定性检查
 
-### Task 1: Create ReviewIssue and ReviewReport models
+### 任务 1：创建 ReviewIssue and ReviewReport models
 
-**Files:**
-- Modify: `agent-service/app/models/review.py` (extend from Phase 0 scaffold)
-- Test: `agent-service/tests/test_models/test_review.py`
+**文件：**
+- 修改：`agent-service/app/models/review.py`（从阶段 0 搭建骨架扩展）
+- 测试： `agent-service/tests/test_models/test_review.py`
 
-**Context:** Phase 0 scaffolded the review models. This task adds the full field set needed by the evaluator.
+**背景：** 第 0 阶段构建了审核模型。此任务添加评估者所需的完整字段集。
 
-- [ ] **Step 1: Write failing tests for ReviewIssue model**
+- [ ] **第 1 步：为 ReviewIssue 模型编写失败测试**
 
 ```python
 # agent-service/tests/test_models/test_review.py
@@ -118,7 +118,7 @@ def test_review_report_auto_fixable_filter():
     assert len(manual) == 1
 ```
 
-- [ ] **Step 2: Implement ReviewIssue and ReviewReport models**
+- [ ] **步骤 2：实施 ReviewIssue 和 ReviewReport 模型**
 
 ```python
 # agent-service/app/models/review.py
@@ -144,25 +144,25 @@ class ReviewReport(BaseModel):
     dimensions: dict[str, int] = Field(default_factory=dict)  # dimension_name -> score 0-100
 ```
 
-- [ ] **Step 3: Run tests and verify**
+- [ ] **第 3 步：运行测试并验证**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_review.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_models/test_review.py -v`
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/models/review.py agent-service/tests/test_models/test_review.py && git commit -m "feat(agent): add ReviewIssue and ReviewReport models for Phase 4"`
+运行： `cd /e/test/Docmost && git add agent-service/app/models/review.py agent-service/tests/test_models/test_review.py && git commit -m "feat(agent): add ReviewIssue and ReviewReport models for Phase 4"`
 
 ---
 
-### Task 2: Implement deterministic evaluation checks
+### 任务 2：实现 deterministic evaluation checks
 
-**Files:**
-- Create: `agent-service/app/workers/evaluator.py`
-- Test: `agent-service/tests/workers/test_evaluator.py`
+**文件：**
+- 创建：`agent-service/app/workers/evaluator.py`
+- 测试： `agent-service/tests/workers/test_evaluator.py`
 
-**Context:** Deterministic checks run without LLM calls. They inspect section drafts against the blueprint for mechanical issues.
+**上下文：** 确定性检查无需 LLM 调用即可运行。他们根据蓝图检查剖面草稿是否存在机械问题。
 
-- [ ] **Step 1: Write failing tests for deterministic checks**
+- [ ] **第 1 步：编写确定性检查的失败测试**
 
 ```python
 # agent-service/tests/workers/test_evaluator.py
@@ -253,7 +253,7 @@ def test_broken_image_url_format():
     assert img_issues[0].auto_fixable is True
 ```
 
-- [ ] **Step 2: Implement evaluate_deterministic**
+- [ ] **第 2 步：实施评估确定性**
 
 ```python
 # agent-service/app/workers/evaluator.py
@@ -463,27 +463,27 @@ def evaluate_deterministic(
     return all_issues
 ```
 
-- [ ] **Step 3: Run tests and verify**
+- [ ] **第 3 步：运行测试并验证**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_evaluator.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_evaluator.py -v`
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/workers/evaluator.py agent-service/tests/workers/test_evaluator.py && git commit -m "feat(agent): implement deterministic evaluator checks"`
+运行： `cd /e/test/Docmost && git add agent-service/app/workers/evaluator.py agent-service/tests/workers/test_evaluator.py && git commit -m "feat(agent): implement deterministic evaluator checks"`
 
 ---
 
-## Chunk 2: LLM Quality Assessment
+## 分块 2：LLM 质量评估
 
-### Task 3: Implement LLM-based evaluation
+### 任务 3：实现 LLM-based evaluation
 
-**Files:**
-- Modify: `agent-service/app/workers/evaluator.py`
-- Test: `agent-service/tests/workers/test_evaluator_llm.py`
+**文件：**
+- 修改：`agent-service/app/workers/evaluator.py`
+- 测试： `agent-service/tests/workers/test_evaluator_llm.py`
 
-**Context:** The LLM evaluator assesses writing quality dimensions that cannot be checked mechanically. It outputs structured JSON issues — never rewritten content.
+**背景：** LLM 评估员评估无法机械检查的写作质量维度。它输出结构化 JSON 问题 — 从未重写内容。
 
-- [ ] **Step 1: Write failing tests for LLM evaluation**
+- [ ] **第 1 步：为 LLM 评估编写失败测试**
 
 ```python
 # agent-service/tests/workers/test_evaluator_llm.py
@@ -540,7 +540,7 @@ async def test_evaluate_llm_no_issues():
     assert score == 93
 ```
 
-- [ ] **Step 2: Implement evaluate_llm and _call_llm_evaluate**
+- [ ] **第 2 步：实施evaluate_llm和_call_llm_evaluate**
 
 Add to `agent-service/app/workers/evaluator.py`:
 
@@ -634,27 +634,27 @@ async def evaluate_llm(
     return issues, dimensions, overall_score
 ```
 
-- [ ] **Step 3: Run tests and verify**
+- [ ] **第 3 步：运行测试并验证**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_evaluator_llm.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_evaluator_llm.py -v`
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/workers/evaluator.py agent-service/tests/workers/test_evaluator_llm.py && git commit -m "feat(agent): implement LLM-based quality evaluation"`
+运行： `cd /e/test/Docmost && git add agent-service/app/workers/evaluator.py agent-service/tests/workers/test_evaluator_llm.py && git commit -m "feat(agent): implement LLM-based quality evaluation"`
 
 ---
 
-## Chunk 3: evaluate_quality Orchestrator Tool
+## 分块 3：evaluate_quality 编排器工具
 
-### Task 4: Create evaluate_quality tool
+### 任务 4：创建 evaluate_quality tool
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/evaluate.py`
-- Test: `agent-service/tests/orchestrator/test_evaluate_tool.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/evaluate.py`
+- 测试： `agent-service/tests/orchestrator/test_evaluate_tool.py`
 
-**Context:** This tool is called by the Orchestrator after the writing phase completes. It runs both deterministic and LLM evaluation, merges results into a ReviewReport, and triggers auto-fix if applicable.
+**上下文：** 该工具在写入阶段完成后由 Orchestrator 调用。它运行确定性评估和 LLM 评估，将结果合并到 ReviewReport 中，并触发自动修复（如果适用）。
 
-- [ ] **Step 1: Write failing tests for evaluate_quality**
+- [ ] **第 1 步：为评估质量编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_evaluate_tool.py
@@ -701,7 +701,7 @@ async def test_evaluate_quality_computes_metrics():
     assert report.asset_reuse_rate >= 0.0
 ```
 
-- [ ] **Step 2: Implement evaluate_quality tool**
+- [ ] **第 2 步：实施evaluate_quality工具**
 
 ```python
 # agent-service/app/orchestrator/tools/evaluate.py
@@ -787,27 +787,27 @@ async def evaluate_quality(
     return report
 ```
 
-- [ ] **Step 3: Run tests and verify**
+- [ ] **第 3 步：运行测试并验证**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_evaluate_tool.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_evaluate_tool.py -v`
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/orchestrator/tools/evaluate.py agent-service/tests/orchestrator/test_evaluate_tool.py && git commit -m "feat(agent): implement evaluate_quality orchestrator tool"`
+运行： `cd /e/test/Docmost && git add agent-service/app/orchestrator/tools/evaluate.py agent-service/tests/orchestrator/test_evaluate_tool.py && git commit -m "feat(agent): implement evaluate_quality orchestrator tool"`
 
 ---
 
-## Chunk 4: Fixer Worker
+## 分块 4：Fixer Worker
 
-### Task 5: Implement auto-fix (deterministic)
+### 任务 5：实现 auto-fix (deterministic)
 
-**Files:**
-- Create: `agent-service/app/workers/fixer.py`
-- Test: `agent-service/tests/workers/test_fixer.py`
+**文件：**
+- 创建：`agent-service/app/workers/fixer.py`
+- 测试： `agent-service/tests/workers/test_fixer.py`
 
-**Context:** Auto-fix handles mechanically fixable issues: heading levels, broken images, trailing whitespace. No LLM calls.
+**上下文：** 自动修复处理可机械修复的问题：标题级别、损坏的图像、尾随空白。没有LLM电话。
 
-- [ ] **Step 1: Write failing tests for auto-fix**
+- [ ] **第 1 步：编写自动修复失败的测试**
 
 ```python
 # agent-service/tests/workers/test_fixer.py
@@ -863,7 +863,7 @@ def test_fix_auto_skips_non_auto_fixable():
     assert fixed_issues[0].fixed is False
 ```
 
-- [ ] **Step 2: Implement fix_auto**
+- [ ] **第 2 步：实施fix_auto**
 
 ```python
 # agent-service/app/workers/fixer.py
@@ -977,23 +977,23 @@ def fix_auto(
     return updated_drafts, updated_issues
 ```
 
-- [ ] **Step 3: Run tests and verify**
+- [ ] **第 3 步：运行测试并验证**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_fixer.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_fixer.py -v`
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/workers/fixer.py agent-service/tests/workers/test_fixer.py && git commit -m "feat(agent): implement auto-fix fixer worker"`
+运行： `cd /e/test/Docmost && git add agent-service/app/workers/fixer.py agent-service/tests/workers/test_fixer.py && git commit -m "feat(agent): implement auto-fix fixer worker"`
 
 ---
 
-### Task 6: Implement targeted LLM fix
+### 任务 6：实现 targeted LLM fix
 
-**Files:**
-- Modify: `agent-service/app/workers/fixer.py`
-- Test: `agent-service/tests/workers/test_fixer_llm.py`
+**文件：**
+- 修改：`agent-service/app/workers/fixer.py`
+- 测试： `agent-service/tests/workers/test_fixer_llm.py`
 
-- [ ] **Step 1: Write failing tests for targeted fix**
+- [ ] **第 1 步：为目标修复编写失败测试**
 
 ```python
 # agent-service/tests/workers/test_fixer_llm.py
@@ -1032,7 +1032,7 @@ async def test_fix_targeted_warns_on_large_diff():
         mock_logger.warning.assert_called()
 ```
 
-- [ ] **Step 2: Implement fix_targeted**
+- [ ] **第 2 步：实施fix_targeted**
 
 Add to `agent-service/app/workers/fixer.py`:
 
@@ -1110,25 +1110,25 @@ async def fix_targeted(
     return fixed_content
 ```
 
-- [ ] **Step 3: Run tests and verify**
+- [ ] **第 3 步：运行测试并验证**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_fixer_llm.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_fixer_llm.py -v`
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/workers/fixer.py agent-service/tests/workers/test_fixer_llm.py && git commit -m "feat(agent): implement targeted LLM fix in fixer worker"`
+运行： `cd /e/test/Docmost && git add agent-service/app/workers/fixer.py agent-service/tests/workers/test_fixer_llm.py && git commit -m "feat(agent): implement targeted LLM fix in fixer worker"`
 
 ---
 
-## Chunk 5: fix_issues Orchestrator Tool
+## 分块 5：fix_issues 编排器工具
 
-### Task 7: Create fix_issues tool
+### 任务 7：创建 fix_issues tool
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/fix_tools.py`
-- Test: `agent-service/tests/orchestrator/test_fix_tools.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/fix_tools.py`
+- 测试： `agent-service/tests/orchestrator/test_fix_tools.py`
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **第 1 步：编写失败的测试**
 
 ```python
 # agent-service/tests/orchestrator/test_fix_tools.py
@@ -1175,7 +1175,7 @@ async def test_fix_issues_skips_unknown_ids():
     assert mock_fix.call_count == 1  # only called for id="1"
 ```
 
-- [ ] **Step 2: Implement fix_issues tool**
+- [ ] **第 2 步：实施 fix_issues 工具**
 
 ```python
 # agent-service/app/orchestrator/tools/fix_tools.py
@@ -1248,26 +1248,26 @@ async def fix_issues(
     return updated_drafts
 ```
 
-- [ ] **Step 3: Run tests and verify**
+- [ ] **第 3 步：运行测试并验证**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_fix_tools.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_fix_tools.py -v`
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/orchestrator/tools/fix_tools.py agent-service/tests/orchestrator/test_fix_tools.py && git commit -m "feat(agent): implement fix_issues orchestrator tool"`
+运行： `cd /e/test/Docmost && git add agent-service/app/orchestrator/tools/fix_tools.py agent-service/tests/orchestrator/test_fix_tools.py && git commit -m "feat(agent): implement fix_issues orchestrator tool"`
 
 ---
 
-## Chunk 6: Review Card Frontend
+## 分块 6：Review Card 前端
 
-### Task 8: Add ReviewIssue and ReviewReport TypeScript types
+### 任务 8：添加 ReviewIssue and ReviewReport TypeScript types
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts`
 
-- [ ] **Step 1: Add types**
+- [ ] **第 1 步：添加类型**
 
-Add to the existing types file:
+添加到现有类型文件：
 
 ```typescript
 // Review system types
@@ -1291,18 +1291,18 @@ export interface ReviewReport {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **第 2 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts && git commit -m "feat(client): add ReviewIssue and ReviewReport types"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts && git commit -m "feat(client): add ReviewIssue and ReviewReport types"`
 
 ---
 
-### Task 9: Implement ReviewScoreBoard component
+### 任务 9：实现 ReviewScoreBoard component
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/review/ReviewScoreBoard.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/review/ReviewScoreBoard.tsx`
 
-- [ ] **Step 1: Implement component**
+- [ ] **第 1 步：实施组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/review/ReviewScoreBoard.tsx
@@ -1360,18 +1360,18 @@ export function ReviewScoreBoard({ report }: ReviewScoreBoardProps) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **第 2 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/review/ReviewScoreBoard.tsx && git commit -m "feat(client): implement ReviewScoreBoard component"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/review/ReviewScoreBoard.tsx && git commit -m "feat(client): implement ReviewScoreBoard component"`
 
 ---
 
-### Task 10: Implement IssueCard component
+### 任务 10：实现 IssueCard component
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/review/IssueCard.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/review/IssueCard.tsx`
 
-- [ ] **Step 1: Implement component**
+- [ ] **第 1 步：实施组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/review/IssueCard.tsx
@@ -1421,18 +1421,18 @@ export function IssueCard({ issue, selected, onToggle }: IssueCardProps) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **第 2 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/review/IssueCard.tsx && git commit -m "feat(client): implement IssueCard component"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/review/IssueCard.tsx && git commit -m "feat(client): implement IssueCard component"`
 
 ---
 
-### Task 11: Implement AutoFixSummary component
+### 任务 11：实现 AutoFixSummary component
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/review/AutoFixSummary.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/review/AutoFixSummary.tsx`
 
-- [ ] **Step 1: Implement component**
+- [ ] **第 1 步：实施组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/review/AutoFixSummary.tsx
@@ -1476,18 +1476,18 @@ export function AutoFixSummary({ issues }: AutoFixSummaryProps) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **第 2 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/review/AutoFixSummary.tsx && git commit -m "feat(client): implement AutoFixSummary component"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/review/AutoFixSummary.tsx && git commit -m "feat(client): implement AutoFixSummary component"`
 
 ---
 
-### Task 12: Implement use-review-actions hook
+### 任务 12：实现 use-review-actions hook
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/review/use-review-actions.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/review/use-review-actions.ts`
 
-- [ ] **Step 1: Implement hook**
+- [ ] **第 1 步：实施钩子**
 
 ```typescript
 // apps/client/src/ee/ai/components/ai-creator/review/use-review-actions.ts
@@ -1562,19 +1562,19 @@ export function useReviewActions(
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **第 2 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/review/use-review-actions.ts && git commit -m "feat(client): implement use-review-actions hook"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/review/use-review-actions.ts && git commit -m "feat(client): implement use-review-actions hook"`
 
 ---
 
-### Task 13: Implement ReviewModal
+### 任务 13：实现 ReviewModal
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/review/ReviewModal.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/review/index.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/review/ReviewModal.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/review/index.ts`
 
-- [ ] **Step 1: Implement ReviewModal**
+- [ ] **第 1 步：实施 ReviewModal**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/review/ReviewModal.tsx
@@ -1693,7 +1693,7 @@ export function ReviewModal({ opened, onClose, report, onFix, onSkip }: ReviewMo
 }
 ```
 
-- [ ] **Step 2: Create barrel export**
+- [ ] **第 2 步：创建桶导出**
 
 ```typescript
 // apps/client/src/ee/ai/components/ai-creator/review/index.ts
@@ -1704,22 +1704,22 @@ export { AutoFixSummary } from './AutoFixSummary';
 export { useReviewActions } from './use-review-actions';
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/review/ && git commit -m "feat(client): implement ReviewModal with issue selection and fix dispatch"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/review/ && git commit -m "feat(client): implement ReviewModal with issue selection and fix dispatch"`
 
 ---
 
-## Chunk 7: Integration and E2E
+## 分块 7：集成与 E2E
 
-### Task 14: Register tools in Orchestrator engine
+### 任务 14：Register tools in Orchestrator engine
 
-**Files:**
-- Modify: `agent-service/app/orchestrator/engine.py`
+**文件：**
+- 修改：`agent-service/app/orchestrator/engine.py`
 
-- [ ] **Step 1: Import and register evaluate_quality and fix_issues**
+- [ ] **第 1 步：导入并注册evaluate_quality和fix_issues**
 
-In `engine.py`, where other tools are registered:
+在`engine.py`中，注册了其他工具：
 
 ```python
 from app.orchestrator.tools.evaluate import evaluate_quality
@@ -1732,26 +1732,26 @@ from app.orchestrator.tools.fix_tools import fix_issues
 # async def fix_issues_tool(ctx, ...): ...
 ```
 
-Follow the existing pattern from Phase 1 for tool registration. The Orchestrator's system prompt should be updated to include instructions about when to call evaluate_quality (after writing completes) and fix_issues (after user selects issues).
+遵循第一阶段的现有模式进行工具注册。 Orchestrator 的系统提示应更新为包括有关何时调用valuate_quality（写入完成后）和fix_issues（用户选择问题后）的说明。
 
-- [ ] **Step 2: Commit**
+- [ ] **第 2 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/orchestrator/engine.py && git commit -m "feat(agent): register evaluate and fix tools in orchestrator"`
+运行： `cd /e/test/Docmost && git add agent-service/app/orchestrator/engine.py && git commit -m "feat(agent): register evaluate and fix tools in orchestrator"`
 
 ---
 
-### Task 15: Update Orchestrator system prompt for review flow
+### 任务 15：更新 Orchestrator system prompt for review flow
 
-**Files:**
-- Modify: `agent-service/app/orchestrator/prompts.py`
+**文件：**
+- 修改：`agent-service/app/orchestrator/prompts.py`
 
-- [ ] **Step 1: Add review instructions to system prompt**
+- [ ] **第一步：在系统提示中添加复习说明**
 
-Add to the orchestrator system prompt:
+添加到 Orchestrator 系统提示符：
 
 ```python
 REVIEW_INSTRUCTIONS = """
-## Review Phase
+## 审查阶段
 
 After all sections are written, you MUST call evaluate_quality to assess the document.
 
@@ -1771,20 +1771,20 @@ If no issues need user attention (all auto-fixed or score >= 90):
 """
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **第 2 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/app/orchestrator/prompts.py && git commit -m "feat(agent): add review phase instructions to orchestrator prompt"`
+运行： `cd /e/test/Docmost && git add agent-service/app/orchestrator/prompts.py && git commit -m "feat(agent): add review phase instructions to orchestrator prompt"`
 
 ---
 
-### Task 16: Handle review SSE events in frontend
+### 任务 16：Handle review SSE events in 前端
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/services/ai-create-runner.utils.ts`
+**文件：**
+- 修改：`apps/client/src/ee/ai/services/ai-create-runner.utils.ts`
 
-- [ ] **Step 1: Add review_report and fix_applied event handlers**
+- [ ] **第 1 步：添加 review_report 和 fix_applied 事件处理程序**
 
-Add to the SSE event normalization logic:
+添加到SSE事件规范化逻辑：
 
 ```typescript
 // In the event handler switch/if chain:
@@ -1798,18 +1798,18 @@ case 'fix_applied':
   break;
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **第 2 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/services/ai-create-runner.utils.ts && git commit -m "feat(client): handle review_report and fix_applied SSE events"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/services/ai-create-runner.utils.ts && git commit -m "feat(client): handle review_report and fix_applied SSE events"`
 
 ---
 
-### Task 17: Integrate ReviewModal in AiCreatorPanel
+### 任务 17：Integrate ReviewModal in AiCreatorPanel
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx`
 
-- [ ] **Step 1: Add ReviewModal state and rendering**
+- [ ] **第 1 步：添加ReviewModal状态和渲染**
 
 ```typescript
 import { ReviewModal } from './review';
@@ -1833,18 +1833,18 @@ const [reviewModalOpen, setReviewModalOpen] = useState(false);
 // />
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **第 2 步：提交**
 
-Run: `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx && git commit -m "feat(client): integrate ReviewModal in AiCreatorPanel"`
+运行： `cd /e/test/Docmost && git add apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx && git commit -m "feat(client): integrate ReviewModal in AiCreatorPanel"`
 
 ---
 
-### Task 18: End-to-end review flow test
+### 任务 18：End-to-end review flow test
 
-**Files:**
-- Create: `agent-service/tests/test_e2e_review.py`
+**文件：**
+- 创建：`agent-service/tests/test_e2e_review.py`
 
-- [ ] **Step 1: Write E2E test**
+- [ ] **第 1 步：编写E2E测试**
 
 ```python
 # agent-service/tests/test_e2e_review.py
@@ -1950,40 +1950,40 @@ class TestE2EReviewFlow:
         assert "Other content stays the same" in result
 ```
 
-- [ ] **Step 2: Run E2E tests**
+- [ ] **第 2 步：运行 E2E 测试**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_e2e_review.py -v`
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_e2e_review.py -v`
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
-Run: `cd /e/test/Docmost && git add agent-service/tests/test_e2e_review.py && git commit -m "test(agent): add end-to-end review flow tests"`
+运行： `cd /e/test/Docmost && git add agent-service/tests/test_e2e_review.py && git commit -m "test(agent): add end-to-end review flow tests"`
 
 ---
 
-## Summary
+## 总结
 
-| Chunk | Tasks | Key Deliverables |
+| Chunk | Tasks | 关键成果 |
 |-------|-------|-----------------|
-| 1 | Tasks 1-2 | ReviewIssue/ReviewReport models, deterministic evaluator |
-| 2 | Task 3 | LLM quality assessment |
-| 3 | Task 4 | evaluate_quality orchestrator tool |
-| 4 | Tasks 5-6 | Auto-fix + targeted LLM fix |
-| 5 | Task 7 | fix_issues orchestrator tool |
-| 6 | Tasks 8-13 | ReviewModal, IssueCard, ScoreBoard, AutoFixSummary, hook, types |
-| 7 | Tasks 14-18 | Orchestrator integration, SSE events, E2E tests |
+| 1 | 任务 1-2 | ReviewIssue/ReviewReport 模型，确定性评估器 |
+| 2 | 任务 3 | LLM 质量评估 |
+| 3 | 任务 4 | 评估质量协调器工具 |
+| 4 | 任务 5-6 | 自动修复+有针对性的LLM修复 |
+| 5 | 任务 7 | fix_issues 协调器工具 |
+| 6 | 任务 8-13 | ReviewModal、IssueCard、ScoreBoard、AutoFixSummary、挂钩、类型 |
+| 7 | 任务 14-18 | Orchestrator 集成、SSE 事件、E2E 测试 |
 
-**Total estimated time:** 1-2 weeks
+**预计总时间：** 1-2 周
 
-**Key design decisions:**
-- Auto-fix is pure code (no LLM) — fast, deterministic, safe
-- LLM evaluation outputs issues only, never rewritten content
-- Targeted fix operates on single sections with diff-size validation
-- Frontend shows issues as checkboxes — user has full control over what gets fixed
-- ReviewReport is a single structured object flowing through SSE
-## Implementation Status Update (2026-03-19)
+**关键设计决策：**
+- 自动修复是纯代码（不依赖 LLM）——快速、确定性、安全
+- LLM评估仅输出问题，从未重写内容
+- 有针对性的修复在具有差异大小验证的单个部分上运行
+- 前端将问题显示为复选框 - 用户可以完全控制要修复的内容
+- ReviewReport 是流经 SSE 的单一结构化对象
+## 实施状态更新 (2026-03-19)
 
-- Review now separates blocking vs advisory issues by severity. Error-level issues still block finalize; warning/info issues remain reviewable but can be accepted explicitly.
-- The workbench review modal now exposes `Continue with current draft` for non-blocking reports, preventing infinite fix/re-review loops on subjective warnings.
-- `fix_selected_issues` still rewrites each affected section at most once per review pass, aggregating selected issues by section before calling the fixer.
-- Source-image policy is now enforced in evaluation: missing required visuals and forbidden generated fallbacks raise blocking visual issues.
-- Browser acceptance now covers the review acceptance path that proceeds from `awaiting_input(review)` to `completed` and `insert`.
+- 审查现在按严重程度区分阻止问题和咨询问题。错误级别的问题仍然会阻止最终确定；警告/信息问题仍然可以审查，但可以明确接受。
+- 工作台审查模式现在公开 `Continue with current draft` 用于非阻塞报告，防止主观警告的无限修复/重新审查循环。
+- `fix_selected_issues` 仍然在每次审核通过时最多重写每个受影响的部分一次，在调用修复程序之前按部分聚合选定的问题。
+- 源图像策略现在在评估中强制执行：缺少所需的视觉效果和禁止生成的后备会引发阻塞视觉问题。
+- 浏览器接受现在涵盖了从 `awaiting_input(review)` 到 `completed` 和 `insert` 的审阅接受路径。

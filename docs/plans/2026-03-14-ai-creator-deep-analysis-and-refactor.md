@@ -45,10 +45,10 @@
 | 篇幅控制精度 | 总字数 ±10%，达标率 ≥90% |
 | 任务复杂度分级 | Level 1（直接执行）/ Level 2（轻量确认）/ Level 3（完整流程），模板+语义分析结合判断，用户可手动覆盖 |
 | 澄清机制 | 多轮对话式，UI 选择为主 + 自定义输入，AI 推荐默认值 |
-| 交互点 | 4 个：Smart Brief → Creation Blueprint → Live Draft → Review Card |
+| 交互点 | 4个：智能简报 → 创作蓝图 → 现场草稿 → 复习卡 |
 | 写作策略 | 大纲驱动逐章生成 + 滑动窗口保持连贯（流派 1+3 结合） |
-| Agent 架构 | 一个强大脑（Orchestrator）+ 多个专业手（Workers），模式 B |
-| 技术栈 | 保持 Python 微服务，用 PydanticAI 替代 LangGraph |
+| Agent 架构 | 一个强大的大脑（Orchestrator）+多个专业手（Workers），模式B |
+| 技术栈 | 保持Python微服务，用PydanticAI替代LangGraph |
 | 图片规划 | AI 自动判断配图类型/位置/数量，在 Blueprint 中展示给用户确认 |
 | 审核机制 | 结构化评审报告 → 用户勾选修复项 → 定点修复，格式问题自动修复 |
 | 草稿机制 | 独立草稿区，预览对比后按需合并到正式页面 |
@@ -172,7 +172,7 @@ SSE 事件流（asyncio.Queue → http.request 代理 → 浏览器）
 |------|----------|----------|
 | 图拓扑 | `agent-service/app/agent/graph.py` | 61-107（build_agent_graph） |
 | 路由决策 | `agent-service/app/agent/graph.py` | 26-58（4 个 route 函数） |
-| 状态定义 | `agent-service/app/agent/state.py` | 14-70（45+ 字段 TypedDict） |
+| 状态定义 | `agent-service/app/agent/state.py` | 14-70（45+字段TypedDict） |
 | 证据获取 | `agent-service/app/agent/nodes/evidence_acquirer.py` | 16-183 |
 | 研究规划 | `agent-service/app/agent/nodes/explorer.py` | 139-411 |
 | 澄清问答 | `agent-service/app/agent/nodes/clarifier.py` | 全文 |
@@ -197,7 +197,7 @@ SSE 事件流（asyncio.Queue → http.request 代理 → 浏览器）
 
 ### 缺陷 D1：固定流水线拓扑，无动态编排能力
 - **位置**：`graph.py:61-107`
-- **现象**：所有任务走同一张图，只有 3 个条件分支（selection_edit 跳 writer、document_transform 跳 writer、其他走全流程）
+- **现象**：所有任务走同一张图，只有3个条件分支（selection_edit 跳writer、document_transform 跳writer、其他走全流程）
 - **影响**："翻译这段"和"基于 5 份资料写一篇 PRD"走几乎相同的路径
 - **优先级**：P0
 - **复杂度**：高（需要重新设计编排层）
@@ -287,7 +287,7 @@ SSE 事件流（asyncio.Queue → http.request 代理 → 浏览器）
 
 ### 缺陷 D10：document_transform 跳过所有规划
 - **位置**：`graph.py:33-37`（route_after_explorer），`explorer.py:80-111`（build_source_first_plan）
-- **现象**：document_transform 类型从 explorer 直接跳到 writer，跳过 clarifier → proposer → planner → outliner 全部规划环节
+- **现象**：document_transform类型从explorer直接跳到writer，跳过clarifier→proposer→planner→outliner全部规划阶段
 - **影响**：最高优先级场景（基于素材深度创作）反而得到最少的思考和规划
 - **优先级**：P0
 - **复杂度**：低（路由调整）
@@ -303,7 +303,7 @@ SSE 事件流（asyncio.Queue → http.request 代理 → 浏览器）
 |------|----------|------|------|
 | 长度指令是"请求"不是"保障" | `writer.py:88-101` | prompt 级约束无法强制执行，LLM 有天然的长度衰减倾向 | 5000→2000 压缩 |
 | 中文字数用 `split()` 计数 | `writer.py:91` | `split()` 按空白分割，中文无空格，一整段中文算一个"词" | 字数目标完全不准 |
-| Writer prompt 过长 | `writer.py:178-244` | 所有上下文无差别拼接 | 注意力衰减，关键约束被忽略 |
+| 作者提示过长 | `writer.py:178-244` | 所有上下文无差别拼接 | 注意力衰减，关键约束被忽略 |
 | 反 AI 风格规则是静态的 | `writer.py:36-45` | 硬编码在 system prompt 中，不随文档类型/风格调整 | 技术文档也被强制"混合段落长度" |
 
 ### 4.2 Agent 决策机制问题
@@ -335,8 +335,8 @@ SSE 事件流（asyncio.Queue → http.request 代理 → 浏览器）
 
 | 问题 | 代码位置 | 根因 | 影响 |
 |------|----------|------|------|
-| 3 条固定路径 | `graph.py:26-58` | 只有 selection_edit / document_transform / 其他 三种路由 | 无法适应"仅排版"、"多文档合并"等场景 |
-| 修订 = 全文重写 | `graph.py:46-51` | needs_revision → 重新走 writer 节点 | 修一个错别字也要重写全文 |
+| 3 条固定路径 | `graph.py:26-58` | 只有selection_edit / document_transform /其他清晰路由 | 无法适应"仅排版"、"多文档合并"等场景 |
+| 修订 = 全文重写 | `graph.py:46-51` | need_revision → 重新走 writer 节点 | 修一个错别字也要重写全文 |
 | 最多 3 次修订 | `graph.py:47` | 硬编码 max_iterations=3 | 无法保证质量就截止 |
 
 ### 4.6 缺少素材预处理与资源复用
@@ -345,14 +345,14 @@ SSE 事件流（asyncio.Queue → http.request 代理 → 浏览器）
 |------|----------|------|------|
 | 素材只提取文本 | `explorer.py:254-298` | Docling 的结构化输出未被利用 | 表格、代码块、图片内容丢失 |
 | 图片只记录 URL | `explorer.py:267-290` | 提取后只存 `{url, desc, context}` | Writer 不知道图片内容，无法做智能放置 |
-| 无资产清单 | 全局缺失 | 没有 Asset Map 概念 | 无法做素材复用决策 |
+| 无资产清单 | 全局缺失 | 没有资产地图概念 | 无法做素材复用决策 |
 | 每次运行重新获取 | 全局缺失 | 无素材缓存 | 修改草稿要重跑全部素材解析 |
 
 ### 4.7 审核机制设计错误
 
 | 问题 | 代码位置 | 根因 | 影响 |
 |------|----------|------|------|
-| 审核 = 重写 | `reviewer.py:156-159` | LLM 返回 revised_content 全文 | 内容漂移、信息丢失 |
+| 审核 = 重写 | `reviewer.py:156-159` | LLM 返回 revision_content 全文 | 内容漂移、信息丢失 |
 | 确定性检查 + LLM 审核未分离 | `reviewer.py:115-156` | 两者混在一起，结果混合 | 无法区分"格式问题"和"内容问题" |
 | 压缩阈值过于粗糙 | `reviewer.py:127` | `len(draft) < max(400, int(len(source_text) * 0.7))` 只看总字符数 | 章节级压缩检测不到 |
 | 审核结果用户不可见 | 全局设计 | 内部决策，不呈现给用户 | 用户无法参与质量决策 |
@@ -362,7 +362,7 @@ SSE 事件流（asyncio.Queue → http.request 代理 → 浏览器）
 | 问题 | 代码位置 | 根因 | 影响 |
 |------|----------|------|------|
 | 所有节点用同一个模型 | `agent-service/app/agent/llm.py` | 没有模型路由 | 成本高、效率低 |
-| 没有 extended thinking | 全局缺失 | LLM 调用不使用思考模式 | 复杂任务推理不足 |
+| 没有延伸思考 | 全局缺失 | LLM 调用不使用思考模式 | 复杂任务推理不足 |
 | 图片生成模型固定 | `agent-service/app/config.py` | 硬编码一种后端 | 不同类型图片需要不同模型 |
 
 ---
@@ -419,18 +419,18 @@ SSE 事件流（asyncio.Queue → http.request 代理 → 浏览器）
 
 ### 6.1 对标矩阵
 
-| 能力维度 | Claude Code | Cursor | Devin | Manus | Notion AI | Docmost 现状 | 差距 |
+| 能力维度 | Claude Code | 光标 | Devin | Manus | Notion AI | Docmost | 差距 |
 |----------|-------------|--------|-------|-------|-----------|-------------|------|
-| 动态编排 | ✅ 单循环自适应 | ✅ Agent 模式 RL | ✅ 动态规划 | ✅ todo.md 驱动 | ✅ 中央推理 | ❌ 固定图 | 🔴 根本性 |
-| 复杂度判断 | ✅ extended thinking | ✅ 多模式(tab/chat/composer) | ✅ 置信度升级 | ✅ 任务分解 | ✅ 模型路由 | ❌ 无 | 🔴 根本性 |
+| 动态编排 | ✅ 单循环自适应 | ✅ 代理模式 RL | ✅ 动态规划 | ✅ todo.md 驱动 | ✅ 中央推理 | ❌ 固定图 | 🔴 根本性 |
+| 复杂度判断 | ✅ 拓展思维 | ✅ 多模式（选项卡/聊天/作曲家） | ✅ 置信度升级 | ✅ 任务分解 | ✅ 模型路由 | ❌ 无 | 🔴 根本性 |
 | 分块执行 | ✅ 子 Agent 并行 | ✅ 多文件协调 | ✅ 子任务拆分 | ✅ 并行子 Agent | ✅ 子 Agent | ❌ 一次性全文 | 🔴 根本性 |
-| 中间态可见 | ✅ 工具调用透明 | ✅ diff 预览 | ✅ 计划可修改 | ✅ 文件可查看 | ⚠️ 部分 | ⚠️ 3 个 interrupt | 🟡 需扩展 |
-| 质量验证 | ✅ 运行测试 | ✅ lint/type check | ✅ Critic 独立模型 | ⚠️ 基础 | ⚠️ 基础 | ❌ 审核=重写 | 🔴 设计错误 |
-| 上下文管理 | ✅ 内存压缩 | ✅ 嵌入索引 | ⚠️ 事件溯源 | ✅ KV-cache 优化 | ✅ block 结构 | ❌ 全量拼接 | 🔴 根本性 |
+| 中间态可见 | ✅ 工具调用透明 | ✅ diff 预览 | ✅ 计划可修改 | ✅ 文件可查看 | ⚠️ 部分 | ⚠️3个中断 | 🟡 需扩展 |
+| 质量验证 | ✅ 运行测试 | ✅ 棉绒/类型检查 | ✅ Critic 独立模型 | ⚠️ 基础 | ⚠️ 基础 | ❌ 审核=重写 | 🔴 设计错误 |
+| 上下文管理 | ✅ 内存压缩 | ✅ 嵌入索引 | ⚠️ 事件溯源 | ✅ KV 缓存优化 | ✅ block 结构 | ❌ 全量拼接 | 🔴 根本性 |
 | 风格/品牌 | N/A | ✅ .cursorrules | N/A | ⚠️ 基础 | ✅ 品牌声音 | ⚠️ 硬编码反AI | 🟡 需升级 |
 | 多模态资产 | N/A | N/A | ⚠️ 基础 | ⚠️ 基础 | ✅ block元数据 | ❌ 被动处理 | 🔴 缺失 |
-| 中断恢复 | ✅ h2A 双缓冲 | ✅ 实时编辑 | ✅ 中途协作 | ✅ 进度文件 | ⚠️ 基础 | ⚠️ 固定interrupt | 🟡 需增强 |
-| 模型路由 | ⚠️ 单模型 | ✅ 混合模型 | ✅ Planner/Coder/Critic | ⚠️ 基础 | ✅ 任务路由 | ❌ 单模型 | 🟡 需增加 |
+| 中断恢复 | ✅ h2A 双缓冲 | ✅ 实时编辑 | ✅ 中途协作 | ✅ 进度文件 | ⚠️ 基础 | ⚠️固定中断 | 🟡 需增强 |
+| 模型路由 | ⚠️ 单模型 | ✅ 混合模型 | ✅ 规划者/编码者/评审家 | ⚠️ 基础 | ✅ 任务路由 | ❌ 单模型 | 🟡 需增加 |
 
 ### 6.2 外部 Skills 借鉴分析
 
@@ -438,12 +438,12 @@ SSE 事件流（asyncio.Queue → http.request 代理 → 浏览器）
 
 | Skill | 核心设计 | 可借鉴到 Docmost 的点 |
 |-------|----------|---------------------|
-| **content-research-writer** | 协作伙伴模型 + 逐章节反馈 + 声音匹配 + 引用管理 | ① 逐章节写作+反馈循环 ② 风格学习机制 ③ 引用追踪 |
-| **deep-research** | 5 步系统研究 + 置信度 + 共识/争议分离 | ① 研究结果带置信度 ② 发现-共识-争议结构化输出 |
-| **technical-writing** | 同行语气 + 段落优于列表 + 避免懒惰描述词 | ① 丰富反 AI 风格规则库 ② 文档类型特化的风格约束 |
-| **tutorial-docs** | "You should see" 确认模式 + 学习即实践 | ① 教程类文档的分步验证机制 |
-| **tutorial-generator** | 12 部分结构 + 品牌声音 + 故障排除段 | ① 结构化模板的深度定义 ② 故障排除作为标准章节 |
-| **web-research** | 文件式通信 + 并行子 Agent + 研究计划先行 | ① 研究计划文件化 ② 并行子 Agent 研究模式 |
+| **内容研究作家** | 协作伙伴模型 + 逐章节反馈 + 声音匹配 + 引用管理 | ① 逐章节写作+反馈循环 ② 风格学习机制 ③ 引用追踪 |
+| **深入研究** | 5 步系统研究 + 置信度 + 共识/争议分离 | ① 研究结果带置信度 ② 发现-共识-争议结构化输出 |
+| **技术写作** | 同行语气 + 段落优于列表 + 避免懒惰描述词 | ① 丰富反 AI 风格规则库 ② 文档类型特化的风格约束 |
+| **教程文档** | "You should see" 确认模式 + 学习即实践 | ① 教程类文档的分步验证机制 |
+| **教程生成器** | 12 部分结构 + 品牌声音 + 故障排除段 | ① 结构化模板的深度定义 ② 故障排除作为标准章节 |
+| **网络研究** | 文件式通信 + 并行子 Agent + 研究计划先行 | ① 研究计划文件化 ② 并行子 Agent 研究模式 |
 
 ---
 
@@ -541,7 +541,7 @@ SSE 事件流（asyncio.Queue → http.request 代理 → 浏览器）
 └────────────────────────────────────────────────────────┘
 ```
 
-### 7.2 Orchestrator 详细设计
+### 7.2 Orchestrator详细设计
 
 ```python
 # 核心编排循环（伪代码）
@@ -583,7 +583,7 @@ async def run_creation(user_input, state):
             break
 ```
 
-### 7.3 Orchestrator System Prompt 设计
+### 7.3 Orchestrator系统提示设计
 
 ```markdown
 你是一个文档创作 Orchestrator。你的职责是理解用户的创作意图，
@@ -811,7 +811,7 @@ Level 3（完整流程）— 从零创作、仿写、多文档合并
 
 ## 8. 审核机制重构方案
 
-### 8.1 当前问题（reviewer.py）
+### 8.1当前问题（reviewer.py）
 
 ```
 当前流程：
@@ -831,7 +831,7 @@ LLM 同时输出 issues + revised_content
 ```
 新流程：
 
-Step 1: 确定性检查（Evaluator Worker — 代码逻辑，不用 LLM）
+步骤 1：确定性检查（Evaluator Worker — 代码逻辑，不用 LLM）
 ├─ 每章字数 vs 预算 → 偏差超过 ±10% 标记为 length issue
 ├─ 素材引用率 → 未使用的素材标记为 asset issue
 ├─ 必须覆盖点 → 缺失的标记为 content issue
@@ -840,25 +840,25 @@ Step 1: 确定性检查（Evaluator Worker — 代码逻辑，不用 LLM）
 ├─ 标题层级规范 → 跳级标记为 format issue
 └─ 输出：ReviewIssue[]（severity + category + auto_fixable）
 
-Step 2: LLM 质量评估（Evaluator Worker — 中等模型）
+步骤 2：LLM 质量评估（Evaluator Worker — 中等模型）
 ├─ 输入：草稿 + Blueprint + Brief（不要求输出修改后内容）
 ├─ 输出：JSON {overall_score, issues[{description, severity, section_id}]}
 ├─ 评估维度：准确性、完整性、风格一致性、可读性、论据充分性
 └─ 合并到 ReviewIssue[]
 
-Step 3: 自动修复（Fixer Worker — 快速模型）
+步骤 3：自动修复（Fixer Worker — 快速模型）
 ├─ 遍历 auto_fixable=true 的 issues
 ├─ 每个 issue 单独修复（传入目标章节 + issue 描述 + 修复指令）
 ├─ 修复后标记 fixed=true
 └─ 不触碰非 auto_fixable 的内容
 
-Step 4: 用户决策（ask_user — Review Card）
+步骤 4：用户决策（ask_user — Review Card）
 ├─ 展示 ReviewReport：总分 + 各维度得分 + Issue 卡片列表
 ├─ 用户勾选需要修复的 issue
 ├─ 用户可以添加自定义修改意见
 └─ 点击"修复选中项"
 
-Step 5: 定向修复（Fixer Worker）
+步骤 5：定向修复（Fixer Worker）
 ├─ 只修复用户勾选的 issue
 ├─ 每个 issue 独立修复：传入目标章节 + issue + 修复指令
 ├─ 不改动其他内容
@@ -871,7 +871,7 @@ Step 5: 定向修复（Fixer Worker）
 - 用户可以看到评审报告，参与决策
 ```
 
-### 8.3 Review Card 前端交互设计
+### 8.3 Review Card接口交互设计
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -911,7 +911,7 @@ Step 5: 定向修复（Fixer Worker）
 
 ## 9. 多模态素材与图片规划改造方案
 
-### 9.1 素材预处理流程（AssetParser Worker）
+### 9.1 素材创作流程（AssetParser Worker）
 
 ```
 用户上传文件/提供URL
@@ -1076,14 +1076,14 @@ apps/client/src/ee/ai/
 
 ### 10.2 弹出式工作台设计
 
-使用 Mantine 的 `Modal` 组件（size="xl"，约 80vw）：
+使用Mantine的`Modal`组件（size="xl"，约80vw）：
 
-**Blueprint Modal**：
+**蓝图模态**：
 - 左侧 60%：章节列表（`@dnd-kit` 拖拽排序） + 每章的字数/配图编辑
 - 右侧 40%：实时大纲预览（Markdown 渲染）
 - 底部工具栏：总字数统计 + 确认/重新生成按钮
 
-**Review Modal**：
+**评审模式**：
 - 顶部：评分仪表盘（总分 + 4 个维度进度条）
 - 中部：Issue 卡片列表（可勾选，按章节分组）
 - 底部：补充意见输入 + 修复选中项/跳过按钮
@@ -1114,59 +1114,59 @@ apps/client/src/ee/ai/
 
 ## 11. 分阶段落地路线图
 
-### Phase 0：基础设施准备（1-2 周）
+### 阶段 0：基础设施准备（1-2 周）
 
 | 任务 | 优先级 | 复杂度 | 产出 |
 |------|--------|--------|------|
-| PydanticAI 环境搭建 + 基础学习 | P0 | 低 | PydanticAI 基础代码骨架 |
-| 定义结构化中间态 Pydantic Models | P0 | 低 | `models/` 目录下的所有 Pydantic 模型 |
+| PydanticAI 环境搭建 + 基础学习 | P0 | 低 | PydanticAI 基础代码构建 |
+| 定义制定中间状态 Pydantic 模型 | P0 | 低 | `models/` 目录下的所有 Pydantic 模型 |
 | 设计新 SSE 事件协议 | P0 | 低 | 事件类型文档 + TypeScript 类型定义 |
 | 前端新组件目录结构搭建 | P0 | 低 | 空组件骨架 + 路由注册 |
 
-### Phase 1：核心编排层重构（2-3 周）
+### 阶段 1：核心编排层重构（2-3 周）
 
 | 任务 | 优先级 | 复杂度 | 产出 | 风险 |
 |------|--------|--------|------|------|
-| Orchestrator ReAct Loop 实现 | P0 | 高 | 核心编排引擎 | PydanticAI 学习曲线 |
-| analyze_complexity 工具 | P0 | 中 | Level 1/2/3 分级能力 | 分级准确率需迭代 |
+| Orchestrator React Loop 实现 | P0 | 高 | 核心编排引擎 | PydanticAI 学习曲线 |
+| 分析复杂性工具 | P0 | 中 | Level 1/2/3 分级能力 | 分级准确率需迭代 |
 | ask_user 工具 + 中断恢复 | P0 | 中 | 用户交互能力 | SSE 协议需对齐 |
 | Level 1 路径打通 | P0 | 低 | 简单任务端到端 | — |
 | NestJS 网关适配 | P0 | 低 | SSE 代理 + 文件转发 | 兼容性 |
 
-### Phase 2：素材与规划能力（2-3 周）
+### 阶段 2：素材与规划能力（2-3 周）
 
 | 任务 | 优先级 | 复杂度 | 产出 | 风险 |
 |------|--------|--------|------|------|
-| AssetParser Worker | P0 | 中 | 结构化素材提取 | Docling 结构化输出需探索 |
-| Smart Brief 生成 + 前端卡片 | P0 | 中 | 交互点 1 | UI 交互体验需打磨 |
-| create_blueprint 工具 | P0 | 中 | 创作蓝图生成 | 字数预算算法需迭代 |
-| Blueprint Modal 前端 | P0 | 高 | 交互点 2（拖拽、配图编辑） | dnd-kit 集成 |
-| VisualPlanner Worker | P1 | 中 | 智能配图规划 | VLM 调用延迟 |
+| AssetParser 工作者 | P0 | 中 | 结构化素材提取 | Docling 结构化输出需探索 |
+| Smart Brief 生成 + 前端辅助 | P0 | 中 | 交互点 1 | UI 交互体验需打磨 |
+| 创建蓝图工具 | P0 | 中 | 创作蓝图生成 | 字数预算算法需迭代 |
+| 蓝图模态前端 | P0 | 高 | 交互点 2（拖拽、配图编辑） | dnd-kit 集成 |
+| 视觉规划师 | P1 | 中 | 智能配图规划 | VLM 调用延迟 |
 | Level 2 路径打通 | P0 | 中 | 轻量确认任务端到端 | — |
 
-### Phase 3：分块写作引擎（2-3 周）
+### 阶段 3：分块写作引擎（2-3 周）
 
 | 任务 | 优先级 | 复杂度 | 产出 | 风险 |
 |------|--------|--------|------|------|
-| SectionWriter Worker | P0 | 高 | 逐章生成 + 滑动窗口 | 章节间一致性 |
+| 部门作家工人 | P0 | 高 | 逐章生成 + 滑动窗口 | 章节间一致性 |
 | write_sections_parallel 工具 | P0 | 中 | 多章并行写作 | 并发控制 |
 | 中文字数精确计算 | P0 | 低 | 替换 split() 为正则计数 | — |
 | 字数预算执行 + 验证 | P0 | 中 | 每章字数 ±10% | 超预算时的重试策略 |
-| Live Draft 进度前端 | P1 | 中 | 进度条 + 章节导航 | 流式渲染性能 |
+| Live Draft 简介 | P1 | 中 | 进度条 + 章节导航 | 流式渲染性能 |
 | 草稿管理系统 | P1 | 中 | 独立草稿 + 预览 + 合并 | 草稿存储方案 |
 | Level 3 路径打通 | P0 | 高 | 完整流程端到端 | 多组件联调 |
 
-### Phase 4：审核与修复（1-2 周）
+### 阶段 4：审核与修复（1-2 周）
 
 | 任务 | 优先级 | 复杂度 | 产出 | 风险 |
 |------|--------|--------|------|------|
-| Evaluator Worker（确定性检查） | P0 | 中 | 结构化质量评估 | — |
-| Evaluator Worker（LLM 评估） | P0 | 中 | 内容质量评分 | 评估准确率 |
-| Fixer Worker（定点修复） | P0 | 中 | 章节级精准修复 | 修复不引入新问题 |
-| Review Modal 前端 | P0 | 中 | 交互点 4 | Issue 卡片交互 |
+| 评估员（确定性检查） | P0 | 中 | 结构化质量评估 | — |
+| 评估员（LLM评估） | P0 | 中 | 内容质量评分 | 评估准确率 |
+| 固定工（定点修复） | P0 | 中 | 章节级精准修复 | 修复不引入新问题 |
+| 回顾模态前端 | P0 | 中 | 交互点 4 | Issue 卡片交互 |
 | 自动修复流程 | P1 | 低 | 格式问题自动修 | — |
 
-### Phase 5：打磨与优化（2-3 周）
+### 阶段 5：打磨与优化（2-3 周）
 
 | 任务 | 优先级 | 复杂度 | 产出 | 风险 |
 |------|--------|--------|------|------|
@@ -1178,13 +1178,13 @@ apps/client/src/ee/ai/
 | 性能优化（SSE、并行、缓存） | P2 | 中 | 生成速度提升 | — |
 | Dify 集成（方向 A） | P2 | 中 | Docmost 作为 Dify 数据源 | API 设计 |
 
-### Phase 6：旧代码清理（1 周）
+### 阶段 6：旧代码清理（1 周）
 
 | 任务 | 优先级 | 复杂度 | 产出 |
 |------|--------|--------|------|
-| 删除 LangGraph 相关代码 | P1 | 低 | graph.py, nodes/*.py 旧实现 |
-| 删除旧前端组件 | P1 | 低 | clarify-bubble, propose-bubble, outline-bubble |
-| 删除旧事件类型 | P1 | 低 | 旧 AgentSSEEvent 定义 |
+| 删除 LangGraph 相关代码 | P1 | 低 | graph.py,nodes/*.py 旧实现 |
+| 删除旧前端组件 | P1 | 低 | 澄清气泡、提议气泡、轮廓气泡 |
+| 删除旧事件类型 | P1 | 低 | 过去 AgentSSEEvent 定义 |
 | 更新文档 | P2 | 低 | 新架构文档 |
 
 ### 总时间线
@@ -1231,8 +1231,8 @@ Week 1-2   Week 3-5       Week 5-7      Week 7-9      Week 9-10     Week 11-14  
 
 | 指标 | 当前估值 | 目标值 | 测量方法 |
 |------|----------|--------|----------|
-| **Level 1 响应时间** | 10-30s（走 Agent 流程） | ≤10s | 简单任务从提交到完成 |
-| **Blueprint 满意率** | N/A | ≥80% | 用户不修改 Blueprint 直接确认的比例 |
+| **Level 1 响应时间** | 10-30s（走代理流程） | ≤10s | 简单任务从提交到完成 |
+| **蓝图满意率** | N/A | ≥80% | 用户不修改 Blueprint 直接确认的比例 |
 | **一次性满意率** | ~20% | ≥60% | 用户不需要走 Review 修复的比例 |
 | **草稿采用率** | ~50% | ≥80% | 用户最终将草稿合并到页面的比例 |
 
@@ -1242,15 +1242,15 @@ Week 1-2   Week 3-5       Week 5-7      Week 7-9      Week 9-10     Week 11-14  
 
 | 组件 | 当前 | 变更后 | 理由 |
 |------|------|--------|------|
-| Agent 编排 | LangGraph | PydanticAI | 动态编排、多供应商、类型安全 |
-| 状态管理 | LangGraph StateGraph + PostgreSQL Checkpointer | Pydantic Models + Redis/PostgreSQL | 更轻量、更灵活 |
-| 图拓扑 | 编译时固定 | Orchestrator 动态决策 | 自适应工作流 |
-| 中断恢复 | LangGraph interrupt() | 自定义 yield + 状态序列化 | 更简单可控 |
+| Agent 编排 | 郎图 | 派丹蒂克人工智能 | 动态编排、多供应商、类型安全 |
+| 状态管理 | LangGraph StateGraph + PostgreSQL 检查点 | Pydantic 模型 + Redis/PostgreSQL | 更轻量、更灵活 |
+| 图拓扑 | 编译时固定 | 协调器动态决策 | 自适应工作流 |
+| 中断恢复 | LangGraph 中断() | 自定义 yield + 状态序列化 | 更简单可控 |
 | 中文字数 | `split()` | `len(re.findall(r'[\u4e00-\u9fff]', text)) + len(text.split())` | 准确计数 |
 | 写作模式 | 一次性全文 | 分章节 + 滑动窗口 | 篇幅保障 |
 | 审核模式 | LLM 重写 | 确定性检查 + LLM 评估 + 定点修复 | 消除漂移 |
-| 前端弹出面板 | 无 | Mantine Modal (size="xl") | Blueprint/Review 需要空间 |
-| 前端拖拽 | 无 | @dnd-kit/sortable | Blueprint 章节排序 |
+| 前端弹出面板 | 无 | Mantine 莫代尔 (尺寸=“xl”) | 蓝图/审查需要空间 |
+| 前端拖拽 | 无 | @dnd-kit/可排序 | 蓝图章节排序 |
 | 草稿存储 | 直接写页面 | Redis 临时存储 + DB 持久化 | 独立草稿机制 |
 
 ## 附录 B：删除清单（旧代码）
@@ -1259,16 +1259,16 @@ Week 1-2   Week 3-5       Week 5-7      Week 7-9      Week 9-10     Week 11-14  
 
 | 文件/目录 | 原因 |
 |----------|------|
-| `agent-service/app/agent/graph.py` | LangGraph 图拓扑，被 Orchestrator 替代 |
-| `agent-service/app/agent/nodes/` 全部 | 被 Workers 替代 |
+| `agent-service/app/agent/graph.py` | LangGraph拓扑，被Orchestrator替代 |
+| `agent-service/app/agent/nodes/` 全部 | 被工人替代 |
 | `agent-service/app/agent/state.py` | 被 Pydantic Models 替代 |
 | `agent-service/app/agent/quality_checks.py` | 被 Evaluator Worker 替代 |
 | `apps/client/src/ee/ai/components/ai-creator/ai-creator-clarify-bubble.tsx` | 被 SmartBriefCard 替代 |
 | `apps/client/src/ee/ai/components/ai-creator/ai-creator-propose-bubble.tsx` | 被 BlueprintModal 替代 |
 | `apps/client/src/ee/ai/components/ai-creator/ai-creator-outline-bubble.tsx` | 被 BlueprintModal 替代 |
 | `apps/client/src/ee/ai/services/ai-create-runner.utils.ts` | 事件规范化逻辑重构 |
-| `apps/server/src/ee/ai/document-strategy.ts` | 策略逻辑移到 Python Orchestrator |
-| `apps/server/src/ee/ai/evidence-preflight.ts` | 证据预检移到 Python AssetParser |
+| `apps/server/src/ee/ai/document-strategy.ts` | 策略逻辑移植到 Python Orchestrator |
+| `apps/server/src/ee/ai/evidence-preflight.ts` | 证据预检已转移到 Python AssetParser |
 
 ## 附录 C：新增文件清单
 
@@ -1276,28 +1276,28 @@ Week 1-2   Week 3-5       Week 5-7      Week 7-9      Week 9-10     Week 11-14  
 |----------|------|
 | `agent-service/app/orchestrator/engine.py` | Orchestrator ReAct Loop 核心 |
 | `agent-service/app/orchestrator/tools.py` | Orchestrator 可用工具注册 |
-| `agent-service/app/orchestrator/prompts.py` | Orchestrator System Prompt |
+| `agent-service/app/orchestrator/prompts.py` | Orchestrator 系统提示 |
 | `agent-service/app/workers/asset_parser.py` | 素材解析 Worker |
-| `agent-service/app/workers/researcher.py` | 研究 Worker |
+| `agent-service/app/workers/researcher.py` | 科研工作者 |
 | `agent-service/app/workers/section_writer.py` | 章节写作 Worker |
 | `agent-service/app/workers/visual_planner.py` | 配图规划 Worker |
 | `agent-service/app/workers/evaluator.py` | 质量评估 Worker |
 | `agent-service/app/workers/fixer.py` | 定点修复 Worker |
-| `agent-service/app/models/brief.py` | CreationBrief Pydantic Model |
-| `agent-service/app/models/asset_map.py` | AssetMap Pydantic Model |
-| `agent-service/app/models/blueprint.py` | CreationBlueprint Pydantic Model |
-| `agent-service/app/models/review.py` | ReviewReport Pydantic Model |
-| `agent-service/app/models/draft.py` | SectionDraft Pydantic Model |
+| `agent-service/app/models/brief.py` | CreationBrief Pydantic 模型 |
+| `agent-service/app/models/asset_map.py` | AssetMap Pydantic 模型 |
+| `agent-service/app/models/blueprint.py` | 创造蓝图 Pydantic 模型 |
+| `agent-service/app/models/review.py` | 评审报告 Pydantic 模型 |
+| `agent-service/app/models/draft.py` | 剖面图 Pydantic 模型 |
 | `agent-service/app/models/events.py` | SSE 事件类型定义 |
-| `apps/client/src/ee/ai/components/ai-creator/smart-brief/` | Smart Brief 组件目录 |
-| `apps/client/src/ee/ai/components/ai-creator/blueprint/` | Blueprint 组件目录 |
+| `apps/client/src/ee/ai/components/ai-creator/smart-brief/` | 智能简报组件目录 |
+| `apps/client/src/ee/ai/components/ai-creator/blueprint/` | 蓝图组件目录 |
 | `apps/client/src/ee/ai/components/ai-creator/live-draft/` | Live Draft 组件目录 |
 | `apps/client/src/ee/ai/components/ai-creator/review/` | Review 组件目录 |
 | `apps/client/src/ee/ai/components/ai-creator/draft-manager/` | 草稿管理组件目录 |
-| `apps/client/src/ee/ai/types/brief.types.ts` | Brief TypeScript 类型 |
-| `apps/client/src/ee/ai/types/blueprint.types.ts` | Blueprint TypeScript 类型 |
-| `apps/client/src/ee/ai/types/review.types.ts` | Review TypeScript 类型 |
-| `apps/client/src/ee/ai/types/draft.types.ts` | Draft TypeScript 类型 |
+| `apps/client/src/ee/ai/types/brief.types.ts` | 简要 TypeScript 类型 |
+| `apps/client/src/ee/ai/types/blueprint.types.ts` | 蓝图 TypeScript 类型 |
+| `apps/client/src/ee/ai/types/review.types.ts` | 查看 TypeScript 类型 |
+| `apps/client/src/ee/ai/types/draft.types.ts` | 草稿 TypeScript 类型 |
 | `apps/client/src/ee/ai/services/draft-service.ts` | 草稿管理 API |
 | `apps/client/src/ee/ai/hooks/use-draft-manager.ts` | 草稿管理 Hook |
 | `apps/client/src/ee/ai/hooks/use-blueprint-editor.ts` | 蓝图编辑 Hook |

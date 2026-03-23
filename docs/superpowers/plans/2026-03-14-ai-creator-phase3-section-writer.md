@@ -1,85 +1,85 @@
-# Phase 3: Section Writer — Implementation Plan
+# 阶段 3：分块写作实施计划
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **对于智能体执行者：** 要求：使用 superpowers:subagent-driven-development （如果子代理可用）或 superpowers:executing-plans 来实施此计划。步骤使用复选框 (`- [ ]`) 语法进行跟踪。
 
-**Goal:** Build the section-by-section writing engine with sliding window context, word budget enforcement, parallel writing, draft management, and the complete Level 3 path.
+**目标：** 构建具有滑动窗口上下文、字数预算执行、并行写作、草稿管理和完整的 3 级路径的分段写作引擎。
 
-**Architecture:** SectionWriter Worker generates one section at a time with a carefully crafted context package (global outline + previous section summary + next section preview + relevant assets + visual plan). Sections can be written in parallel. Word budget is enforced by retry on excess. Draft Manager stores drafts independently from the page.
+**架构：**SectionWriter Worker 使用精心设计的上下文包一次生成一个部分（全局大纲 + 上一节摘要 + 下一节预览 + 相关资产 + 视觉计划）。各部分可以并行编写。字预算是通过重试超额来强制执行的。草稿管理器独立于页面存储草稿。
 
-**Tech Stack:** PydanticAI, asyncio (for parallel), Redis (draft storage), Mantine UI
+**技术栈：** PydanticAI、asyncio（用于并行）、Redis（草稿存储）、Mantine UI
 
-**Prerequisites (from Phase 0, 1 & 2):**
-- Pydantic models: `CreationBrief`, `AssetMap`, `CreationBlueprint`, `SectionPlan`, `VisualPlan`, `SectionDraft`
-- Chinese word counting utility (`app/utils/word_count.py`)
-- Orchestrator engine with ReAct loop and Phase 2 tools
-- AssetParser, VisualPlanner, Researcher Workers
-- `parse_assets`, `create_brief`, `create_blueprint` Orchestrator tools
-- SSE event protocol with `asyncio.Queue` streaming
-- `ask_user` tool for user interaction
-- Frontend: SmartBriefCard, BlueprintModal
+**先决条件（从阶段 0、1 和 2 开始）：**
+- Pydantic 型号：`CreationBrief`、`AssetMap`、`CreationBlueprint`、`SectionPlan`、`VisualPlan`、`SectionDraft`
+- 中文字数统计实用程序（`app/utils/word_count.py`）
+- 带有 ReAct 循环和第 2 阶段工具的 Orchestrator 引擎
+- AssetParser、VisualPlanner、研究员
+- `parse_assets`、`create_brief`、`create_blueprint` Orchestrator 工具
+- 带有 `asyncio.Queue` 流的 SSE 事件协议
+- `ask_user` 用户交互工具
+- 前端：SmartBriefCard、BlueprintModal
 
 ---
 
-## File Structure Overview
+## 文件结构概述
 
-### New files (agent-service)
+### 新文件（代理服务）
 
-| File | Purpose |
+| 文件 | 用途 |
 |------|---------|
-| `agent-service/app/workers/section_writer.py` | SectionWriter Worker — writes one section with context |
-| `agent-service/app/workers/consistency_checker.py` | Cross-section consistency validation |
-| `agent-service/app/orchestrator/tools/write_tools.py` | `write_section` and `write_sections_parallel` tools |
-| `agent-service/app/orchestrator/draft_manager.py` | Draft storage and retrieval via Redis |
-| `agent-service/tests/workers/test_section_writer.py` | SectionWriter unit tests |
-| `agent-service/tests/workers/test_consistency_checker.py` | Consistency checker tests |
-| `agent-service/tests/orchestrator/test_write_tools.py` | Write tools tests |
-| `agent-service/tests/orchestrator/test_draft_manager.py` | Draft manager tests |
-| `agent-service/tests/orchestrator/test_e2e_level3.py` | Level 3 end-to-end integration test |
+| `agent-service/app/workers/section_writer.py` | SectionWriter Worker — 编写带有上下文的一节 |
+| `agent-service/app/workers/consistency_checker.py` | 截面一致性验证 |
+| `agent-service/app/orchestrator/tools/write_tools.py` | `write_section` 和 `write_sections_parallel` 工具 |
+| `agent-service/app/orchestrator/draft_manager.py` | 通过 Redis 存储和检索草稿 |
+| `agent-service/tests/workers/test_section_writer.py` | SectionWriter 单元测试 |
+| `agent-service/tests/workers/test_consistency_checker.py` | 一致性检查器测试 |
+| `agent-service/tests/orchestrator/test_write_tools.py` | 编写工具测试 |
+| `agent-service/tests/orchestrator/test_draft_manager.py` | 草稿经理测试 |
+| `agent-service/tests/orchestrator/test_e2e_level3.py` | 3级端到端集成测试 |
 
-### New files (NestJS)
+### 新文件 (NestJS)
 
-| File | Purpose |
+| 文件 | 用途 |
 |------|---------|
-| `apps/server/src/ee/ai/agent-gateway/draft.controller.ts` | Draft REST API (GET/POST) |
-| `apps/server/src/ee/ai/agent-gateway/draft.service.ts` | Draft proxy service |
+| `apps/server/src/ee/ai/agent-gateway/draft.controller.ts` | REST API 草案（GET/POST） |
+| `apps/server/src/ee/ai/agent-gateway/draft.service.ts` | 草案代理服务 |
 
-### New files (frontend)
+### 新文件（前端）
 
-| File | Purpose |
+| 文件 | 用途 |
 |------|---------|
-| `apps/client/src/ee/ai/components/ai-creator/live-draft/DraftProgressBar.tsx` | Live writing progress UI |
-| `apps/client/src/ee/ai/components/ai-creator/live-draft/SectionNav.tsx` | Clickable chapter sidebar |
-| `apps/client/src/ee/ai/components/ai-creator/live-draft/SectionActions.tsx` | Per-section approve/rewrite |
-| `apps/client/src/ee/ai/components/ai-creator/live-draft/index.ts` | Live draft barrel export |
-| `apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftPanel.tsx` | Complete draft review panel |
-| `apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftDiffView.tsx` | Diff view against current page |
-| `apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftMergeActions.tsx` | Merge/discard actions |
-| `apps/client/src/ee/ai/components/ai-creator/draft-manager/index.ts` | Draft manager barrel export |
+| `apps/client/src/ee/ai/components/ai-creator/live-draft/DraftProgressBar.tsx` | 实时写作进度 UI |
+| `apps/client/src/ee/ai/components/ai-creator/live-draft/SectionNav.tsx` | 可点击的章节侧边栏 |
+| `apps/client/src/ee/ai/components/ai-creator/live-draft/SectionActions.tsx` | 每个部分批准/重写 |
+| `apps/client/src/ee/ai/components/ai-creator/live-draft/index.ts` | 活草案桶出口 |
+| `apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftPanel.tsx` | 完成草案审查小组 |
+| `apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftDiffView.tsx` | 与当前页面的差异视图 |
+| `apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftMergeActions.tsx` | 合并/丢弃操作 |
+| `apps/client/src/ee/ai/components/ai-creator/draft-manager/index.ts` | 草稿管理器桶出口 |
 
-### Modified files
+### 修改文件
 
-| File | Change |
+| 文件 | 变更 |
 |------|--------|
-| `agent-service/app/orchestrator/engine.py` | Register write tools, update Level 3 path |
-| `agent-service/app/orchestrator/prompts.py` | Add Level 3 orchestrator instructions |
-| `apps/server/src/ee/ai/agent-gateway/agent-gateway.module.ts` | Register draft controller |
-| `apps/client/src/ee/ai/components/ai-creator/ai-creator-chat.tsx` | Render DraftProgressBar and DraftPanel |
+| `agent-service/app/orchestrator/engine.py` | 注册写入工具，更新Level 3路径 |
+| `agent-service/app/orchestrator/prompts.py` | 添加 3 级协调器指令 |
+| `apps/server/src/ee/ai/agent-gateway/agent-gateway.module.ts` | 注册草案控制器 |
+| `apps/client/src/ee/ai/components/ai-creator/ai-creator-chat.tsx` | 渲染DraftProgressBar和DraftPanel |
 
 ---
 
-## Chunk 1: SectionWriter Core
+## 分块 1：SectionWriter 核心
 
-### Task 1: SectionWriter Worker — core implementation
+### 任务 1：SectionWriter Worker — core implementation
 
-The SectionWriter generates one section at a time with a carefully crafted context package. It streams content via SSE and enforces word budget with retry.
+SectionWriter 使用精心设计的上下文包一次生成一个节。它通过 SSE 传输内容并通过重试强制执行字数预算。
 
-**Files:**
-- Create: `agent-service/app/workers/section_writer.py`
-- Test: `agent-service/tests/workers/test_section_writer.py`
+**文件：**
+- 创建：`agent-service/app/workers/section_writer.py`
+- 测试： `agent-service/tests/workers/test_section_writer.py`
 
-**Context:** `SectionDraft` (from `app/models/draft.py`) has: `section_id`, `title`, `content`, `word_count`, `status` (pending/drafting/done/revising), `revision_count`. The `SectionPlan` (from `app/models/blueprint.py`) has: `section_id`, `title`, `target_words`, `key_points`, `asset_ids`, `visuals`, `depends_on`. The `count_words` utility is at `app/utils/word_count.py`.
+**上下文：** `SectionDraft`（来自 `app/models/draft.py`）有：`section_id`、`title`、`content`、`word_count`、`status`（待定/起草/完成/修订）、`revision_count`。 `SectionPlan`（来自 `app/models/blueprint.py`）具有：`section_id`、`title`、`target_words`、`key_points`、`asset_ids`、`visuals`、`depends_on`。 `count_words` 实用程序位于 `app/utils/word_count.py`。
 
-- [ ] **Step 1: Write failing tests for SectionWriter core**
+- [ ] **第 1 步：为SectionWriter核心编写失败测试**
 
 ```python
 # agent-service/tests/workers/test_section_writer.py
@@ -215,15 +215,15 @@ class TestSectionWriterCore:
         assert "Installation steps" in prompt  # key point
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_section_writer.py -v
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.workers.section_writer'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.workers.section_writer'`
 
-- [ ] **Step 3: Implement SectionWriter core**
+- [ ] **第 3 步：实现SectionWriter核心**
 
 ```python
 # agent-service/app/workers/section_writer.py
@@ -455,15 +455,15 @@ async def write_section(
     )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_section_writer.py -v
 ```
 
-Expected: ALL 3 PASS
+预期：全部 3 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/workers/section_writer.py agent-service/tests/workers/test_section_writer.py
@@ -472,19 +472,19 @@ git commit -m "feat(worker): add SectionWriter with context packages and word bu
 
 ---
 
-## Chunk 2: Sliding Window Context
+## 分块 2：滑动窗口上下文
 
-### Task 2: SectionWriter — sliding window context
+### 任务 2：SectionWriter — sliding window context
 
-Build the context package for each section by extracting sliding window information from previously written sections and the next section's plan.
+通过从先前编写的部分和下一部分的计划中提取滑动窗口信息，为每个部分构建上下文包。
 
-**Files:**
-- Modify: `agent-service/app/workers/section_writer.py`
-- Test: `agent-service/tests/workers/test_section_writer.py` (append)
+**文件：**
+- 修改：`agent-service/app/workers/section_writer.py`
+- 测试：`agent-service/tests/workers/test_section_writer.py`（附加）
 
-- [ ] **Step 1: Write failing tests for context package builder**
+- [ ] **第 1 步：为上下文包生成器编写失败测试**
 
-Append to `agent-service/tests/workers/test_section_writer.py`:
+附加到`agent-service/tests/workers/test_section_writer.py`：
 
 ```python
 class TestContextPackageBuilder:
@@ -615,15 +615,15 @@ class TestContextPackageBuilder:
         assert ">>> B <<<" in ctx["global_outline"] or "**B**" in ctx["global_outline"] or "[CURRENT]" in ctx["global_outline"]
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_section_writer.py::TestContextPackageBuilder -v
 ```
 
-Expected: FAIL — `ImportError: cannot import name 'build_context_package'`
+预期：失败 — `ImportError: cannot import name 'build_context_package'`
 
-- [ ] **Step 3: Implement context package builder**
+- [ ] **第 3 步：实施上下文包生成器**
 
 Add to `agent-service/app/workers/section_writer.py`:
 
@@ -713,15 +713,15 @@ def build_context_package(
     }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_section_writer.py -v
 ```
 
-Expected: ALL 8 PASS (3 from Task 1 + 5 new)
+预期：全部 8 项通过（任务 1 中的 3 项 + 5 项新任务）
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/workers/section_writer.py agent-service/tests/workers/test_section_writer.py
@@ -730,19 +730,19 @@ git commit -m "feat(worker): add sliding window context builder for SectionWrite
 
 ---
 
-## Chunk 3: Visual Generation During Writing
+## 分块 3：写作过程中的视觉生成
 
-### Task 3: SectionWriter — visual generation during writing
+### 任务 3：SectionWriter — visual generation during writing
 
-Handle VisualPlan elements during section writing: inject Mermaid instructions, reuse source images, generate AI images, and handle tables.
+在章节编写过程中处理 VisualPlan 元素：注入 Mermaid 指令、重用源图像、生成 AI 图像和处理表格。
 
-**Files:**
-- Modify: `agent-service/app/workers/section_writer.py`
-- Test: `agent-service/tests/workers/test_section_writer.py` (append)
+**文件：**
+- 修改：`agent-service/app/workers/section_writer.py`
+- 测试：`agent-service/tests/workers/test_section_writer.py`（附加）
 
-- [ ] **Step 1: Write failing tests for visual generation**
+- [ ] **第 1 步：编写视觉生成的失败测试**
 
-Append to `agent-service/tests/workers/test_section_writer.py`:
+附加到`agent-service/tests/workers/test_section_writer.py`：
 
 ```python
 class TestVisualGeneration:
@@ -829,15 +829,15 @@ class TestVisualGeneration:
         assert "| Feature | A | B |" in instruction
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_section_writer.py::TestVisualGeneration -v
 ```
 
-Expected: FAIL — `ImportError: cannot import name 'format_visual_instructions'`
+预期：失败 — `ImportError: cannot import name 'format_visual_instructions'`
 
-- [ ] **Step 3: Implement visual generation functions**
+- [ ] **第 3 步：实现视觉生成功能**
 
 Add to `agent-service/app/workers/section_writer.py`:
 
@@ -975,15 +975,15 @@ async def post_process_visuals(
     return content
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_section_writer.py -v
 ```
 
-Expected: ALL 12 PASS (8 from before + 4 new)
+预期：全部 12 个通过（之前的 8 个 + 4 个新的）
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/workers/section_writer.py agent-service/tests/workers/test_section_writer.py
@@ -992,19 +992,19 @@ git commit -m "feat(worker): add visual generation and post-processing for Secti
 
 ---
 
-## Chunk 4: Write Tools
+## 分块 4：写作工具
 
-### Task 4: Register write_section and write_sections_parallel as Orchestrator tools
+### 任务 4：Register write_section and write_sections_parallel as Orchestrator tools
 
-Create Orchestrator tools that wrap SectionWriter for single and parallel section writing.
+创建封装SectionWriter 的Orchestrator 工具，以实现单节和并行节写入。
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/write_tools.py`
-- Test: `agent-service/tests/orchestrator/test_write_tools.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/write_tools.py`
+- 测试： `agent-service/tests/orchestrator/test_write_tools.py`
 
-**Context:** Parallel writing groups sections by adjacency: adjacent sections MUST be sequential (for sliding window context), while non-adjacent sections CAN run in parallel via `asyncio.gather`.
+**上下文：** 并行编写按邻接对节进行分组：相邻节必须是连续的（对于滑动窗口上下文），而非相邻节可以通过 `asyncio.gather` 并行运行。
 
-- [ ] **Step 1: Write failing tests for write tools**
+- [ ] **第 1 步：为写入工具编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_write_tools.py
@@ -1097,15 +1097,15 @@ class TestWriteTools:
         assert len(parsed["drafts"]) == 2
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_write_tools.py -v
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.orchestrator.tools.write_tools'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.orchestrator.tools.write_tools'`
 
-- [ ] **Step 3: Implement write tools**
+- [ ] **第 3 步：实现写入工具**
 
 ```python
 # agent-service/app/orchestrator/tools/write_tools.py
@@ -1339,15 +1339,15 @@ async def write_sections_parallel_impl(
     }, ensure_ascii=False)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_write_tools.py -v
 ```
 
-Expected: ALL 3 PASS
+预期：全部 3 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/tools/write_tools.py agent-service/tests/orchestrator/test_write_tools.py
@@ -1356,19 +1356,19 @@ git commit -m "feat(orchestrator): add write_section and write_sections_parallel
 
 ---
 
-## Chunk 5: Draft Manager — Backend
+## 分块 5：Draft Manager：后端
 
-### Task 5: Draft Manager — backend
+### 任务 5：Draft Manager — 后端
 
-Store and retrieve drafts in Redis with TTL, independent from the page content.
+使用 TTL 在 Redis 中存储和检索草稿，独立于页面内容。
 
-**Files:**
-- Create: `agent-service/app/orchestrator/draft_manager.py`
-- Test: `agent-service/tests/orchestrator/test_draft_manager.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/draft_manager.py`
+- 测试： `agent-service/tests/orchestrator/test_draft_manager.py`
 
-**Context:** The agent-service connects to Redis via `app/config.py` settings (`settings.redis_url`). Drafts are stored as JSON with a 24-hour TTL. Each draft is keyed by `draft:{workspace_id}:{page_id}:{task_id}`.
+**上下文：** 代理服务通过 `app/config.py` 设置 (`settings.redis_url`) 连接到 Redis。草稿以 JSON 形式存储，具有 24 小时 TTL。每个草稿均由 `draft:{workspace_id}:{page_id}:{task_id}` 键入。
 
-- [ ] **Step 1: Write failing tests for Draft Manager**
+- [ ] **第 1 步：为 Draft Manager 编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_draft_manager.py
@@ -1470,15 +1470,15 @@ class TestDraftManager:
         mock_redis.delete.assert_called_once_with("draft:ws-1:p-1:task-1")
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_draft_manager.py -v
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.orchestrator.draft_manager'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.orchestrator.draft_manager'`
 
-- [ ] **Step 3: Implement Draft Manager**
+- [ ] **第 3 步：实施草稿管理器**
 
 ```python
 # agent-service/app/orchestrator/draft_manager.py
@@ -1611,15 +1611,15 @@ class DraftManager:
         await self.redis.delete(key)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_draft_manager.py -v
 ```
 
-Expected: ALL 4 PASS
+预期：全部 4 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/draft_manager.py agent-service/tests/orchestrator/test_draft_manager.py
@@ -1628,20 +1628,20 @@ git commit -m "feat(orchestrator): add Redis-backed Draft Manager with TTL and s
 
 ---
 
-## Chunk 6: Draft Manager — NestJS API
+## 分块 6：Draft Manager：NestJS API
 
-### Task 6: Draft Manager — NestJS API
+### 任务 6：Draft Manager：NestJS API
 
-Add REST endpoints to the NestJS gateway that proxy draft operations to the Python service.
+将 REST 端点添加到 NestJS 网关，将草稿操作代理到 Python 服务。
 
-**Files:**
-- Create: `apps/server/src/ee/ai/agent-gateway/draft.controller.ts`
-- Create: `apps/server/src/ee/ai/agent-gateway/draft.service.ts`
-- Modify: `apps/server/src/ee/ai/agent-gateway/agent-gateway.module.ts`
+**文件：**
+- 创建：`apps/server/src/ee/ai/agent-gateway/draft.controller.ts`
+- 创建：`apps/server/src/ee/ai/agent-gateway/draft.service.ts`
+- 修改：`apps/server/src/ee/ai/agent-gateway/agent-gateway.module.ts`
 
-**Context:** The agent-gateway module (`apps/server/src/ee/ai/agent-gateway/`) proxies requests to the Python agent-service. All APIs use POST method per project convention. The gateway uses `http.request` for SSE and `httpx`/`fetch` for regular REST calls.
+**上下文：** 代理网关模块 (`apps/server/src/ee/ai/agent-gateway/`) 将请求代理到 Python 代理服务。所有 API 根据项目约定使用 POST 方法。网关使用 `http.request` 进行 SSE，使用 `httpx`/`fetch` 进行常规 REST 调用。
 
-- [ ] **Step 1: Create draft service**
+- [ ] **第 1 步：创建草稿服务**
 
 ```typescript
 // apps/server/src/ee/ai/agent-gateway/draft.service.ts
@@ -1710,7 +1710,7 @@ export class DraftService {
 }
 ```
 
-- [ ] **Step 2: Create draft controller**
+- [ ] **第 2 步：创建草稿控制器**
 
 ```typescript
 // apps/server/src/ee/ai/agent-gateway/draft.controller.ts
@@ -1771,9 +1771,9 @@ export class DraftController {
 }
 ```
 
-- [ ] **Step 3: Register in agent-gateway module**
+- [ ] **第 3 步：在代理网关模块中注册**
 
-Update `apps/server/src/ee/ai/agent-gateway/agent-gateway.module.ts` to include:
+更新 `apps/server/src/ee/ai/agent-gateway/agent-gateway.module.ts` 以包括：
 
 ```typescript
 import { DraftController } from './draft.controller';
@@ -1786,7 +1786,7 @@ import { DraftService } from './draft.service';
 })
 ```
 
-- [ ] **Step 4: Add Python endpoints for draft operations**
+- [ ] **步骤 4：为草稿操作添加 Python 端点**
 
 Add to `agent-service/app/main.py`:
 
@@ -1833,15 +1833,15 @@ async def delete_draft(request: Request):
     return {"status": "ok"}
 ```
 
-- [ ] **Step 5: Verify TypeScript compiles**
+- [ ] **第 5 步：验证 TypeScript 是否编译**
 
 ```bash
 cd /e/test/Docmost && npx tsc --noEmit --project apps/server/tsconfig.json 2>&1 | head -20
 ```
 
-Expected: No errors related to draft controller/service
+预期：没有与草案控制器/服务相关的错误
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
 ```bash
 git add apps/server/src/ee/ai/agent-gateway/draft.controller.ts apps/server/src/ee/ai/agent-gateway/draft.service.ts apps/server/src/ee/ai/agent-gateway/agent-gateway.module.ts agent-service/app/main.py
@@ -1850,21 +1850,21 @@ git commit -m "feat(gateway): add Draft Manager NestJS API with Python proxy end
 
 ---
 
-## Chunk 7: Live Draft Frontend
+## 分块 7：实时草稿前端
 
-### Task 7: Live Draft frontend — DraftProgressBar
+### 任务 7：Live Draft 前端 — DraftProgressBar
 
-Show real-time writing progress with chapter markers and per-section actions.
+通过章节标记和每节操作显示实时写作进度。
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/live-draft/DraftProgressBar.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/live-draft/SectionNav.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/live-draft/SectionActions.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/live-draft/index.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/live-draft/DraftProgressBar.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/live-draft/SectionNav.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/live-draft/SectionActions.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/live-draft/index.ts`
 
-**Context:** SSE events include `section_progress` with `{section_id, status, title, word_count}`. The frontend tracks which sections are complete and shows progress. Uses Mantine Progress, List, and ActionIcon components.
+**上下文：** SSE 事件包括 `section_progress` 和 `{section_id, status, title, word_count}`。前端跟踪哪些部分已完成并显示进度。使用 Mantine Progress、List 和 ActionIcon 组件。
 
-- [ ] **Step 1: Create DraftProgressBar component**
+- [ ] **第 1 步：创建DraftProgressBar组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/live-draft/DraftProgressBar.tsx
@@ -1933,7 +1933,7 @@ export function DraftProgressBar({
 }
 ```
 
-- [ ] **Step 2: Create SectionNav component**
+- [ ] **第 2 步：创建SectionNav组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/live-draft/SectionNav.tsx
@@ -1998,7 +1998,7 @@ export function SectionNav({
 }
 ```
 
-- [ ] **Step 3: Create SectionActions component**
+- [ ] **第 3 步：创建SectionActions组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/live-draft/SectionActions.tsx
@@ -2051,7 +2051,7 @@ export function SectionActions({
 }
 ```
 
-- [ ] **Step 4: Create barrel export**
+- [ ] **第 4 步：创建桶导出**
 
 ```typescript
 // apps/client/src/ee/ai/components/ai-creator/live-draft/index.ts
@@ -2060,15 +2060,15 @@ export { SectionNav } from "./SectionNav";
 export { SectionActions } from "./SectionActions";
 ```
 
-- [ ] **Step 5: Verify TypeScript compiles**
+- [ ] **第 5 步：验证 TypeScript 是否编译**
 
 ```bash
 cd /e/test/Docmost && npx tsc --noEmit --project apps/client/tsconfig.json 2>&1 | head -20
 ```
 
-Expected: No errors
+预期：没有错误
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/live-draft/
@@ -2077,21 +2077,21 @@ git commit -m "feat(ui): add live draft progress bar, section nav, and section a
 
 ---
 
-## Chunk 8: Draft Panel Frontend
+## 分块 8：草稿面板前端
 
-### Task 8: Content merge to editor
+### 任务 8：Content merge to editor
 
-Build the draft review panel with diff view and merge actions.
+使用差异视图和合并操作构建草稿审核面板。
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftPanel.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftDiffView.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftMergeActions.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/draft-manager/index.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftPanel.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftDiffView.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftMergeActions.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/draft-manager/index.ts`
 
-**Context:** The existing `creatorCommit` API merges content into the page via the Yjs document. The draft panel shows the complete generated draft, optionally with a diff against the current page content. Uses Mantine SegmentedControl for view modes and Button for actions.
+**上下文：** 现有的 `creatorCommit` API 通过 Yjs 文档将内容合并到页面中。草稿面板显示完整生成的草稿，可以选择与当前页面内容进行比较。使用 Mantine SegmentedControl 进行视图模式，使用 Button 进行操作。
 
-- [ ] **Step 1: Create DraftDiffView component**
+- [ ] **第 1 步：创建DraftDiffView组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftDiffView.tsx
@@ -2136,7 +2136,7 @@ export function DraftDiffView({
 }
 ```
 
-- [ ] **Step 2: Create DraftMergeActions component**
+- [ ] **第 2 步：创建DraftMergeActions组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftMergeActions.tsx
@@ -2182,7 +2182,7 @@ export function DraftMergeActions({
 }
 ```
 
-- [ ] **Step 3: Create DraftPanel component**
+- [ ] **第 3 步：创建DraftPanel组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/draft-manager/DraftPanel.tsx
@@ -2261,7 +2261,7 @@ export function DraftPanel({
 }
 ```
 
-- [ ] **Step 4: Create barrel export**
+- [ ] **第 4 步：创建桶导出**
 
 ```typescript
 // apps/client/src/ee/ai/components/ai-creator/draft-manager/index.ts
@@ -2270,15 +2270,15 @@ export { DraftDiffView } from "./DraftDiffView";
 export { DraftMergeActions } from "./DraftMergeActions";
 ```
 
-- [ ] **Step 5: Verify TypeScript compiles**
+- [ ] **第 5 步：验证 TypeScript 是否编译**
 
 ```bash
 cd /e/test/Docmost && npx tsc --noEmit --project apps/client/tsconfig.json 2>&1 | head -20
 ```
 
-Expected: No errors
+预期：没有错误
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/draft-manager/
@@ -2287,19 +2287,19 @@ git commit -m "feat(ui): add DraftPanel with diff view and merge actions"
 
 ---
 
-## Chunk 9: Consistency Checker
+## 分块 9：一致性检查器
 
-### Task 9: Cross-section consistency scan
+### 任务 9：Cross-section consistency scan
 
-Validate consistency across all written sections: heading numbering, term usage, cross-references, and transition quality.
+验证所有书面部分的一致性：标题编号、术语使用、交叉引用和过渡质量。
 
-**Files:**
-- Create: `agent-service/app/workers/consistency_checker.py`
-- Test: `agent-service/tests/workers/test_consistency_checker.py`
+**文件：**
+- 创建：`agent-service/app/workers/consistency_checker.py`
+- 测试： `agent-service/tests/workers/test_consistency_checker.py`
 
-**Context:** The consistency checker runs AFTER all sections are written but BEFORE finalize. It returns a list of issues that can be included in the ReviewReport (Phase 4).
+**上下文：** 一致性检查器在所有部分写入之后但最终确定之前运行。它返回可包含在 ReviewReport（第 4 阶段）中的问题列表。
 
-- [ ] **Step 1: Write failing tests for consistency checker**
+- [ ] **第 1 步：为一致性检查器编写失败测试**
 
 ```python
 # agent-service/tests/workers/test_consistency_checker.py
@@ -2425,15 +2425,15 @@ class TestConsistencyChecker:
         assert isinstance(issues, list)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_consistency_checker.py -v
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.workers.consistency_checker'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.workers.consistency_checker'`
 
-- [ ] **Step 3: Implement consistency checker**
+- [ ] **第 3 步：实施一致性检查器**
 
 ```python
 # agent-service/app/workers/consistency_checker.py
@@ -2619,15 +2619,15 @@ def check_consistency(drafts: list[SectionDraft]) -> list[ConsistencyIssue]:
     return issues
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_consistency_checker.py -v
 ```
 
-Expected: ALL 6 PASS
+预期：全部 6 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/workers/consistency_checker.py agent-service/tests/workers/test_consistency_checker.py
@@ -2636,16 +2636,16 @@ git commit -m "feat(worker): add cross-section consistency checker for headings,
 
 ---
 
-## Chunk 10: Level 3 End-to-End Test
+## 分块 10：Level 3 端到端测试
 
-### Task 10: Level 3 end-to-end test
+### 任务 10：Level 3 end-to-end test
 
-Test the full Level 3 pipeline: upload → parse → brief → blueprint → write → consistency → done.
+测试完整的 3 级管道：上传 → 解析 → 简要 → 蓝图 → 写入 → 一致性 → 完成。
 
-**Files:**
-- Create: `agent-service/tests/orchestrator/test_e2e_level3.py`
+**文件：**
+- 创建：`agent-service/tests/orchestrator/test_e2e_level3.py`
 
-- [ ] **Step 1: Write Level 3 integration test**
+- [ ] **第 1 步：编写 3 级集成测试**
 
 ```python
 # agent-service/tests/orchestrator/test_e2e_level3.py
@@ -2813,15 +2813,15 @@ class TestLevel3E2E:
         assert abs(total - target) / target <= tolerance
 ```
 
-- [ ] **Step 2: Run tests**
+- [ ] **第 2 步：运行测试**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_e2e_level3.py -v
 ```
 
-Expected: ALL 4 PASS
+预期：全部 4 项通过
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
 ```bash
 git add agent-service/tests/orchestrator/test_e2e_level3.py
@@ -2830,19 +2830,19 @@ git commit -m "test(orchestrator): add Level 3 end-to-end integration tests with
 
 ---
 
-## Chunk 11: Orchestrator System Prompt Update
+## 分块 11：编排器系统提示词更新
 
-### Task 11: Orchestrator system prompt update for Level 3
+### 任务 11：Orchestrator system prompt update for Level 3
 
-Update the Orchestrator system prompt with Level 3 decision logic and multi-document merge instructions.
+使用 3 级决策逻辑和多文档合并指令更新 Orchestrator 系统提示。
 
-**Files:**
-- Modify: `agent-service/app/orchestrator/prompts.py`
-- Modify: `agent-service/app/orchestrator/engine.py`
+**文件：**
+- 修改：`agent-service/app/orchestrator/prompts.py`
+- 修改：`agent-service/app/orchestrator/engine.py`
 
-- [ ] **Step 1: Add Level 3 instructions to prompts.py**
+- [ ] **第 1 步：将3级指令添加到promps.py**
 
-Add the following to `agent-service/app/orchestrator/prompts.py`:
+将以下内容添加到 `agent-service/app/orchestrator/prompts.py`：
 
 ```python
 _LEVEL3_INSTRUCTIONS = """
@@ -2885,9 +2885,9 @@ When multiple files are uploaded:
 """
 ```
 
-- [ ] **Step 2: Register write and consistency tools in engine.py**
+- [ ] **第 2 步：在engine.py中注册写入和一致性工具**
 
-Update tool registration in `agent-service/app/orchestrator/engine.py`:
+更新 `agent-service/app/orchestrator/engine.py` 中的工具注册：
 
 ```python
 # Add imports
@@ -2923,32 +2923,32 @@ def consistency_check_tool(ctx, drafts_json: str) -> str:
     return json.dumps(issues, ensure_ascii=False)
 ```
 
-- [ ] **Step 3: Verify engine starts without errors**
+- [ ] **第 3 步：验证引擎启动时没有错误**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -c "from app.orchestrator.engine import create_orchestrator_agent; print('OK')"
 ```
 
-Expected: prints "OK"
+预期：打印“OK”
 
-- [ ] **Step 4: Run full test suite**
+- [ ] **第 4 步：运行完整的测试套件**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/ -v --tb=short
 ```
 
-Expected: All tests pass
+预期：所有测试均通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/prompts.py agent-service/app/orchestrator/engine.py
 git commit -m "feat(orchestrator): add Level 3 system prompt with multi-document merge and write tools"
 ```
-## Implementation Status Update (2026-03-19)
+## 实施状态更新 (2026-03-19)
 
-- The writer lifecycle is now `initial draft -> optional targeted revision`, replacing the previous compounded retry loops.
-- Section revisions operate on the previous draft instead of restarting from scratch, reducing token waste and repeated near-duplicate output.
-- Text is stabilized before any generated or reused images are materialized, so text retries no longer trigger duplicate image generation or uploads.
-- Section runtime state now records `write_attempts`, image status, approved source image id, and degraded reason for the workbench document tree.
-- Browser acceptance confirms the outline/review/insert path persists markdown with the expected heading, table, and mermaid artifacts.
+- 写入器生命周期现在为 `initial draft -> optional targeted revision`，取代了之前的复合重试循环。
+- 章节修订基于之前的草案，而不是从头开始，减少了令牌浪费和重复的近乎重复的输出。
+- 在任何生成或重复使用的图像具体化之前文本已稳定，因此文本重试不再触发重复的图像生成或上传。
+- 部分运行时状态现在记录 `write_attempts`、图像状态、批准的源图像 ID 以及工作台文档树的降级原因。
+- 浏览器接受确认大纲/审阅/插入路径持续Markdown，并具有预期的标题、表格和Mermaid 内容。

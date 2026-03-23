@@ -3,7 +3,7 @@
 > **日期**: 2026-03-20
 > **状态**: 设计已确认，待实施
 > **优先级**: 文档优化 > 划词改写 > 从零创作
-> **技术栈**: PydanticAI（保留）、Mantine 8、TipTap 3 / ProseMirror、MineRU
+> **技术栈**：PydanticAI（保留）、Mantine 8、TipTap 3 / ProseMirror、MineRU
 
 ---
 
@@ -13,16 +13,16 @@
 
 | 阶段 | 时间 | 内容 | 遗留问题 |
 |------|------|------|----------|
-| V1 | 02-26 | 三模式切换（create/edit/chat） | 模式切换混乱 |
-| UI 重构 | 02-27 | 统一对话 + 可调面板 + hljs | Mermaid 不渲染 |
-| 五阶段 | 03-04 | Explorer→Clarifier→Proposer→Outliner→Writer | 流程过重 |
+| V1 | 02-26 | 三模式切换（创建/编辑/聊天） | 模式切换混乱 |
+| UI 重构 | 02-27 | 统一对话 + 可调面板 + hljs | Mermaid不渲染 |
+| 五阶段 | 03-04 | 探索者→澄清者→提议者→大纲→作家 | 流程过重 |
 | 深度分析 | 03-14 | 发现 13 个 P0/P1 bug | SectionWriter 上下文丢失 |
-| V2 PydanticAI | 03-14+ | OrchestratorEngine + Workers | 多数 bug 未修复 |
+| V2PydanticAI | 03-14+ | Orchestrator 引擎 + Workers | 多数 bug 未修复 |
 
 ### 1.2 用户反馈的 5 个核心问题
 
-1. **UI 界面错乱** — 3 列 Workbench（Document Tree + Live Draft + Activity Log）+ 3 个弹窗（Brief/Blueprint/Review），信息过载
-2. **分章节写作不连贯** — SectionWriter 独立写每章，缺失 user_message/system_prompt/template_prompt，章节间仅 500 字尾部衔接；PDF/DOC 优化时图文错乱
+1. **UI 界面错乱** — 3 列工作台（文档树+实时草稿+活动日志）+3 个弹窗（Brief/Blueprint/Review），信息过载
+2. **分章节写作不连贯** —SectionWriter 独立写每章，取消 user_message/system_prompt/template_prompt，章节间仅 500 字尾部衔接；PDF/DOC 优化时图文错乱
 3. **对话与文档衔接差** — 对话历史和文档操作指令混在同一个 Activity Log 里
 4. **划词改写冲突** — 选中文本通过 `buildPrompt()` 注入到普通对话流中，与历史消息混杂
 5. **重新优化丢失内容** — overwrite 模式直接清空编辑器，无快照/版本回滚
@@ -43,7 +43,7 @@
 
 ### 2.1 核心原则
 
-> **AI 应该作用于文档（operate ON the document），而不是与文档并列（beside the document）。**
+> **AI应该作用于文档（在文档上进行操作），而不是与文档并列（在文档旁边）。**
 
 - **文档为主角**：编辑器始终占主要空间，AI 面板可折叠
 - **命令取代对话**：用户给 AI 下指令，不与 AI 聊天
@@ -52,24 +52,24 @@
 
 ### 2.2 参考架构
 
-基于 Anthropic《Building Effective AI Agents》的架构模式：
+基于 Anthropic《Building effective AI Agents》的模式架构：
 
 | 场景 | Claude 架构模式 | 应用方式 |
 |------|----------------|---------|
-| 划词改写 | Augmented LLM | 单次 LLM 调用，最简模式 |
-| 文档优化 | Routing → Prompt Chaining | 按复杂度路由，解析→分析→改写顺序链 |
-| 从零创作 | Prompt Chaining | 可选 Brief → 生成全文 |
+| 划词改写 | 增强型 LLM | 单次 LLM 调用，最简模式 |
+| 文档优化 | 路由 → 提示链 | 按复杂度路由，解析→分析→改写顺序链 |
+| 从零创作 | 提示链 | 可选 Brief → 生成全文 |
 
-关键指导：*"Start simple. Only add complexity when simpler approaches fail."*
+关键指导：*“从简单开始。只有在更简单的方法失败时才增加复杂性。”*
 
 ### 2.3 业界参考
 
 | 工具 | 借鉴的模式 |
 |------|-----------|
 | BlockNote | Fork-and-Merge — AI 在文档副本上操作，原文不变直到用户接受 |
-| TipTap AI Toolkit | Selection Locking、工具调用式编辑 |
-| Novel.sh | 极简 Replace / Insert Below 两按钮 |
-| Copilot in Word | Keep / Regenerate / Discard / Fine-tune 四步审阅 |
+| TipTap 人工智能工具包 | 选择锁定、工具调用式编辑 |
+| Novel.sh | 极简 在两个按钮下方替换/插入 |
+| Word Copilot | 保留/重新生成/丢弃/微调四步审阅 |
 | Notion AI | 内联触发，无持久面板，文档始终为主角 |
 
 ---
@@ -101,12 +101,12 @@
 
 | 维度 | A: 划词改写 | B: 文档优化 | C: 从零创作 |
 |------|-----------|-----------|-----------|
-| **触发** | 选中文字 → Bubble Menu | 命令面板按钮/输入 | 命令面板输入（空白页） |
+| **触发** | 选中文字 → 气泡菜单 | 命令面板按钮/输入 | 命令面板输入（空白页） |
 | **API** | `POST /api/ai/generate/stream` | `POST /api/ai/document/optimize` | `POST /api/ai/document/create` |
 | **后端处理** | 单次 LLM 调用 | 解析 → 生成 → 变更摘要 | 解析 → [Brief] → 生成 |
 | **前端渲染** | ai-menu 浮窗 | 审阅面板 + Undo | 流式写入编辑器 |
-| **内容安全** | 仅替换选区 | Snapshot + Undo | 空白页，无需保护 |
-| **图片处理** | 不涉及 | Prompt 约束 + 摘要验证 | MineRU 提取 + CDN rehost |
+| **内容安全** | 仅替换选区 | 快照+撤消 | 空白页，无需保护 |
+| **图片处理** | 不涉及 | Prompt 约束 + 摘要验证 | MineRU 提取 + CDN 重新托管 |
 | **对话历史** | 无 | 无（操作记录） | 无（操作记录） |
 
 ### 3.3 两层后端架构
@@ -127,8 +127,8 @@ Layer 2: Prompt Chaining（顺序链）
 
 **保留不动**：
 - MineRU 解析管道：`mineru_client.py` + `mineru_parser.py` + `asset_parser.py`
-- 图片 rehost：`source_image_store.py` → Docmost CDN URL
-- LLM 工厂：`llm_factory.py`（PydanticAI multi-model）
+- 图片转发：`source_image_store.py` → Docmost CDN URL
+- LLM 工厂：`llm_factory.py`（PydanticAI 多模型）
 - 模板系统：三层覆盖（系统 → 工作区 → 用户）
 - NestJS 网关：`http.request` SSE 代理（非 fetch）
 - SSE 事件协议：`asyncio.Queue` 侧信道推送
@@ -186,7 +186,7 @@ apps/client/src/ee/ai/components/
 **状态 2：审阅态（文档优化后）**
 - 右侧面板切换为审阅面板（ReviewSidebar）
 - v1：变更摘要（修改数、图片保留率）+ 接受/撤销/重新优化按钮
-- v2：变更列表（可点击跳转）+ 编辑器内 inline diff decorations
+- v2：变更列表（可点击跳转）+编辑器内嵌差异装饰
 
 **状态 3：划词改写态**
 - 现有 ai-menu 浮窗独立弹出
@@ -195,7 +195,7 @@ apps/client/src/ee/ai/components/
 
 ### 4.3 状态管理
 
-**Jotai Atoms（4 个）**：
+**佐泰原子（4 个）**：
 
 ```typescript
 aiCreatorFilesAtom: atom<File[]>([])                   // 上传文件
@@ -204,7 +204,7 @@ aiPanelModeAtom: atom<'command' | 'review' | 'hidden'>('command')  // 面板状�
 aiSelectionPopoverAtom: atom<SelectionState | null>(null)  // 选区状态（ai-menu 用）
 ```
 
-**Session State（Reducer）**：
+**会话状态（Reducer）**：
 
 ```typescript
 interface AiSessionState {
@@ -226,7 +226,7 @@ interface AiSessionState {
 }
 ```
 
-### 4.4 Hooks
+### 4.4 挂钩
 
 ```typescript
 useAiCommand()        // 命令面板：submit, cancel, recentOps, snapshot 管理
@@ -239,10 +239,10 @@ useAiStream()         // 通用 SSE 流处理（供以上 hook 内部使用）
 
 | 维度 | ai-menu（选区级） | QuickActions（文档级） |
 |------|-----------------|---------------------|
-| 触发 | 选中文字 → Bubble Menu | 命令面板按钮 |
+| 触发 | 选中文字 → 气泡菜单 | 命令面板按钮 |
 | 作用范围 | 选中的文字 | 整个文档 |
-| API | `POST /api/ai/generate/stream`（现有） | `POST /api/ai/document/optimize`（新） |
-| 结果呈现 | ai-menu 内预览 + Replace/Insert | 编辑器内替换 + 审阅面板 |
+| 应用程序编程接口 | `POST /api/ai/generate/stream`（现有） | `POST /api/ai/document/optimize`（新） |
+| 结果呈现 | ai-menu 内预览 + 替换/插入 | 编辑器内替换 + 审阅面板 |
 | 状态 | 独立（与命令面板无关） | 命令面板管理 |
 
 ---
@@ -411,7 +411,7 @@ def generate_change_summary(original: str, optimized: str, asset_map) -> ChangeS
 
 ## 6. 内容安全
 
-### 6.1 v1: Snapshot + Atomic Transaction + Undo
+### 6.1 v1：快照+原子事务+撤消
 
 ```typescript
 async function submitDocumentOptimize(instruction: string) {
@@ -474,7 +474,7 @@ Layer 3 — 用户兜底
 
 ---
 
-## 7. v2: Inline Diff 增强
+## 7. v2：内联差异增强
 
 ### 7.1 Diff 引擎（后端）
 
@@ -625,17 +625,17 @@ function createDiffPlugin(changes: BlockChange[]): Plugin {
 |---------|------|---------|
 | 流程图/时序图/甘特图 | Mermaid 11.12 | 代码块 `lang=mermaid` |
 | 自由手绘/白板 | Excalidraw 0.18 | 专用节点 |
-| 专业工程图 | Draw.io (react-drawio) | 专用节点 |
-| 数据表格 | CustomTable + DnD | 原生表格 |
-| 数学公式 | KaTeX 0.16 | `$$..$$` |
+| 专业工程图 | Draw.io（react-drawio） | 专用节点 |
+| 数据表格 | 自定义表 + 免打扰 | 原生表格 |
+| 数学公式 | 凯特克斯 0.16 | `$$..$$` |
 
 ### 8.2 AI 生成视觉元素的决策规则
 
 | AI 检测到的内容 | 自动生成为 | 原因 |
 |---------------|-----------|------|
-| 流程/步骤描述 | Mermaid flowchart 代码块 | 可编辑，LLM 生成准确率 >90% |
-| 数据对比/列表 | TipTap Table HTML | 原生可编辑 |
-| 数学表达式 | KaTeX | 已有渲染器 |
+| 流程/步骤描述 | Mermaid 流程图代码块 | 可编辑，LLM 生成准确率 >90% |
+| 数据对比/列表 | 提示点击表格 HTML | 原生可编辑 |
+| 数学表达式 | 凯泰克斯 | 已有渲染器 |
 | 源文档截图 | 复用原图（MineRU 提取） | 保真，不重生成 |
 | 概念性插图 | 不自动生成 | 用户显式请求时才触发 |
 
@@ -651,10 +651,10 @@ function createDiffPlugin(changes: BlockChange[]): Plugin {
 
 ## 9. 端到端数据流
 
-### 9.1 Channel A: 划词改写
+### 9.1 频道A：划词改写
 
 ```
-选中文字 → Bubble Menu → "Ask AI" → ai-menu 浮窗
+选中文字 → 气泡菜单 → "Ask AI" → ai-menu 浮窗
     ↓
 选择动作（润色/缩写/翻译/自定义）
     ↓
@@ -668,7 +668,7 @@ SSE 流式返回 → result-preview 显示
 操作记录写入 recentOps
 ```
 
-### 9.2 Channel B: 文档优化
+### 9.2 渠道 B：文档优化
 
 ```
 命令面板: [优化全文] / 上传文件 + 指令 / 自定义指令
@@ -683,7 +683,7 @@ POST /api/ai/document/optimize (multipart if files)
 NestJS Gateway → http.request → Agent Service
     ↓
 handle_document():
-    ├── 解析文件 → AssetMap → 图片 rehost
+    ├── 解析文件 → AssetMap → 图片 重新托管
     ├── 构建 Prompt（含图片保护规则）
     ├── LLM 流式生成
     └── 变更摘要 / block_changes（v2）
@@ -693,7 +693,7 @@ handle_document():
     v2: 注册 DiffDecorationPlugin → 逐条 Accept/Reject → 应用
 ```
 
-### 9.3 Channel C: 从零创作
+### 9.3 Channel C：从零创作
 
 ```
 空白页命令面板: 输入指令 + [可选上传文件] + [可选模板]
@@ -717,15 +717,15 @@ handle_document():
 
 ### 10.1 原则
 
-渐进式替换，不中断现有功能。每一步都保持系统可用。Feature Flag 控制新旧面板切换。
+渐进式替换，不中断现有功能。每一步都保持系统可用。 Feature Flag 控制新旧面板切换。
 
 ### 10.2 实施计划
 
-#### Phase 0: 准备（第 0 周）
-- 创建 feature 分支 `feat/ai-creator-v3`
+#### 阶段 0: 准备（第 0 周）
+- 功能创建路径 `feat/ai-creator-v3`
 - 确保现有测试全部通过（基线）
 
-#### Phase 1: 后端简化（第 1-2 周）
+#### 阶段 1: 后端简化（第 1-2 周）
 - 新建 `handle_simple()` + `handle_document()` 在 engine.py（与旧 `run()` 并存）
 - 新建 NestJS 端点 `POST /api/ai/document/optimize` 和 `/create`
 - 文档优化 Prompt 策略（图片保护规则）
@@ -733,43 +733,43 @@ handle_document():
 - Brief 简化（从零创作用，可选）
 - 新端点单元测试
 
-#### Phase 2: 前端命令面板（第 2-3 周）
+#### 阶段 2: 前端命令面板（第 2-3 周）
 - 新建 AiCommandPanel（Mantine 组件）
-- QuickActions 快捷按钮
-- CommandInput 输入框 + 文件上传
-- RecentOps 操作记录
-- useAiCommand hook
-- Snapshot 机制
+- 快速操作快捷按钮
+- CommandInput 输入框+文件上传
+-RecentOps 操作记录
+- 使用 AiCommand 钩子
+- 快照机制
 - ReviewSidebar v1（变更摘要 + 接受/撤销/重新优化）
-- 面板模式切换（command ↔ review ↔ running）
-- Feature Flag `AI_CREATOR_V3` 控制新旧面板
+- 面板模式切换（命令↔查看↔运行）
+- 功能标志 `AI_CREATOR_V3` 控制新旧面板
 
-#### Phase 3: ai-menu 解耦（第 3 周）
+#### 阶段 3: ai-menu 解耦（第 3 周）
 - ai-menu 移除对 `aiCreatorSelectionAtom` 的依赖
 - ai-menu 移除对 ai-creator 对话历史的读写
 - 操作完成后写入 recentOps
 - 验证划词改写不再影响命令面板状态
 
-#### Phase 4: 从零创作（第 3-4 周）
+#### 阶段 4: 从零创作（第 3-4 周）
 - 命令面板检测空白页 → 调用 `/api/ai/document/create`
 - Brief 确认卡片（简化版）
 - 流式内容写入编辑器
-- maybeExtractTitle
+- 也许提取标题
 
-#### Phase 5: 清理旧代码（第 4 周）
+#### 阶段 5: 清理旧代码（第 4 周）
 - 前端删除：ai-creator-panel、messages、DocumentTree、LiveDraft、BlueprintModal、ReviewModal
-- 后端删除：SectionWriter、create_blueprint、evaluate、fix_tools、evaluator、fixer 等
+- 删除：SectionWriter、create_blueprint、evaluate、fix_tools、evaluator、fixer 等
 - 保留旧端点空壳返回 410 Gone
 
-#### Phase 6: v2 Inline Diff（第 5-6 周）
+#### 阶段 6: v2 Inline Diff（第 5-6 周）
 - 后端 `compute_block_changes()` diff 引擎
 - 后端 `handle_document()` 增加 `diffMode` 支持
-- 前端 `DiffDecorationPlugin`（ProseMirror decoration）
-- 逐条 Accept/Reject 按钮
+- 前端 `DiffDecorationPlugin`（ProseMirror 装饰）
+- 逐条接受/拒绝按钮
 - 审阅面板增强：变更列表 + 进度条 + 跳转定位
 - 测试：中英文混合、含图片、含 Mermaid
 
-### 10.3 Feature Flag
+### 10.3 功能标志
 
 ```typescript
 // .env
@@ -782,7 +782,7 @@ const useV3 = useFeatureFlag('AI_CREATOR_V3')
 
 ### 10.4 回滚方案
 
-- Phase 1-4：关闭 Feature Flag → 回到旧面板
+- 第1-4阶段：关闭功能标志→返回旧面板
 - Phase 5：不执行删除即可
 - Phase 6：v2 功能独立，不影响 v1
 
@@ -790,18 +790,18 @@ const useV3 = useFeatureFlag('AI_CREATOR_V3')
 
 ## 11. 完整需求矩阵
 
-| 模块 | v1（Phase 1-5） | v2（Phase 6） |
+| 模块 | v1（1-5期） | v2（第6阶段） |
 |------|----------------|---------------|
 | AI 命令面板 | ✅ 快捷操作 + 输入框 + 操作记录 | — |
-| 文档优化 API | ✅ 整文生成 + 变更摘要 | ✅ + block_changes 结构化返回 |
-| 内容安全 | ✅ Snapshot + Undo | ✅ + 逐条 Accept/Reject |
+| 文档优化 API | ✅ 整文生成 + 变更摘要 | ✅ + block_changes 包装返回 |
+| 内容安全 | ✅ 快照+撤消 | ✅ + 逐条 接受/拒绝 |
 | 审阅面板 | ✅ 变更摘要 + 接受/撤销/重新优化 | ✅ + 变更列表 + 进度条 + 跳转 |
-| Inline Diff | — | ✅ ProseMirror Decoration Plugin |
-| 图片保护 | ✅ Prompt 约束 + 摘要验证 + Undo | ✅ + Diff 跳过图片 block |
+| 内联差异 | — | ✅ ProseMirror 装饰插件 |
+| 图片保护 | ✅ 提示约束+摘要验证+撤消 | ✅ + Diff 跳过图片块 |
 | 划词改写解耦 | ✅ ai-menu 状态隔离 | — |
 | 从零创作 | ✅ 流式写入 + 可选 Brief | — |
-| Diff 引擎 | — | ✅ block 对齐 + 句子级 diff |
-| 视觉元素 | ✅ Mermaid/Table 自动识别 | — |
+| Diff 引擎 | — | ✅ 块对齐 + 句子级 diff |
+| 视觉元素 | ✅ Mermaid/表格自动识别 | — |
 
 ---
 
@@ -817,7 +817,7 @@ const useV3 = useFeatureFlag('AI_CREATOR_V3')
 
 ### v2 验收标准
 - [ ] Inline Diff：红删绿增正确显示
-- [ ] 逐条 Accept/Reject 功能正常
+- [ ]逐条接受/拒绝功能正常
 - [ ] 图片/Mermaid/表格不参与 diff
 - [ ] 变更列表点击可跳转到编辑器对应位置
 - [ ] 全部接受/全部拒绝批量操作正常
@@ -832,19 +832,19 @@ const useV3 = useFeatureFlag('AI_CREATOR_V3')
 
 三个通道的代码分别运行在不同的运行时：
 
-| 通道 | 运行时 | API 端点 | Controller |
+| 通道 | 运行时 | API 端点 | 控制器 |
 |------|--------|---------|------------|
 | A: 划词改写 | **NestJS**（TypeScript，Vercel AI SDK） | `POST /api/ai/generate/stream` | `AiController` |
-| B: 文档优化 | **Python agent-service**（PydanticAI） | `POST /api/ai/document/optimize` | `AiController`（新增，代理到 agent-service） |
-| C: 从零创作 | **Python agent-service**（PydanticAI） | `POST /api/ai/document/create` | `AiController`（新增，代理到 agent-service） |
+| B: 文档优化 | **Python 代理服务**（PydanticAI） | `POST /api/ai/document/optimize` | `AiController`（新增，代理到代理服务） |
+| C: 从零创作 | **Python 代理服务**（PydanticAI） | `POST /api/ai/document/create` | `AiController`（新增，代理到代理服务） |
 
-- Channel A **保持在 NestJS 中**，直接调用 `AiService.generateStream()`，不经过 Python agent-service。速度最快，无跨进程开销。
-- Channel B/C 的新端点加在 `AiController`（非 `AgentGatewayController`），内部通过 `http.request` SSE 代理到 agent-service。
+- Channel A **保持在 NestJS 中**，直接调用`AiService.generateStream()`，不经过 Python 代理服务。速度最快，无跨进程占用。
+- Channel B/C 的新端点添加在 `AiController`（非 `AgentGatewayController`），内部通过 `http.request` SSE 代理到代理服务。
 - `handle_simple()` Python 代码仅用于 agent-service 内部简单子任务，**不对外暴露端点**。
 
-### 13.2 Yjs 协作安全（Critical）
+### 13.2 Yjs 协作安全（严重）
 
-当前系统使用 Hocuspocus + Yjs 实现实时协作。`editor.setContent()` 会产生 Yjs update 广播给所有连接的客户端，且 Yjs 的 undo 机制与 ProseMirror History 插件是**独立的**。
+当前系统使用 Hocuspocus + Yjs 实现实时协作。 `editor.setContent()` 会产生 Yjs update 广播给所有连接的客户端，且 Yjs 的 undo 机制与 ProseMirror History 插件是**独立的**。
 
 **v1 解决方案**：
 
@@ -869,7 +869,7 @@ function submitDocumentOptimize() {
 
 **协作锁定**：AI 操作期间，通过 Hocuspocus awareness 广播 `{ aiOperating: true, userId }` 状态，其他客户端显示 "AI 正在优化文档..." 提示并禁止编辑。操作完成后解除锁定。
 
-### 13.3 Markdown 序列化策略（Critical）
+### 13.3 Markdown 序列化策略（关键）
 
 `DocumentOptimizeDto.originalContent` 需要将 ProseMirror 文档序列化为 markdown。
 
@@ -881,8 +881,8 @@ function submitDocumentOptimize() {
 |---------|-----------|
 | 文本/标题/列表/引用 | 标准 Markdown |
 | 图片 | `![alt](url)` |
-| 表格 | HTML `<table>` |
-| Mermaid 代码块 | ` ```mermaid\n...\n``` ` |
+| 表格 | HTML`<table>` |
+| Mermaid 代码块 | ` ```Mermaid\n...\n``` ` |
 | Excalidraw / Draw.io | `<!-- excalidraw:attachmentId -->` 占位符 |
 | 嵌入（YouTube 等） | `<!-- embed:url -->` 占位符 |
 
@@ -970,7 +970,7 @@ async def _heartbeat_loop(queue: asyncio.Queue, interval: float = 10.0):
 
 ### 13.7 操作记录持久化
 
-`recentOps` 使用 `localStorage`（非 sessionStorage），per-page 存储，最多保留 20 条：
+`recentOps` 使用 `localStorage`（非 sessionStorage），每页存储，最多保留 20 条：
 
 ```typescript
 const STORAGE_KEY = (pageId: string) => `docmost.ai.recentOps:${pageId}`
@@ -986,7 +986,7 @@ function addRecentOp(pageId: string, op: RecentOp) {
 
 ### 13.8 v2 Diff 位置映射策略
 
-Spec review 指出后端 markdown diff → ProseMirror position 映射有精度风险。
+Spec review 指出了头部 markdown diff → ProseMirror 位置映射有精度风险。
 
 **修订方案**：v2 的 diff 计算**移到前端**，直接基于 ProseMirror 文档结构：
 
@@ -1033,16 +1033,16 @@ function computeEditorDiff(oldDoc: Node, newDoc: Node): BlockChange[] {
 
 AI 命令面板的 6 个文档级快捷操作：
 
-| 按钮 | 说明 | 内部 instruction |
+| 按钮 | 说明 | 内部指令 |
 |------|------|-----------------|
-| 📝 优化全文 | 优化措辞，保留结构和图片 | "Improve the writing quality of this document" |
-| 🌐 翻译 | 全文翻译（弹出语言选择） | "Translate this document to {language}" |
-| 📏 扩写 | 充实内容，增加细节 | "Expand this document with more details" |
-| ✂️ 缩写 | 精简内容，保留要点 | "Make this document more concise" |
-| 🎯 调整语气 | 改为专业/友好/正式等 | "Rewrite in a {tone} tone" |
-| 📋 生成摘要 | 在文档顶部插入摘要 | "Generate a summary for this document" |
+| 📝 优化全文 | 优化措辞，保留结构和图片 | “提高本文档的写作质量” |
+| 🌐 翻译 | 全文翻译（弹出语言选择） | “将此文档翻译成{语言}” |
+| 📏 扩写 | 充实内容，增加细节 | “以更多详细信息扩展此文档” |
+| ✂️ 缩写 | 精简内容，保留要点 | “使本文档更加简洁” |
+| 🎯 调整语气 | 改为专业/友好/正式等 | “用{tone}语气重写” |
+| 📋 生成摘要 | 在文档顶部插入摘要 | “生成本文档的摘要” |
 
-### 13.10 Feature Flag 实现
+### 13.10 功能标志实现
 
 通过 Vite 环境变量（构建时注入）：
 
@@ -1054,7 +1054,7 @@ VITE_AI_CREATOR_V3=true
 const useV3 = import.meta.env.VITE_AI_CREATOR_V3 === 'true'
 ```
 
-### 13.11 Session State 类型优化
+### 13.11 会话状态类型优化
 
 使用 discriminated union 避免无效状态组合：
 
@@ -1087,7 +1087,7 @@ type AiSessionState =
 
 ### 14.2 后端单元测试（pytest）
 
-#### Phase 1 测试用例
+#### 阶段 1 测试用例
 
 ```python
 # agent-service/tests/orchestrator/test_engine_v3.py
@@ -1129,7 +1129,7 @@ class TestHandleDocument:
         assert "flowchart LR" in done_event.content
 
     async def test_optimize_with_file_upload_parses_and_rehosts(self):
-        """上传 PDF 优化：MineRU 解析 + 图片 rehost"""
+        """上传 PDF 优化：MineRU 解析 + 图片 重新托管"""
         request = DocumentRequest(
             instruction="优化这个文档",
             files=[FilePayload(name="sop.pdf", mimetype="application/pdf", content_b64="...")],
@@ -1198,7 +1198,7 @@ class TestChangeSummary:
         assert summary.structure_preserved is False
 ```
 
-#### Phase 6（v2）测试用例
+#### 阶段 6（v2）测试用例
 
 ```python
 # agent-service/tests/orchestrator/test_diff_engine.py
@@ -1285,7 +1285,7 @@ describe('ai-menu isolation', () => {
   })
 })
 
-// test: Snapshot + Undo
+// test: 快照 + Undo
 describe('useAiCommand snapshot', () => {
   it('saves editor snapshot before optimize', async () => {
     const { result } = renderHook(() => useAiCommand({ editor: mockEditor, pageId: 'p1' }))
@@ -1361,12 +1361,12 @@ class TestDocumentCreateEndpoint:
         assert any(e["type"] == "await_input" and e["phase"] == "brief" for e in events)
 ```
 
-### 14.5 浏览器 E2E 验证（Chrome）
+### 14.5 浏览器端到端验证（Chrome）
 
 > 使用 `mcp__claude-in-chrome__*` 工具在真实 Chrome 浏览器中执行端到端验证。
 > 每个 Phase 完成后执行对应的验证场景。
 
-#### Phase 2 完成后：命令面板基础验证
+#### 阶段 2 完成后：命令面板基础验证
 
 ```
 验证 TC-01: 命令面板渲染
@@ -1414,7 +1414,7 @@ class TestDocumentCreateEndpoint:
   预期: PDF 中的图片正确提取并显示，文字被优化
 ```
 
-#### Phase 3 完成后：划词改写解耦验证
+#### 阶段 3 完成后：划词改写解耦验证
 
 ```
 验证 TC-05: 划词改写独立性
@@ -1422,7 +1422,7 @@ class TestDocumentCreateEndpoint:
   步骤:
     1. 先在命令面板执行一次 [优化全文]，完成后接受
     2. 在编辑器中选中一段文字
-    3. 在 Bubble Menu 中点击 "Ask AI"
+    3. 在 气泡菜单 中点击 "Ask AI"
     4. 选择 "润色"
     5. 等待结果 → 点击 [替换]
     6. 验证右侧命令面板的 "最近操作" 记录了此次划词改写
@@ -1439,7 +1439,7 @@ class TestDocumentCreateEndpoint:
   预期: 三次独立操作，无状态污染
 ```
 
-#### Phase 4 完成后：从零创作验证
+#### 阶段 4 完成后：从零创作验证
 
 ```
 验证 TC-07: 空白页创作
@@ -1461,7 +1461,7 @@ class TestDocumentCreateEndpoint:
   预期: PDF 内容被理解和复用，图片来自原文
 ```
 
-#### Phase 5 完成后：回归验证
+#### 阶段 5 完成后：回归验证
 
 ```
 验证 TC-09: 旧代码清理后功能正常
@@ -1480,7 +1480,7 @@ class TestDocumentCreateEndpoint:
   预期: Feature Flag 关闭后旧面板正常工作（如果 Phase 5 尚未删除旧代码）
 ```
 
-#### Phase 6 完成后：v2 Inline Diff 验证
+#### 阶段 6 完成后：v2 Inline Diff 验证
 
 ```
 验证 TC-11: Inline Diff 基本功能
@@ -1543,5 +1543,5 @@ class TestDocumentCreateEndpoint:
 |------|------|------|
 | 后端单元 | >80% | handle_document、generate_change_summary、compute_block_changes |
 | 前端组件 | >70% | AiCommandPanel、ReviewSidebar、useAiCommand |
-| API 集成 | 关键路径 100% | optimize、create、SSE 事件格式 |
+| API 集成 | 关键路径 100% | 优化、创造、SSE 事件格式 |
 | 浏览器 E2E | 14 个 TC 全部通过 | 每 Phase 执行对应 TC |

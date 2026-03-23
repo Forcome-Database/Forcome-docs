@@ -2,7 +2,7 @@
 
 > 日期：2026-03-04
 > 状态：已批准
-> 方案：B'（LangGraph interrupt + Checkpointer）
+> 方案：B'（LangGraph中断+检查指针）
 
 ## 一、背景与目标
 
@@ -33,20 +33,20 @@
 ⑥ 修订 — 用户选中段落 → AI 精确替换
 ```
 
-## 二、技术方案：LangGraph interrupt + Checkpointer
+## 二、技术方案：LangGraph中断+Checkpointer
 
 ### 2.1 为什么选择此方案
 
-| 对比项 | 方案 A（渐进改造） | 方案 B（多端点） | **方案 B'（interrupt）** |
+| 对比项 | 方案 A（渐进改造） | 方案 B（多端点） | **方案B'（中断）** |
 |--------|-------------------|-----------------|------------------------|
-| 阶段分离 | SSE 断开再连 | 多个独立端点 | **单图 + interrupt 暂停** |
-| 状态管理 | 前端传递上下文 | Redis/DB 手动管理 | **LangGraph Checkpointer** |
-| 会话恢复 | 前端拼装 | 手动查状态 | **thread_id 自动恢复** |
-| 端点数量 | 1 个（多次调用） | 5+ 个 | **1 个 + resume** |
+| 阶段分离 | SSE 断开再连 | 多个独立端点 | **单图+中断暂停** |
+| 状态管理 | 前端传递上下文 | Redis/DB 手动管理 | **LangGraph 检查点** |
+| 会话恢复 | 前端拼装 | 手动查状态 | **thread_id自动恢复** |
+| 端点数量 | 1 个（多次调用） | 5+ 个 | **1个+简历** |
 | 改动量 | 中 | 大 | **中** |
 | 标准程度 | 非标 | 手动实现 | **LangGraph 官方推荐范式** |
 
-### 2.2 LangGraph 图拓扑
+### 2.2 LangGraph拓扑
 
 ```
 入口
@@ -71,12 +71,12 @@ Reviewer（质量审查）
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| Explorer 是否 interrupt | 否 | 自动执行，SSE 推进度即可 |
-| Clarifier 是否必经 | 否 | LLM 判断需求明确时跳过 |
-| Proposer 是否必经 | 否 | 简单请求跳过 |
-| Outliner 是否必经 | **是** | 所有请求都经过大纲确认 |
-| 修订回到哪个节点 | Writer | 不重新调研/出大纲 |
-| Checkpointer 存储 | PostgreSQL | 复用现有数据库 |
+| 资源管理器是否中断 | 否 | 自动执行，SSE 推进度即可 |
+| 澄清剂 是否必经 | 否 | LLM 判断需求明确时跳过 |
+| 提案人是否必经 | 否 | 简单请求跳过 |
+| 大纲是否必经 | **是** | 所有请求都经过大纲确认 |
+| 修订回到哪个节点 | 作家 | 不重新调研/出大纲 |
+| Checkpointer存储 | PostgreSQL | 复用现有数据库 |
 
 ### 2.4 AgentState 扩展
 
@@ -124,7 +124,7 @@ class AgentState(TypedDict):
     _thread_id: str                # 新增：会话 ID
 ```
 
-### 2.5 interrupt 实现示例
+### 2.5 中断实际例子
 
 ```python
 from langgraph.types import interrupt, Command
@@ -322,7 +322,7 @@ image_urls = [
 ]
 ```
 
-### 4.2 Writer（Executor）prompt 改进
+### 4.2 Writer（Executor）提示改进
 
 ```
 图片上下文映射（请在对应位置插入）：
@@ -441,29 +441,29 @@ POST /api/agent/resume
 
 ## 六、改造文件清单
 
-### Python Agent Service（核心改动 ~12 文件）
+### Python Agent Service（核心~12文件）
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `app/agent/graph.py` | 重写 | 6 节点 + interrupt + Checkpointer |
-| `app/agent/state.py` | 修改 | 扩展 AgentState |
+| `app/agent/graph.py` | 重写 | 6 节点+中断+检查指针 |
+| `app/agent/state.py` | 修改 | 扩展代理状态 |
 | `app/agent/nodes/planner.py` | 重命名为 `explorer.py` | 调研节点 |
-| `app/agent/nodes/clarifier.py` | 新增 | 澄清问题 + interrupt |
-| `app/agent/nodes/proposer.py` | 新增 | 方案提议 + interrupt |
-| `app/agent/nodes/outliner.py` | 新增 | 大纲生成 + interrupt |
-| `app/agent/nodes/executor.py` | 重命名为 `writer.py` | prompt 改进 |
+| `app/agent/nodes/clarifier.py` | 新增 | 阐明问题+中断 |
+| `app/agent/nodes/proposer.py` | 新增 | 方案建议+打断 |
+| `app/agent/nodes/outliner.py` | 新增 | 大纲生成+中断 |
+| `app/agent/nodes/executor.py` | 重命名为 `writer.py` | 提示改进 |
 | `app/agent/nodes/reviewer.py` | 修改 | 修订只回 Writer |
 | `app/main.py` | 修改 | 新增 `/agent/resume` 端点 |
-| `app/schemas/request.py` | 修改 | 新增 thread_id、resume |
-| `app/schemas/response.py` | 修改 | 新增 await_input 事件 |
-| `pyproject.toml` | 修改 | 新增 checkpoint 依赖 |
+| `app/schemas/request.py` | 修改 | 新增thread_id、resume |
+| `app/schemas/response.py` | 修改 | 新增await_input事件 |
+| `pyproject.toml` | 修改 | 新增检查点依赖 |
 
 ### NestJS 网关（~4 文件）
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
 | `agent-gateway.controller.ts` | 修改 | 新增 resume 路由 |
-| `agent-gateway.service.ts` | 修改 | 传递 thread_id |
+| `agent-gateway.service.ts` | 修改 | 提交thread_id |
 | `dto/agent-run.dto.ts` | 修改 | 新增字段 |
 | `ai.controller.ts` | 修改 | 普通模式大纲两阶段 |
 
@@ -471,16 +471,16 @@ POST /api/agent/resume
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `ai-creator-atoms.ts` | 修改 | 新增 threadId、phase atom |
+| `ai-creator-atoms.ts` | 修改 | 新增threadId、相原子 |
 | `ai-creator.types.ts` | 修改 | 新增消息类型 |
 | `ai-creator-message-item.tsx` | 修改 | 分发新气泡类型 |
 | `ai-creator-outline-bubble.tsx` | 新增 | 大纲气泡组件 |
 | `ai-creator-clarify-bubble.tsx` | 新增 | 澄清问题气泡 |
 | `ai-creator-propose-bubble.tsx` | 新增 | 方案选择气泡 |
-| `ai-creator-input.tsx` | 修改 | insertMode 重构 + 流式写入 |
+| `ai-creator-input.tsx` | 修改 | insertMode 重构 + 流式读写 |
 | `ai-creator-panel.tsx` | 修改 | 编辑器锁定/解锁 |
-| `hooks/use-agent.ts` | 修改 | resume + await_input 处理 |
-| `services/agent-service.ts` | 修改 | 新增 resumeAgent API |
+| `hooks/use-agent.ts` | 修改 | 恢复+等待输入处理 |
+| `services/agent-service.ts` | 修改 | 新增resumeAgent API |
 | `ai-creator.module.css` | 修改 | 新气泡样式 + 锁定样式 |
 
 ## 七、验收标准
@@ -491,7 +491,7 @@ POST /api/agent/resume
 - [ ] 每个 interrupt 点 UI 交互正常（澄清问题/方案选择/大纲编辑）
 - [ ] Clarifier 和 Proposer 可智能跳过
 - [ ] 大纲在气泡中可查看/可编辑（textarea）/可对话调整
-- [ ] 修订时默认 overwrite，不再自动 append
+- [ ] 修订时默认覆盖，不再自动追加
 - [ ] 选中文本→AI修改→精确替换选区
 - [ ] PDF/Word 提取的图片正确嵌入正文（标准 TipTap image 节点）
 - [ ] 图片上下文映射使 LLM 在合理位置插入图片
@@ -508,8 +508,8 @@ POST /api/agent/resume
 
 | 风险 | 影响 | 缓解方案 |
 |------|------|---------|
-| LangGraph interrupt 与 SSE 流式的兼容性 | interrupt 后 SSE 需要正确结束 | interrupt 前先 emit await_input 事件，SSE 正常结束；resume 时开新 SSE |
-| Checkpointer 存储大量调研数据 | PostgreSQL 存储压力 | 限制 research_results 大小，定期清理过期 thread |
+| LangGraph 中断与 SSE 流式的兼容性 | 中断后SSE需要正确结束 | 中断前先发出await_input事件，SSE正常结束；resume时开新SSE |
+| Checkpointer 存储大量调研数据 | PostgreSQL 存储压力 | 限制research_results大小，定期清理过期线程 |
 | Markdown 流式转 HTML 的不完整片段 | 编辑器节点碎片化 | 累积到完整段落（`\n\n`）后批量插入 |
 | markdownToHtml 对图片的支持 | 图片可能不被正确转换 | 验证后若有问题，用正则预处理图片引用 |
 | 编辑器锁定期间的协作冲突 | 多人协作时锁定影响其他用户 | 锁定仅影响当前用户的编辑器实例，Yjs 协作层不受影响 |

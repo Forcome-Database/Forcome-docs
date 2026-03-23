@@ -1,24 +1,24 @@
-# Phase 1: Quick Fixes — 篇幅控制、压缩检测、去AI味
+# 阶段 1: Quick Fixes — 篇幅控制、压缩检测、去AI味
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **对于智能体执行者：** 要求：使用 superpowers:subagent-driven-development （如果子代理可用）或 superpowers:executing-plans 来实施此计划。步骤使用复选框 (`- [ ]`) 语法进行跟踪。
 
-**Goal:** 不改架构，通过调整配置、阈值和 Prompt 快速缓解长文压缩、审核失效和 AI 味重的问题
+**目标：** 不改架构，通过调整配置、阈值和 Prompt 快速缓解长文压缩、审核失效和 AI 味重的问题
 
-**Architecture:** 修改现有节点的 prompt 和硬编码参数，不新增文件、不改图拓扑。所有改动都是对 `writer.py`、`reviewer.py`、`graph.py`、`quality_checks.py`、`llm.py` 的局部修改。
+**架构：** 修改现有节点的 prompt 和硬编码参数，不新增文件、不改图拓扑。所有改动都是对 `writer.py`、`reviewer.py`、`graph.py`、`quality_checks.py`、`llm.py` 的局部修改。
 
-**Tech Stack:** Python 3.11+, LangGraph, LangChain, pytest
+**技术栈：** Python 3.11+、LangGraph、LangChain、pytest
 
 ---
 
-## Chunk 1: 篇幅控制与压缩检测修复
+## 分块 1：篇幅控制与压缩检测修复
 
-### Task 1: Writer 注入目标字数指令
+### 任务 1：Writer 注入目标字数指令
 
-**Files:**
-- Modify: `app/agent/nodes/writer.py:105-225`
-- Test: `tests/test_writer.py`
+**文件：**
+- 修改：`app/agent/nodes/writer.py:105-225`
+- 测试： `tests/test_writer.py`
 
-- [ ] **Step 1: Write the failing test — 字数指令注入**
+- [ ] **第 1 步：编写失败的测试 — 字数指令注入**
 
 ```python
 # tests/test_writer.py — 追加
@@ -47,12 +47,12 @@ def test_build_length_instruction_compress():
     assert result == "" or "简洁" in result
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **第 2 步：运行测试以验证其是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_writer.py::test_build_length_instruction_preserve_with_source -v`
-Expected: FAIL with "cannot import name '_build_length_instruction'"
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_writer.py::test_build_length_instruction_preserve_with_source -v`
+预期：失败并显示“无法导入名称 '_build_length_instruction'”
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **第 3 步：编写最小实现**
 
 在 `app/agent/nodes/writer.py` 中，在 `_strip_empty_images` 函数后添加：
 
@@ -73,12 +73,12 @@ def _build_length_instruction(length_policy: str, source_word_count: int = 0) ->
     return ""
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **第 4 步：运行测试以验证其通过**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_writer.py -v`
-Expected: ALL PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_writer.py -v`
+预期：全部通过
 
-- [ ] **Step 5: Integrate into writer_node**
+- [ ] **第 5 步：集成到writer_node**
 
 在 `writer_node` 函数（`writer.py:105`）中，在构建 `user_parts` 前计算 source_word_count 并注入指令：
 
@@ -101,7 +101,7 @@ if length_instruction:
     user_parts.append(length_instruction)
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
 ```bash
 cd /e/test/Docmost/agent-service
@@ -111,13 +111,13 @@ git commit -m "feat(writer): inject explicit word-count target based on source l
 
 ---
 
-### Task 2: 提升压缩检测阈值
+### 任务 2：提升压缩检测阈值
 
-**Files:**
-- Modify: `app/agent/nodes/reviewer.py:117`
-- Test: `tests/test_reviewer_compression.py` (new)
+**文件：**
+- 修改：`app/agent/nodes/reviewer.py:117`
+- 测试：`tests/test_reviewer_compression.py`（新）
 
-- [ ] **Step 1: Write the failing test — 压缩检测阈值**
+- [ ] **第 1 步：编写失败测试 — 压缩检测阈值**
 
 ```python
 # tests/test_reviewer_compression.py
@@ -167,14 +167,14 @@ def test_compression_not_detected_when_draft_above_70_percent():
     assert len(draft) >= max(400, int(len(source) * 0.7))
 ```
 
-- [ ] **Step 2: Run test to verify it fails (the first test should currently pass with old threshold, we check behavior)**
+- [ ] **第 2 步：运行测试以验证其是否失败（第一个测试当前应通过旧阈值，我们检查行为）**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_reviewer_compression.py -v`
-Expected: Tests pass (they test math, not the node). This confirms our threshold formula.
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_reviewer_compression.py -v`
+预期：测试通过（他们测试数学，而不是节点）。这证实了我们的阈值公式。
 
-- [ ] **Step 3: Change the threshold**
+- [ ] **第 3 步：更改阈值**
 
-`app/agent/nodes/reviewer.py:117` — change `0.2` to `0.7`:
+`app/agent/nodes/reviewer.py:117` — 将 `0.2` 更改为 `0.7`：
 
 ```python
 # Before:
@@ -184,12 +184,12 @@ if len(source_text) > 1200 and len(draft) < max(400, int(len(source_text) * 0.2)
 if len(source_text) > 1200 and len(draft) < max(400, int(len(source_text) * 0.7)):
 ```
 
-- [ ] **Step 4: Run all tests**
+- [ ] **第 4 步：运行所有测试**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/ -v`
-Expected: ALL PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/ -v`
+预期：全部通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 cd /e/test/Docmost/agent-service
@@ -199,13 +199,13 @@ git commit -m "fix(reviewer): raise compression detection threshold from 20% to 
 
 ---
 
-### Task 3: max_iterations 从 1 提升到 3
+### 任务 3：max_iterations 从 1 提升到 3
 
-**Files:**
-- Modify: `app/agent/graph.py:47`
-- Test: `tests/test_graph_routing.py` (new)
+**文件：**
+- 修改：`app/agent/graph.py:47`
+- 测试：`tests/test_graph_routing.py`（新）
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **第 1 步：编写失败的测试**
 
 ```python
 # tests/test_graph_routing.py
@@ -228,12 +228,12 @@ def test_reviewer_routes_to_done_when_no_revision_needed():
     assert route_after_reviewer(state) == "done"
 ```
 
-- [ ] **Step 2: Run test to verify first test fails**
+- [ ] **第 2 步：运行测试以验证第一个测试是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_graph_routing.py::test_reviewer_routes_to_writer_when_revision_needed_and_under_max -v`
-Expected: FAIL — currently default max_iterations=1, so iteration_count=1 meets limit
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_graph_routing.py::test_reviewer_routes_to_writer_when_revision_needed_and_under_max -v`
+预期：FAIL — 当前默认 max_iterations=1，因此 iteration_count=1 满足限制
 
-- [ ] **Step 3: Change default max_iterations**
+- [ ] **第 3 步：更改默认 max_iterations**
 
 `app/agent/graph.py:47`:
 
@@ -245,12 +245,12 @@ max_iterations = int(state.get("max_iterations", 1) or 1)
 max_iterations = int(state.get("max_iterations", 3) or 3)
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **第 4 步：运行测试**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_graph_routing.py -v`
-Expected: ALL PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_graph_routing.py -v`
+预期：全部通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 cd /e/test/Docmost/agent-service
@@ -260,15 +260,15 @@ git commit -m "fix(graph): increase default max_iterations from 1 to 3"
 
 ---
 
-### Task 4: 放宽上下文截断限制
+### 任务 4：放宽上下文截断限制
 
-**Files:**
-- Modify: `app/agent/nodes/writer.py:81,188,194`
-- Modify: `app/agent/nodes/outliner.py:81,85,90`
-- Modify: `app/agent/nodes/planner.py:79`
-- Modify: `app/agent/nodes/clarifier.py:42`
+**文件：**
+- 修改：`app/agent/nodes/writer.py:81,188,194`
+- 修改：`app/agent/nodes/outliner.py:81,85,90`
+- 修改：`app/agent/nodes/planner.py:79`
+- 修改：`app/agent/nodes/clarifier.py:42`
 
-- [ ] **Step 1: Change writer.py truncation limits**
+- [ ] **第 1 步：更改 writer.py 截断限制**
 
 ```python
 # writer.py:81 — research item excerpt
@@ -290,7 +290,7 @@ research_parts.append(f"[File: {item['filename']}]\n{item['content'][:3500]}")
 research_parts.append(f"[File: {item['filename']}]\n{item['content'][:12000]}")
 ```
 
-- [ ] **Step 2: Change outliner.py truncation limits**
+- [ ] **第 2 步：更改outliner.py截断限制**
 
 ```python
 # outliner.py:81 — selected_text
@@ -303,26 +303,26 @@ research_parts.append(f"[File: {item['filename']}]\n{item['content'][:12000]}")
 # Before: [:300]  After: [:1500]
 ```
 
-- [ ] **Step 3: Change planner.py truncation limits**
+- [ ] **第 3 步：更改 planner.py 截断限制**
 
 ```python
 # planner.py:79 — selected_text
 # Before: [:1200]  After: [:4000]
 ```
 
-- [ ] **Step 4: Change clarifier.py truncation limits**
+- [ ] **第 4 步：更改 clarifier.py 截断限制**
 
 ```python
 # clarifier.py:42 — research result summary
 # Before: [:200]  After: [:800]
 ```
 
-- [ ] **Step 5: Run all existing tests**
+- [ ] **第 5 步：运行所有现有测试**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/ -v`
-Expected: ALL PASS (truncation limits don't affect test logic)
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/ -v`
+预期：全部通过（截断限制不影响测试逻辑）
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
 ```bash
 cd /e/test/Docmost/agent-service
@@ -332,15 +332,15 @@ git commit -m "fix(nodes): widen context truncation limits for long document sup
 
 ---
 
-## Chunk 2: Writer Prompt 去 AI 味 + LLM 配置优化
+## 分块 2：Writer Prompt 去 AI 味 + LLM 配置优化
 
-### Task 5: Writer System Prompt 增加去 AI 味和中文化指令
+### 任务 5：Writer System Prompt 增加去 AI 味和中文化指令
 
-**Files:**
-- Modify: `app/agent/nodes/writer.py:18-38`
-- Test: `tests/test_writer.py`
+**文件：**
+- 修改：`app/agent/nodes/writer.py:18-38`
+- 测试： `tests/test_writer.py`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **第 1 步：编写失败的测试**
 
 ```python
 # tests/test_writer.py — 追加
@@ -357,14 +357,14 @@ def test_writer_prompt_contains_chinese_output_instruction():
     assert "中文" in WRITER_SYSTEM_PROMPT
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **第 2 步：运行测试以验证其是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_writer.py::test_writer_prompt_contains_anti_ai_instructions -v`
-Expected: FAIL
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_writer.py::test_writer_prompt_contains_anti_ai_instructions -v`
+预期：失败
 
-- [ ] **Step 3: Update WRITER_SYSTEM_PROMPT**
+- [ ] **第 3 步：更新 WRITER_SYSTEM_PROMPT**
 
-Replace `WRITER_SYSTEM_PROMPT` in `writer.py:18-38` with:
+将 `writer.py:18-38` 中的 `WRITER_SYSTEM_PROMPT` 替换为：
 
 ```python
 WRITER_SYSTEM_PROMPT = """You are a professional document writer.
@@ -401,12 +401,12 @@ Image usage rules:
 """
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **第 4 步：运行测试**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_writer.py -v`
-Expected: ALL PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_writer.py -v`
+预期：全部通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 cd /e/test/Docmost/agent-service
@@ -416,12 +416,12 @@ git commit -m "feat(writer): add anti-AI-flavor instructions and default Chinese
 
 ---
 
-### Task 6: Reviewer Prompt 中文化 + 增加篇幅检查维度
+### 任务 6：Reviewer Prompt 中文化 + 增加篇幅检查维度
 
-**Files:**
-- Modify: `app/agent/nodes/reviewer.py:16-33`
+**文件：**
+- 修改：`app/agent/nodes/reviewer.py:16-33`
 
-- [ ] **Step 1: Update REVIEWER_SYSTEM_PROMPT**
+- [ ] **第 1 步：更新 REVIEWER_SYSTEM_PROMPT**
 
 ```python
 REVIEWER_SYSTEM_PROMPT = """你是严格的文档质量审核员。
@@ -454,12 +454,12 @@ REVIEWER_SYSTEM_PROMPT = """你是严格的文档质量审核员。
 """
 ```
 
-- [ ] **Step 2: Run existing tests**
+- [ ] **第 2 步：运行现有测试**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/ -v`
-Expected: ALL PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/ -v`
+预期：全部通过
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
 ```bash
 cd /e/test/Docmost/agent-service
@@ -469,12 +469,12 @@ git commit -m "feat(reviewer): Chinese prompt with length assessment and scoped 
 
 ---
 
-### Task 7: Explorer Prompt 增加深度探索指引
+### 任务 7：Explorer Prompt 增加深度探索指引
 
-**Files:**
-- Modify: `app/agent/nodes/explorer.py:13-35`
+**文件：**
+- 修改：`app/agent/nodes/explorer.py:13-35`
 
-- [ ] **Step 1: Read current explorer prompt and enhance**
+- [ ] **第 1 步：阅读当前浏览器提示并增强**
 
 在 explorer.py 的 `EXPLORER_SYSTEM_PROMPT` 中追加规则：
 
@@ -485,12 +485,12 @@ git commit -m "feat(reviewer): Chinese prompt with length assessment and scoped 
 12. 对于仿写任务，必须规划 crawl 或 parse 步骤来提取原文的完整内容和结构特征。
 ```
 
-- [ ] **Step 2: Run existing tests**
+- [ ] **第 2 步：运行现有测试**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/ -v`
-Expected: ALL PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/ -v`
+预期：全部通过
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
 ```bash
 cd /e/test/Docmost/agent-service
@@ -500,12 +500,12 @@ git commit -m "feat(explorer): add deep exploration and sufficiency hints to pro
 
 ---
 
-### Task 8: document_transform 路由不再完全跳过规划
+### 任务 8：document_transform 路由不再完全跳过规划
 
-**Files:**
-- Modify: `app/agent/graph.py:33-37`
+**文件：**
+- 修改：`app/agent/graph.py:33-37`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **第 1 步：编写失败的测试**
 
 ```python
 # tests/test_graph_routing.py — 追加
@@ -519,12 +519,12 @@ def test_document_transform_routes_to_planner_not_writer():
     assert route_after_explorer(state) == "planner"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **第 2 步：运行测试以验证其是否失败**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_graph_routing.py::test_document_transform_routes_to_planner_not_writer -v`
-Expected: FAIL (currently routes to "writer")
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_graph_routing.py::test_document_transform_routes_to_planner_not_writer -v`
+预期：失败（当前路由至“writer”）
 
-- [ ] **Step 3: Change routing logic**
+- [ ] **第 3 步：更改路由逻辑**
 
 `app/agent/graph.py:33-37`:
 
@@ -544,7 +544,7 @@ def route_after_explorer(state: AgentState) -> str:
     return "clarifier"
 ```
 
-Update conditional edges map accordingly:
+相应地更新条件边图：
 
 ```python
 # Before:
@@ -560,12 +560,12 @@ graph.add_conditional_edges("explorer", route_after_explorer, {
 })
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **第 4 步：运行测试**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/test_graph_routing.py -v`
-Expected: ALL PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/test_graph_routing.py -v`
+预期：全部通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 cd /e/test/Docmost/agent-service
@@ -575,38 +575,38 @@ git commit -m "fix(graph): route document_transform through planner instead of s
 
 ---
 
-## Chunk 3: 验收与集成验证
+## 分块 3：验收与集成验证
 
-### Task 9: 运行完整测试套件 + 手动冒烟测试
+### 任务 9：运行完整测试套件 + 手动冒烟测试
 
-- [ ] **Step 1: Run full test suite**
+- [ ] **第 1 步：运行完整的测试套件**
 
-Run: `cd /e/test/Docmost/agent-service && python -m pytest tests/ -v --tb=short`
-Expected: ALL PASS
+运行： `cd /e/test/Docmost/agent-service && python -m pytest tests/ -v --tb=short`
+预期：全部通过
 
-- [ ] **Step 2: Verify no import errors**
+- [ ] **第 2 步：验证没有导入错误**
 
-Run: `cd /e/test/Docmost/agent-service && python -c "from app.agent.graph import build_agent_graph; g = build_agent_graph(); print('Graph nodes:', list(g.nodes.keys()))"`
-Expected: Print all node names without error
+运行： `cd /e/test/Docmost/agent-service && python -c "from app.agent.graph import build_agent_graph; g = build_agent_graph(); print('Graph nodes:', list(g.nodes.keys()))"`
+预期：打印所有节点名称，没有错误
 
-- [ ] **Step 3: Create Phase 1 summary commit**
+- [ ] **第 3 步：创建第 1 阶段摘要提交**
 
 ```bash
 cd /e/test/Docmost/agent-service
 git log --oneline -8
 ```
 
-Verify 7 commits from this phase are present.
+验证此阶段是否存在 7 个提交。
 
 ---
 
-## Phase 1 验收标准
+## 阶段 1 验收标准
 
 | 指标 | 改动前 | 预期改动后 |
 |------|--------|-----------|
 | 长文保持率 | ~15-20% | >50% |
 | 压缩检测触发 | 输出 < 20% 才触发 | 输出 < 70% 就触发 |
 | 审核循环 | 不循环（max=1） | 最多 3 轮 |
-| Writer 上下文 | 6000 char 页面 | 32000 char 页面 |
+| 作家上下文 | 6000 char 页面 | 32000 char 页面 |
 | AI 味 | 明显 | 主观改善 |
-| document_transform | 跳过规划直达 writer | 经过 planner |
+| 文档转换 | 跳过规划直达 writer | 经过规划师 |

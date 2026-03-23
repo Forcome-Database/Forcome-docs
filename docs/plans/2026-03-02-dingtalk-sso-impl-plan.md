@@ -1,28 +1,28 @@
-# DingTalk SSO Integration Implementation Plan
+# 钉钉SSO集成实施方案
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **对于Claude：** 必须使用的子技能：使用超能力：executing-plans来逐个任务地实施该计划。
 
-**Goal:** Integrate DingTalk authentication into Wiki (VitePress) and Docmost (NestJS), enabling web QR login, H5 silent login, cross-subdomain SSO, and automatic employee departure handling.
+**目标：** 将钉钉认证集成到Wiki（VitePress）和Docmost（NestJS）中，实现网页二维码登录、H5静默登录、跨子域单点登录、员工自动离职处理。
 
-**Architecture:** Wiki-led authentication on shared `.example.com` cookie domain. Docmost backend handles all DingTalk API interactions. Wiki frontend provides login UI. Reuse existing `auth_providers` + `auth_accounts` SSO framework — no new database tables or migrations needed. DingTalk provider record auto-seeded from env vars at runtime.
+**架构：** 共享 `.example.com` cookie 域上的 Wiki 主导的身份验证。 Docmost后端处理所有钉钉API交互。 Wiki 前端提供登录 UI。重用现有的 `auth_providers` + `auth_accounts` SSO 框架 — 无需新的数据库表或迁移。钉钉提供商记录在运行时从环境变量自动播种。
 
-**Tech Stack:** NestJS 11 + Fastify (backend), VitePress 2 + Vue 3 (wiki frontend), DingTalk OAuth2 + JSAPI, Redis via `@nestjs-labs/nestjs-ioredis` (token cache), Kysely (DB)
+**技术栈：** NestJS 11 + Fastify（后端）、VitePress 2 + Vue 3（wiki前端）、钉钉OAuth2 + JSAPI、Redis via `@nestjs-labs/nestjs-ioredis`（令牌缓存）、Kysely（DB）
 
-**Reference Branch:** `feater-dingding-user` — first implementation with known bugs. This plan rewrites cleanly on `feater-dingding-user2`.
+**参考分支：** `feater-dingding-user` — 具有已知错误的第一个实现。该计划在 `feater-dingding-user2` 上干净地重写。
 
 ---
 
-## Task 1: Backend — Environment Variables & Cookie Domain Support
+## 任务 1: 后端 — Environment Variables & Cookie Domain Support
 
-**Files:**
-- Modify: `apps/server/src/integrations/environment/environment.service.ts`
-- Modify: `apps/server/src/core/auth/auth.controller.ts` (setAuthCookie method, ~line 176)
-- Modify: `apps/server/src/main.ts` (excludedPaths array, ~line 72)
-- Modify: `.env.example`
+**文件：**
+- 修改：`apps/server/src/integrations/environment/environment.service.ts`
+- 修改：`apps/server/src/core/auth/auth.controller.ts`（setAuthCookie 方法，~第 176 行）
+- 修改：`apps/server/src/main.ts`（排除路径数组，~第 72 行）
+- 修改：`.env.example`
 
-**Step 1: Add environment getters to EnvironmentService**
+**步骤 1：将环境 getter 添加到 EnvironmentService**
 
-Open `apps/server/src/integrations/environment/environment.service.ts`. Add these methods after the last method in the class:
+打开`apps/server/src/integrations/environment/environment.service.ts`。在类中的最后一个方法之后添加这些方法：
 
 ```typescript
 getCookieDomain(): string | undefined {
@@ -50,9 +50,9 @@ getDingtalkAgentId(): string {
 }
 ```
 
-**Step 2: Modify setAuthCookie for cross-subdomain support**
+**步骤2：修改setAuthCookie以支持跨子域**
 
-In `apps/server/src/core/auth/auth.controller.ts`, find the `setAuthCookie` method and replace it with:
+在 `apps/server/src/core/auth/auth.controller.ts` 中，找到 `setAuthCookie` 方法并将其替换为：
 
 ```typescript
 setAuthCookie(res: FastifyReply, token: string) {
@@ -71,17 +71,17 @@ setAuthCookie(res: FastifyReply, token: string) {
 }
 ```
 
-**Step 3: Add dingtalk routes to excluded paths in main.ts**
+**第三步：将钉钉路由添加到main.ts中排除的路径**
 
-In `apps/server/src/main.ts`, find the `excludedPaths` array in the preHandler hook and add:
+在 `apps/server/src/main.ts` 中，找到 preHandler 挂钩中的 `excludedPaths` 数组并添加：
 
 ```typescript
 '/api/auth/dingtalk',
 ```
 
-**Step 4: Update .env.example**
+**第 4 步：更新 .env.example**
 
-Append to `.env.example`:
+附加到`.env.example`：
 
 ```env
 # DingTalk SSO (Enterprise Internal App)
@@ -97,7 +97,7 @@ COOKIE_DOMAIN=
 WIKI_URL=
 ```
 
-**Step 5: Commit**
+**第 5 步：承诺**
 
 ```bash
 git add apps/server/src/integrations/environment/environment.service.ts apps/server/src/core/auth/auth.controller.ts apps/server/src/main.ts .env.example
@@ -106,16 +106,16 @@ git commit -m "feat(auth): add cookie domain support and dingtalk env config"
 
 ---
 
-## Task 2: Backend — AuthAccount & AuthProvider Repositories
+## 任务 2: 后端 — AuthAccount & AuthProvider Repositories
 
-**Files:**
-- Create: `apps/server/src/database/repos/auth/auth-account.repo.ts`
-- Create: `apps/server/src/database/repos/auth/auth-provider.repo.ts`
-- Modify: `apps/server/src/database/database.module.ts`
+**文件：**
+- 创建：`apps/server/src/database/repos/auth/auth-account.repo.ts`
+- 创建：`apps/server/src/database/repos/auth/auth-provider.repo.ts`
+- 修改：`apps/server/src/database/database.module.ts`
 
-**Step 1: Create AuthAccountRepo**
+**第 1 步：创建AuthAccountRepo**
 
-Reference pattern: `apps/server/src/database/repos/user/user.repo.ts` for injection style.
+参考模式：`apps/server/src/database/repos/user/user.repo.ts` 用于注入样式。
 
 ```typescript
 // apps/server/src/database/repos/auth/auth-account.repo.ts
@@ -177,7 +177,7 @@ export class AuthAccountRepo {
 }
 ```
 
-**Step 2: Create AuthProviderRepo**
+**第 2 步：创建AuthProviderRepo**
 
 ```typescript
 // apps/server/src/database/repos/auth/auth-provider.repo.ts
@@ -239,19 +239,19 @@ export class AuthProviderRepo {
 }
 ```
 
-**Step 3: Register repos in DatabaseModule**
+**第 3 步：在DatabaseModule中注册存储库**
 
 In `apps/server/src/database/database.module.ts`:
-- Add imports at the top:
+- 在顶部添加导入：
 
 ```typescript
 import { AuthAccountRepo } from './repos/auth/auth-account.repo';
 import { AuthProviderRepo } from './repos/auth/auth-provider.repo';
 ```
 
-- Add `AuthAccountRepo, AuthProviderRepo` to both the `providers` and `exports` arrays.
+- 将 `AuthAccountRepo, AuthProviderRepo` 添加到 `providers` 和 `exports` 数组。
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add apps/server/src/database/repos/auth/ apps/server/src/database/database.module.ts
@@ -260,13 +260,13 @@ git commit -m "feat(db): add AuthAccount and AuthProvider repositories"
 
 ---
 
-## Task 3: Backend — DingTalk Types & API Service
+## 任务 3: 后端 — DingTalk Types & API Service
 
-**Files:**
-- Create: `apps/server/src/ee/dingtalk/types/dingtalk.types.ts`
-- Create: `apps/server/src/ee/dingtalk/dingtalk-api.service.ts`
+**文件：**
+- 创建：`apps/server/src/ee/dingtalk/types/dingtalk.types.ts`
+- 创建：`apps/server/src/ee/dingtalk/dingtalk-api.service.ts`
 
-**Step 1: Create DingTalk types**
+**第一步：创建钉钉类型**
 
 ```typescript
 // apps/server/src/ee/dingtalk/types/dingtalk.types.ts
@@ -332,9 +332,9 @@ export interface DingTalkConfig {
 }
 ```
 
-**Step 2: Create DingTalkApiService**
+**第二步：创建钉钉ApiService**
 
-Key difference from old branch: use `RedisService` from `@nestjs-labs/nestjs-ioredis` with `getOrThrow()` pattern (matches `apps/server/src/collaboration/services/collab-history.service.ts`).
+与旧分支的主要区别：使用 `@nestjs-labs/nestjs-ioredis` 中的 `RedisService` 和 `getOrThrow()` 模式（匹配 `apps/server/src/collaboration/services/collab-history.service.ts`）。
 
 ```typescript
 // apps/server/src/ee/dingtalk/dingtalk-api.service.ts
@@ -501,7 +501,7 @@ export class DingTalkApiService {
 }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/server/src/ee/dingtalk/types/ apps/server/src/ee/dingtalk/dingtalk-api.service.ts
@@ -510,17 +510,17 @@ git commit -m "feat(dingtalk): add DingTalk types and API service with Redis tok
 
 ---
 
-## Task 4: Backend — DingTalk Core Service
+## 任务 4: 后端 — DingTalk Core Service
 
-**Files:**
-- Create: `apps/server/src/ee/dingtalk/dingtalk.service.ts`
+**文件：**
+- 创建：`apps/server/src/ee/dingtalk/dingtalk.service.ts`
 
-**Step 1: Create DingTalkService**
+**第一步：创建钉钉服务**
 
-Core logic: OAuth callback, H5 login, findOrCreateUser, departure handling, auto-seed provider.
+核心逻辑：OAuth回调、H5登录、findOrCreateUser、出发处理、自动种子提供者。
 
-Reference: `apps/server/src/database/repos/group/group.repo.ts` for `getDefaultGroup` / `createDefaultGroup`.
-Reference: `apps/server/src/database/repos/group/group-user.repo.ts` for `insertGroupUser`.
+参考：`apps/server/src/database/repos/group/group.repo.ts` 对应 `getDefaultGroup` / `createDefaultGroup`。
+参考：`insertGroupUser` 的 `apps/server/src/database/repos/group/group-user.repo.ts`。
 
 ```typescript
 // apps/server/src/ee/dingtalk/dingtalk.service.ts
@@ -863,7 +863,7 @@ export class DingTalkService {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/ee/dingtalk/dingtalk.service.ts
@@ -872,15 +872,15 @@ git commit -m "feat(dingtalk): add core service with user find/create/bind and d
 
 ---
 
-## Task 5: Backend — DingTalk Controller, DTOs & Module Registration
+## 任务 5: 后端 — DingTalk Controller, DTOs & Module Registration
 
-**Files:**
-- Create: `apps/server/src/ee/dingtalk/dto/dingtalk.dto.ts`
-- Create: `apps/server/src/ee/dingtalk/dingtalk.controller.ts`
-- Create: `apps/server/src/ee/dingtalk/dingtalk.module.ts`
-- Modify: `apps/server/src/ee/ee.module.ts`
+**文件：**
+- 创建：`apps/server/src/ee/dingtalk/dto/dingtalk.dto.ts`
+- 创建：`apps/server/src/ee/dingtalk/dingtalk.controller.ts`
+- 创建：`apps/server/src/ee/dingtalk/dingtalk.module.ts`
+- 修改：`apps/server/src/ee/ee.module.ts`
 
-**Step 1: Create DTOs**
+**第 1 步：创建 DTO**
 
 ```typescript
 // apps/server/src/ee/dingtalk/dto/dingtalk.dto.ts
@@ -907,7 +907,7 @@ export class DingTalkH5LoginDto {
 }
 ```
 
-**Step 2: Create DingTalkController**
+**第二步：创建钉钉控制器**
 
 ```typescript
 // apps/server/src/ee/dingtalk/dingtalk.controller.ts
@@ -1097,7 +1097,7 @@ export class DingTalkController {
 }
 ```
 
-**Step 3: Create DingTalkModule**
+**第三步：创建钉钉模块**
 
 ```typescript
 // apps/server/src/ee/dingtalk/dingtalk.module.ts
@@ -1116,9 +1116,9 @@ import { TokenModule } from '../../core/auth/token.module';
 export class DingTalkModule {}
 ```
 
-**Step 4: Register DingTalkModule in EeModule**
+**第四步：在EeModule中注册DingTalkModule**
 
-In `apps/server/src/ee/ee.module.ts`, add import and register:
+在`apps/server/src/ee/ee.module.ts`中，添加导入并注册：
 
 ```typescript
 import { DingTalkModule } from './dingtalk/dingtalk.module';
@@ -1129,7 +1129,7 @@ import { DingTalkModule } from './dingtalk/dingtalk.module';
 export class EeModule {}
 ```
 
-**Step 5: Commit**
+**第 5 步：承诺**
 
 ```bash
 git add apps/server/src/ee/dingtalk/ apps/server/src/ee/ee.module.ts
@@ -1138,14 +1138,14 @@ git commit -m "feat(dingtalk): add controller, DTOs, module and register in EE"
 
 ---
 
-## Task 6: Docmost Frontend — 401 Redirect to Wiki Login
+## 任务 6: Docmost 前端 — 401 Redirect to Wiki Login
 
-**Files:**
-- Modify: `apps/client/src/lib/api-client.ts`
+**文件：**
+- 修改：`apps/client/src/lib/api-client.ts`
 
-**Step 1: Add wiki redirect on 401**
+**第 1 步：在 401 上添加 wiki 重定向**
 
-Find the existing 401 handling in the axios response interceptor. Add wiki redirect logic. Look for the block that checks `status === 401` or handles unauthorized errors:
+在axios响应拦截器中找到现有的401处理。添加 wiki 重定向逻辑。查找检查 `status === 401` 或处理未经授权的错误的块：
 
 ```typescript
 // Add this logic in the 401 handler, BEFORE the existing redirect to /login:
@@ -1156,7 +1156,7 @@ if (wikiUrl) {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/client/src/lib/api-client.ts
@@ -1165,13 +1165,13 @@ git commit -m "feat: redirect to wiki login on 401 when WIKI_URL configured"
 
 ---
 
-## Task 7: Wiki Frontend — Auth Types & Service
+## 任务 7: Wiki 前端 — Auth Types & Service
 
-**Files:**
-- Create: `wiki/docs/.vitepress/theme/types/auth.ts`
-- Create: `wiki/docs/.vitepress/theme/services/auth.ts`
+**文件：**
+- 创建：`wiki/docs/.vitepress/theme/types/auth.ts`
+- 创建：`wiki/docs/.vitepress/theme/services/auth.ts`
 
-**Step 1: Create auth types**
+**第 1 步：创建身份验证类型**
 
 ```typescript
 // wiki/docs/.vitepress/theme/types/auth.ts
@@ -1195,9 +1195,9 @@ export interface AuthResult {
 }
 ```
 
-**Step 2: Create AuthService**
+**第 2 步：创建AuthService**
 
-Important: API responses from Docmost are wrapped by `TransformHttpResponseInterceptor`, so response has `{ data: ... }` structure. Must extract `.data`.
+重要提示：来自 Docmost 的 API 响应由 `TransformHttpResponseInterceptor` 包装，因此响应具有 `{ data: ... }` 结构。必须提取`.data`。
 
 ```typescript
 // wiki/docs/.vitepress/theme/services/auth.ts
@@ -1264,7 +1264,7 @@ export function getAuthService(): AuthService | null {
 }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add wiki/docs/.vitepress/theme/types/auth.ts wiki/docs/.vitepress/theme/services/auth.ts
@@ -1273,14 +1273,14 @@ git commit -m "feat(wiki): add auth types and API service"
 
 ---
 
-## Task 8: Wiki Frontend — useAuth Composable
+## 任务 8: Wiki 前端 — useAuth Composable
 
-**Files:**
-- Create: `wiki/docs/.vitepress/theme/composables/useAuth.ts`
+**文件：**
+- 创建：`wiki/docs/.vitepress/theme/composables/useAuth.ts`
 
-**Step 1: Create useAuth composable**
+**步骤 1：创建 useAuth 可组合项**
 
-Module-level refs for shared state across components.
+跨组件共享状态的模块级引用。
 
 ```typescript
 // wiki/docs/.vitepress/theme/composables/useAuth.ts
@@ -1413,7 +1413,7 @@ export function useAuth() {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add wiki/docs/.vitepress/theme/composables/useAuth.ts
@@ -1422,30 +1422,30 @@ git commit -m "feat(wiki): add useAuth composable for authentication state"
 
 ---
 
-## Task 9: Wiki Frontend — Login Page & Callback Page
+## 任务 9: Wiki 前端 — Login Page & Callback Page
 
-**Files:**
-- Create: `wiki/docs/.vitepress/theme/pages/LoginPage.vue`
-- Create: `wiki/docs/.vitepress/theme/pages/LoginCallback.vue`
-- Run: `cd wiki && pnpm add dingtalk-jsapi`
+**文件：**
+- 创建：`wiki/docs/.vitepress/theme/pages/LoginPage.vue`
+- 创建：`wiki/docs/.vitepress/theme/pages/LoginCallback.vue`
+- 运行： `cd wiki && pnpm add dingtalk-jsapi`
 
-**Step 1: Install dingtalk-jsapi dependency**
+**第一步：安装dingtalk-jsapi依赖**
 
 ```bash
 cd wiki && pnpm add dingtalk-jsapi
 ```
 
-**Step 2: Create LoginPage.vue**
+**第 2 步：创建LoginPage.vue**
 
-Reference the existing wiki design system (CSS variables like `--c-bg`, `--c-text-1`, `--c-border` etc. from the wiki theme).
+参考现有的 wiki 设计系统（维基主题中的 CSS 变量，如 `--c-bg`、`--c-text-1`、`--c-border` 等）。
 
-Write the full LoginPage.vue content: login card with DingTalk button for web, auto H5 silent login in DingTalk client. Copy the complete component from the design document's Task 9 specification in `feater-dingding-user:docs/plans/2026-03-01-dingtalk-sso-impl-plan.md` lines 1220-1480, but use wiki's CSS variables (`--c-bg`, `--c-text-1`, `--c-text-2`, `--c-border`, `--c-hover`) instead of `--vp-c-*` variables.
+编写完整的LoginPage.vue内容：网页版带有钉钉按钮的登录卡、钉钉客户端自动H5静默登录。从设计文档的任务 9 规范的 `feater-dingding-user:docs/plans/2026-03-01-dingtalk-sso-impl-plan.md` 第 1220-1480 行中复制完整组件，但使用 wiki 的 CSS 变量（`--c-bg`、`--c-text-1`、`--c-text-2`、`--c-border`、`--c-hover`）而不是 `--vp-c-*` 变量。
 
-**Step 3: Create LoginCallback.vue**
+**第 3 步：创建LoginCallback.vue**
 
-Write the full LoginCallback.vue content: reads `authCode` and `state` from URL params, calls `loginWithDingTalkCode`, redirects on success. Copy from the old plan's Task 9 LoginCallback.vue specification, adapting CSS variables to wiki theme.
+编写完整的 LoginCallback.vue 内容：从 URL 参数读取 `authCode` 和 `state`，调用 `loginWithDingTalkCode`，成功时重定向。复制旧计划的 任务 9 LoginCallback.vue 规范，调整 CSS 变量以适应 wiki 主题。
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add wiki/docs/.vitepress/theme/pages/ wiki/package.json wiki/pnpm-lock.yaml
@@ -1454,18 +1454,18 @@ git commit -m "feat(wiki): add login page and callback page with DingTalk integr
 
 ---
 
-## Task 10: Wiki Frontend — UserMenu Component
+## 任务 10: Wiki 前端 — UserMenu Component
 
-**Files:**
-- Create: `wiki/docs/.vitepress/theme/components/UserMenu.vue`
+**文件：**
+- 创建：`wiki/docs/.vitepress/theme/components/UserMenu.vue`
 
-**Step 1: Create UserMenu component**
+**第 1 步：创建UserMenu组件**
 
-User avatar dropdown with: user name/email display, "后台管理" link (admin only), "退出登录" button. Uses `useAuth` composable. `VITE_ADMIN_URL` env var for admin link.
+用户头像下拉菜单包括：用户名/电子邮件显示、“后台管理”链接（仅限管理员）、“退出登录”按钮。使用 `useAuth` 可组合项。 `VITE_ADMIN_URL` 管理链接的环境变量。
 
-Write the full UserMenu.vue component. Reference the old plan's Task 10 UserMenu specification. Use hover-based dropdown (`.user-menu:hover .user-dropdown { display: block }`).
+编写完整的 UserMenu.vue 组件。请参考旧计划的 任务 10 UserMenu 规范。使用基于悬停的下拉菜单 (`.user-menu:hover .user-dropdown { display: block }`)。
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add wiki/docs/.vitepress/theme/components/UserMenu.vue
@@ -1474,45 +1474,45 @@ git commit -m "feat(wiki): add UserMenu component with admin link and logout"
 
 ---
 
-## Task 11: Wiki Frontend — Route Integration & Auth Guard
+## 任务 11: Wiki 前端 — Route Integration & Auth Guard
 
-**Files:**
-- Modify: `wiki/docs/.vitepress/theme/index.ts` (the `enhanceApp` + `router.onBeforePageLoad`)
-- Modify: `wiki/docs/.vitepress/theme/components/NavBar.vue` (replace login link with UserMenu)
-- Modify: `wiki/docs/.vitepress/theme/Layout.vue` (add auth initialization)
+**文件：**
+- 修改：`wiki/docs/.vitepress/theme/index.ts`（`enhanceApp` + `router.onBeforePageLoad`）
+- 修改：`wiki/docs/.vitepress/theme/components/NavBar.vue`（用 UserMenu 替换登录链接）
+- 修改：`wiki/docs/.vitepress/theme/Layout.vue`（添加auth初始化）
 
-**Step 1: Modify index.ts — add login routes and auth guard**
+**第 1 步：修改index.ts — 添加登录路由和身份验证防护**
 
-In the existing `router.onBeforePageLoad` handler, add BEFORE the existing Docmost route check:
+在现有的 `router.onBeforePageLoad` 处理程序中，在现有 Docmost 路由检查之前添加：
 
-1. Login page route: if path is `/login` → render LoginPage component, return false
-2. Login callback route: if path starts with `/login/callback` → render LoginCallback, return false
+1.登录页面路由：如果path为`/login`→渲染LoginPage组件，返回false
+2.登录回调路由：如果路径以`/login/callback`开头→渲染LoginCallback，返回false
 3. Auth guard: if no `authToken` cookie and path is not `/` → redirect to `/login?redirect=...`, return false
 
-Add imports at top:
+在顶部添加导入：
 ```typescript
 import LoginPage from './pages/LoginPage.vue'
 import LoginCallback from './pages/LoginCallback.vue'
 ```
 
-**Step 2: Modify NavBar.vue — replace login link with UserMenu**
+**第 2 步：修改 NavBar.vue — 将登录链接替换为 UserMenu**
 
-Find the existing login button `<a href="/login" class="login-button">登录</a>` in NavBar.vue and replace with:
+在 NavBar.vue 中找到现有的登录按钮 `<a href="/login" class="login-button">登录</a>` 并替换为：
 
 ```vue
 <UserMenu />
 ```
 
-Add import:
+添加导入：
 ```typescript
 import UserMenu from './UserMenu.vue'
 ```
 
-Keep the login-button CSS for fallback if UserMenu shows login state.
+如果 UserMenu 显示登录状态，则保留登录按钮 CSS 以供后备。
 
-**Step 3: Modify Layout.vue — initialize auth**
+**第 3 步：修改Layout.vue——初始化auth**
 
-In Layout.vue's `<script setup>`, add:
+在Layout.vue的`<script setup>`中，添加：
 
 ```typescript
 import { onMounted } from 'vue'
@@ -1521,7 +1521,7 @@ const { initAuth } = useAuth()
 onMounted(() => { initAuth() })
 ```
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add wiki/docs/.vitepress/theme/index.ts wiki/docs/.vitepress/theme/components/NavBar.vue wiki/docs/.vitepress/theme/Layout.vue
@@ -1530,28 +1530,28 @@ git commit -m "feat(wiki): add auth guard, login routes, and UserMenu integratio
 
 ---
 
-## Task 12: Verify Backend Compilation
+## 任务 12: 验证 Backend Compilation
 
-**Step 1: Run TypeScript compilation check**
+**第 1 步：运行 TypeScript 编译检查**
 
 ```bash
 cd apps/server && npx tsc --noEmit
 ```
 
-Fix any compilation errors.
+修复所有编译错误。
 
-**Step 2: Verify the server starts**
+**步骤 2：验证服务器启动**
 
 ```bash
 pnpm dev
 ```
 
-Check console for:
-- No DingTalk module registration errors
-- Server starts on port 3000
-- No missing dependency errors
+检查控制台：
+- 无钉钉模块注册错误
+- 服务器在端口 3000 上启动
+- 没有缺失依赖错误
 
-**Step 3: Commit any fixes**
+**第 3 步：提交任何修复**
 
 ```bash
 git add -A
@@ -1560,20 +1560,20 @@ git commit -m "fix: resolve compilation issues from dingtalk integration"
 
 ---
 
-## Task 13: Verify Wiki Frontend
+## 任务 13: 验证 Wiki Frontend
 
-**Step 1: Run wiki dev server**
+**第 1 步：运行 wiki 开发服务器**
 
 ```bash
 cd wiki && pnpm docs:dev
 ```
 
 Check:
-- No build errors
-- Login page renders at `/login`
-- Auth guard redirects unauthenticated users
+- 没有构建错误
+- 登录页面呈现在 `/login`
+- 身份验证守卫重定向未经身份验证的用户
 
-**Step 2: Commit any fixes**
+**第 2 步：提交任何修复**
 
 ```bash
 git add -A
@@ -1582,36 +1582,36 @@ git commit -m "fix: resolve wiki frontend issues from dingtalk integration"
 
 ---
 
-## Summary of All Files
+## 所有文件的摘要
 
-### New Files (12)
-| # | Path | Purpose |
+### 新文件 (12)
+| # | 路径 | 用途 |
 |---|------|---------|
-| 1 | `apps/server/src/database/repos/auth/auth-account.repo.ts` | AuthAccount repository |
-| 2 | `apps/server/src/database/repos/auth/auth-provider.repo.ts` | AuthProvider repository |
-| 3 | `apps/server/src/ee/dingtalk/types/dingtalk.types.ts` | DingTalk TypeScript types |
-| 4 | `apps/server/src/ee/dingtalk/dingtalk-api.service.ts` | DingTalk HTTP API wrapper + Redis cache |
-| 5 | `apps/server/src/ee/dingtalk/dingtalk.service.ts` | Core business logic |
-| 6 | `apps/server/src/ee/dingtalk/dto/dingtalk.dto.ts` | Request DTOs |
-| 7 | `apps/server/src/ee/dingtalk/dingtalk.controller.ts` | API endpoints |
-| 8 | `apps/server/src/ee/dingtalk/dingtalk.module.ts` | NestJS module |
-| 9 | `wiki/docs/.vitepress/theme/types/auth.ts` | Auth types |
-| 10 | `wiki/docs/.vitepress/theme/services/auth.ts` | Auth API service |
-| 11 | `wiki/docs/.vitepress/theme/composables/useAuth.ts` | Auth state composable |
-| 12 | `wiki/docs/.vitepress/theme/pages/LoginPage.vue` | Login page |
-| 13 | `wiki/docs/.vitepress/theme/pages/LoginCallback.vue` | OAuth callback page |
-| 14 | `wiki/docs/.vitepress/theme/components/UserMenu.vue` | User avatar dropdown |
+| 1 | `apps/server/src/database/repos/auth/auth-account.repo.ts` | AuthAccount 存储库 |
+| 2 | `apps/server/src/database/repos/auth/auth-provider.repo.ts` | AuthProvider 存储库 |
+| 3 | `apps/server/src/ee/dingtalk/types/dingtalk.types.ts` | 钉钉TypeScript类型 |
+| 4 | `apps/server/src/ee/dingtalk/dingtalk-api.service.ts` | 钉钉HTTP API封装+Redis缓存 |
+| 5 | `apps/server/src/ee/dingtalk/dingtalk.service.ts` | 核心业务逻辑 |
+| 6 | `apps/server/src/ee/dingtalk/dto/dingtalk.dto.ts` | 请求 DTO |
+| 7 | `apps/server/src/ee/dingtalk/dingtalk.controller.ts` | API端点 |
+| 8 | `apps/server/src/ee/dingtalk/dingtalk.module.ts` | NestJS模块 |
+| 9 | `wiki/docs/.vitepress/theme/types/auth.ts` | 身份验证类型 |
+| 10 | `wiki/docs/.vitepress/theme/services/auth.ts` | 认证API服务 |
+| 11 | `wiki/docs/.vitepress/theme/composables/useAuth.ts` | Auth 状态可组合 |
+| 12 | `wiki/docs/.vitepress/theme/pages/LoginPage.vue` | 登录页面 |
+| 13 | `wiki/docs/.vitepress/theme/pages/LoginCallback.vue` | OAuth回调页面 |
+| 14 | `wiki/docs/.vitepress/theme/components/UserMenu.vue` | 用户头像下拉菜单 |
 
-### Modified Files (7)
-| # | Path | Changes |
+### 修改文件 (7)
+| # | 路径 | 变更 |
 |---|------|---------|
-| 1 | `apps/server/src/integrations/environment/environment.service.ts` | Add DingTalk + cookie domain getters |
-| 2 | `apps/server/src/core/auth/auth.controller.ts` | Add cookie domain to setAuthCookie |
-| 3 | `apps/server/src/main.ts` | Add dingtalk to excluded paths |
-| 4 | `apps/server/src/database/database.module.ts` | Register auth repos |
-| 5 | `apps/server/src/ee/ee.module.ts` | Register DingTalkModule |
-| 6 | `apps/client/src/lib/api-client.ts` | 401 → wiki login redirect |
-| 7 | `wiki/docs/.vitepress/theme/index.ts` | Add login routes + auth guard |
-| 8 | `wiki/docs/.vitepress/theme/components/NavBar.vue` | Replace login link with UserMenu |
-| 9 | `wiki/docs/.vitepress/theme/Layout.vue` | Init auth on mount |
-| 10 | `.env.example` | Add DingTalk env vars |
+| 1 | `apps/server/src/integrations/environment/environment.service.ts` | 添加钉钉+cookie域名getters |
+| 2 | `apps/server/src/core/auth/auth.controller.ts` | 将 cookie 域添加到 setAuthCookie |
+| 3 | `apps/server/src/main.ts` | 将钉钉添加到排除路径 |
+| 4 | `apps/server/src/database/database.module.ts` | 注册授权仓库 |
+| 5 | `apps/server/src/ee/ee.module.ts` | 注册钉钉模块 |
+| 6 | `apps/client/src/lib/api-client.ts` | 401 → 维基登录重定向 |
+| 7 | `wiki/docs/.vitepress/theme/index.ts` | 添加登录路由+身份验证守卫 |
+| 8 | `wiki/docs/.vitepress/theme/components/NavBar.vue` | 将登录链接替换为 UserMenu |
+| 9 | `wiki/docs/.vitepress/theme/Layout.vue` | 挂载时初始化身份验证 |
+| 10 | `.env.example` | 添加钉钉环境变量 |

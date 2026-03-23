@@ -1,47 +1,47 @@
 # Wiki AI 知识问答板块渐进式重构 — 实施计划
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **对于Claude：** 必须使用的子技能：使用超能力：executing-plans来逐个任务地实施该计划。
 
-**Goal:** 渐进式重构 wiki AI 问答板块 — 清理死代码、拆分巨石组件、实现多轮对话、来源卡片化、推荐问题、RAG 阈值和 Prompt 语言跟随。
+**目标：** 渐进式重构 wiki AI 问答板块 — 清理死代码、拆分巨石组件、实现多轮对话、来源卡片化、推荐问题、RAG 阈值和 Prompt 语言跟随。
 
-**Architecture:** 前端 VitePress + Vue 3 SFC → 拆分 composable + 子组件 + 独立样式。后端 NestJS → DTO/Service/AI-Search 三层扩展 history 参数，改 `streamText({ prompt })` 为 `streamText({ messages })`。
+**架构：**前端 VitePress + Vue 3 SFC → 拆分可组合 + 子组件 + 独立样式。里面 NestJS → DTO/Service/AI-Search 三层扩展历史参数，改 `streamText({ prompt })` 为 `streamText({ messages })`。
 
-**Tech Stack:** Vue 3 (Composition API), VitePress, ant-design-x-vue, markdown-it, NestJS 11, Fastify, Kysely, Vercel AI SDK v6, pgvector
+**技术栈：** Vue 3（组合 API）、VitePress、ant-design-x-vue、markdown-it、NestJS 11、Fastify、Kysely、Vercel AI SDK v6、pgvector
 
 **注意:** 本项目 wiki 前端和 public-wiki 后端均无测试基础设施（无 test 文件），本计划以手动验证为主，每步通过编译检查 + 浏览器验证。
 
 ---
 
-## Task 1: 清理死代码
+## 任务 1: 清理死代码
 
 **目标:** 删除 ~700 行未使用代码，减少维护负担
 
-**Files:**
-- Delete: `wiki/docs/.vitepress/theme/components/AIChatMessage.vue`
-- Modify: `wiki/docs/.vitepress/theme/composables/useAIChat.ts`
-- Modify: `wiki/docs/.vitepress/theme/types/index.ts` (删除 `AIChatMessageProps`)
+**文件：**
+- 删除：`wiki/docs/.vitepress/theme/components/AIChatMessage.vue`
+- 修改：`wiki/docs/.vitepress/theme/composables/useAIChat.ts`
+- 修改：`wiki/docs/.vitepress/theme/types/index.ts`（删除`AIChatMessageProps`）
 
-**Step 1: 确认 AIChatMessage.vue 未被引用**
+**第 1 步：确认 AIChatMessage.vue 芭引用**
 
 ```bash
 cd wiki && grep -r "AIChatMessage" docs/.vitepress/ --include="*.vue" --include="*.ts"
 ```
 
-Expected: 只在 `AIChatMessage.vue` 自身和 `types/index.ts` 中出现
+期望结果： 只在 `AIChatMessage.vue` 自身和 `types/index.ts` 中出现
 
-**Step 2: 删除 AIChatMessage.vue**
+**第 2 步：删除AIChatMessage.vue**
 
 删除文件 `wiki/docs/.vitepress/theme/components/AIChatMessage.vue`（257 行）
 
-**Step 3: 确认 useAIChat() 函数体未被调用**
+**步骤 3：确认 useAIChat() 函数体未被调用**
 
 ```bash
 cd wiki && grep -r "useAIChat()" docs/.vitepress/ --include="*.vue" --include="*.ts"
 ```
 
-Expected: 只在 `useAIChat.ts` 自身定义处出现
+期望结果： 只在 `useAIChat.ts` 自身定义处出现
 
-**Step 4: 精简 useAIChat.ts — 只保留工具函数**
+**第 4 步：专业使用AIChat.ts — 只保留工具函数**
 
 将 `wiki/docs/.vitepress/theme/composables/useAIChat.ts` 从 452 行精简为仅保留被 AIChat.vue import 的 4 个工具函数：
 
@@ -85,7 +85,7 @@ export function getAIChatModifierKey(): string {
 }
 ```
 
-**Step 5: 删除 types/index.ts 中的 AIChatMessageProps**
+**第五步：删除 types/index.ts 中的 AIChatMessageProps**
 
 删除 `wiki/docs/.vitepress/theme/types/index.ts` 第 368-372 行：
 
@@ -98,15 +98,15 @@ export interface AIChatMessageProps {
 }
 ```
 
-**Step 6: 验证编译**
+**步骤 6：验证编译**
 
 ```bash
 cd wiki && npx vitepress build docs 2>&1 | head -20
 ```
 
-Expected: 无编译错误
+预期：无编译错误
 
-**Step 7: Commit**
+**第 7 步：承诺**
 
 ```bash
 git add -A && git commit -m "refactor: remove dead code — AIChatMessage.vue + useAIChat() body (~700 lines)"
@@ -114,14 +114,14 @@ git add -A && git commit -m "refactor: remove dead code — AIChatMessage.vue + 
 
 ---
 
-## Task 2: 扩展类型定义
+## 任务 2: 扩展类型定义
 
-**目标:** 为 ChatMessage 添加 sources 字段，新增 AiHistoryMessage 类型
+**目标：** 为 ChatMessage 添加来源字段，添加 AiHistoryMessage 类型
 
-**Files:**
-- Modify: `wiki/docs/.vitepress/theme/types/index.ts`
+**文件：**
+- 修改：`wiki/docs/.vitepress/theme/types/index.ts`
 
-**Step 1: 为 ChatMessage 添加 sources 字段**
+**步骤1：为ChatMessage添加来源字段**
 
 在 `types/index.ts` 第 108-119 行的 `ChatMessage` 接口中添加 `sources` 字段：
 
@@ -156,13 +156,13 @@ export interface AiHistoryMessage {
 }
 ```
 
-**Step 2: 验证编译**
+**步骤 2：验证编译**
 
 ```bash
 cd wiki && npx vitepress build docs 2>&1 | head -20
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add -A && git commit -m "feat(types): add sources field to ChatMessage, add AiSource and AiHistoryMessage types"
@@ -170,16 +170,16 @@ git add -A && git commit -m "feat(types): add sources field to ChatMessage, add 
 
 ---
 
-## Task 3: 后端 — DTO + 多轮对话管道
+## 任务 3: 后端 — DTO + 多轮对话管道
 
-**目标:** DTO 增加 history 字段，透传到 ai-search.service
+**目标：** DTO 增加历史字段，透传到 ai-search.service
 
-**Files:**
-- Modify: `apps/server/src/core/public-wiki/dto/public-wiki.dto.ts`
-- Modify: `apps/server/src/core/public-wiki/public-wiki.controller.ts`
-- Modify: `apps/server/src/core/public-wiki/public-wiki.service.ts`
+**文件：**
+- 修改：`apps/server/src/core/public-wiki/dto/public-wiki.dto.ts`
+- 修改：`apps/server/src/core/public-wiki/public-wiki.controller.ts`
+- 修改：`apps/server/src/core/public-wiki/public-wiki.service.ts`
 
-**Step 1: DTO 增加 history 字段**
+**步骤1：DTO 增加历史字段**
 
 在 `public-wiki.dto.ts` 的 `PublicAiAnswerDto` 类（第 37-45 行）增加：
 
@@ -213,7 +213,7 @@ export class PublicAiAnswerDto {
 }
 ```
 
-**Step 2: Controller 透传 history**
+**第 2 步：控制器透传历史**
 
 修改 `public-wiki.controller.ts` 第 92-97 行，`aiAnswers` 方法中传递 `dto.history`：
 
@@ -229,7 +229,7 @@ export class PublicAiAnswerDto {
       }
 ```
 
-**Step 3: Service 透传 history**
+**第 3 步：服务透传历史**
 
 修改 `public-wiki.service.ts` 第 279-303 行的 `aiAnswers` 方法签名和调用：
 
@@ -264,13 +264,13 @@ export class PublicAiAnswerDto {
   }
 ```
 
-**Step 4: 验证后端编译**
+**步骤 4：验证后端编译**
 
 ```bash
 cd apps/server && npx tsc --noEmit 2>&1 | head -30
 ```
 
-**Step 5: Commit**
+**第 5 步：承诺**
 
 ```bash
 git add -A && git commit -m "feat(backend): add history param to AI answer pipeline (DTO → Controller → Service)"
@@ -278,14 +278,14 @@ git add -A && git commit -m "feat(backend): add history param to AI answer pipel
 
 ---
 
-## Task 4: 后端 — RAG 质量优化
+## 任务 4: 后端 — RAG 质量优化
 
 **目标:** 向量搜索阈值 + Prompt 语言跟随 + `streamText({ messages })` 多轮对话
 
-**Files:**
-- Modify: `apps/server/src/ee/ai/services/ai-search.service.ts`
+**文件：**
+- 修改：`apps/server/src/ee/ai/services/ai-search.service.ts`
 
-**Step 1: 向量搜索添加距离阈值**
+**步骤 1：向量搜索添加距离阈值**
 
 修改 `ai-search.service.ts` 第 103-132 行的 `searchSimilarPages` 方法，在 SQL WHERE 中加阈值：
 
@@ -324,7 +324,7 @@ git add -A && git commit -m "feat(backend): add history param to AI answer pipel
   }
 ```
 
-**Step 2: 改写 answerWithContext — Prompt 语言跟随 + messages 模式 + history 支持**
+**第 2 步：改写answerWithContext — 提示语言跟随+消息模式+历史支持**
 
 完整替换 `ai-search.service.ts` 第 134-207 行的 `answerWithContext` 方法：
 
@@ -425,13 +425,13 @@ git add -A && git commit -m "feat(backend): add history param to AI answer pipel
   }
 ```
 
-**Step 3: 验证后端编译**
+**步骤 3：验证后端编译**
 
 ```bash
 cd apps/server && npx tsc --noEmit 2>&1 | head -30
 ```
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add -A && git commit -m "feat(ai-search): add distance threshold, language-aware prompt, multi-turn messages support"
@@ -439,15 +439,15 @@ git add -A && git commit -m "feat(ai-search): add distance threshold, language-a
 
 ---
 
-## Task 5: 前端 — 抽离样式到独立文件
+## 任务 5: 前端 — 抽离样式到独立文件
 
 **目标:** 将 AIChat.vue 中 612 行 `<style scoped>` 抽到独立 CSS 文件，保持行为不变
 
-**Files:**
-- Create: `wiki/docs/.vitepress/theme/styles/ai-chat.css`
-- Modify: `wiki/docs/.vitepress/theme/components/AIChat.vue` (删除 `<style>` 块，改为 import)
+**文件：**
+- 创建：`wiki/docs/.vitepress/theme/styles/ai-chat.css`
+- 修改: `wiki/docs/.vitepress/theme/components/AIChat.vue` (删除 `<style>` 块，改为导入)
 
-**Step 1: 创建 styles/ai-chat.css**
+**第 1 步：创建styles/ai-chat.css**
 
 从 AIChat.vue 第 456-1068 行的 `<style scoped>` 内容（去掉 `<style scoped>` 和 `</style>` 标签）复制到新文件 `wiki/docs/.vitepress/theme/styles/ai-chat.css`。
 
@@ -460,7 +460,7 @@ git add -A && git commit -m "feat(ai-search): add distance threshold, language-a
 - `.dark :deep(...)` → `.dark .ai-chat-root ...`
 - 其他非 `:deep()` 的选择器保持不变（已经有 `.ai-chat-*` 前缀）
 
-**Step 2: AIChat.vue 中移除 `<style>` 块，改为 import**
+**第 2 步：AIChat.vue中删除`<style>`块，改为导入**
 
 在 `<script setup>` 开头添加：
 
@@ -470,7 +470,7 @@ import '../styles/ai-chat.css'
 
 删除整个 `<style scoped>...</style>` 块（第 456-1068 行）。
 
-**Step 3: 验证样式不回退**
+**步骤 3：验证样式不回退**
 
 ```bash
 cd wiki && npx vitepress dev docs --host
@@ -478,7 +478,7 @@ cd wiki && npx vitepress dev docs --host
 
 浏览器手动验证：打开 AI 面板 → 发送消息 → 检查样式一致
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add -A && git commit -m "refactor: extract AIChat styles to standalone ai-chat.css (612 lines)"
@@ -486,15 +486,15 @@ git add -A && git commit -m "refactor: extract AIChat styles to standalone ai-ch
 
 ---
 
-## Task 6: 前端 — 来源引用卡片组件
+## 任务 6: 前端 — 来源引用卡片组件
 
 **目标:** 创建 AIChatSources.vue，以可折叠卡片展示 AI 来源引用
 
-**Files:**
-- Create: `wiki/docs/.vitepress/theme/components/AIChatSources.vue`
-- Modify: `wiki/docs/.vitepress/theme/styles/ai-chat.css` (添加来源卡片样式)
+**文件：**
+- 创建：`wiki/docs/.vitepress/theme/components/AIChatSources.vue`
+- 修改： `wiki/docs/.vitepress/theme/styles/ai-chat.css` (添加来源卡片样式)
 
-**Step 1: 创建 AIChatSources.vue**
+**第 1 步：创建AIChatSources.vue**
 
 ```vue
 <script setup lang="ts">
@@ -552,7 +552,7 @@ const sourceLinks = computed(() =>
 </template>
 ```
 
-**Step 2: 在 ai-chat.css 中添加来源卡片样式**
+**步骤 2：在 ai-chat.css 中添加来源卡片样式**
 
 ```css
 /* ===== 来源引用卡片 ===== */
@@ -621,13 +621,13 @@ const sourceLinks = computed(() =>
 }
 ```
 
-**Step 3: 验证编译**
+**步骤 3：验证编译**
 
 ```bash
 cd wiki && npx vitepress build docs 2>&1 | head -20
 ```
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add -A && git commit -m "feat: add AIChatSources.vue — collapsible source reference cards"
@@ -635,15 +635,15 @@ git add -A && git commit -m "feat: add AIChatSources.vue — collapsible source 
 
 ---
 
-## Task 7: 前端 — 欢迎页 + 推荐问题组件
+## 任务 7: 前端 — 欢迎页 + 推荐问题组件
 
 **目标:** 创建 AIChatWelcome.vue，包含智能推荐问题
 
-**Files:**
-- Create: `wiki/docs/.vitepress/theme/components/AIChatWelcome.vue`
-- Modify: `wiki/docs/.vitepress/theme/styles/ai-chat.css` (添加推荐问题样式)
+**文件：**
+- 创建：`wiki/docs/.vitepress/theme/components/AIChatWelcome.vue`
+- 修改： `wiki/docs/.vitepress/theme/styles/ai-chat.css` (添加推荐问题样式)
 
-**Step 1: 创建 AIChatWelcome.vue**
+**第 1 步：创建AIChatWelcome.vue**
 
 ```vue
 <script setup lang="ts">
@@ -707,7 +707,7 @@ const suggestedQuestions = computed(() => {
 </template>
 ```
 
-**Step 2: 在 ai-chat.css 中添加推荐问题样式**
+**步骤 2：在 ai-chat.css 中添加推荐问题样式**
 
 ```css
 /* ===== 推荐问题 ===== */
@@ -739,13 +739,13 @@ const suggestedQuestions = computed(() => {
 }
 ```
 
-**Step 3: 验证编译**
+**步骤 3：验证编译**
 
 ```bash
 cd wiki && npx vitepress build docs 2>&1 | head -20
 ```
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add -A && git commit -m "feat: add AIChatWelcome.vue — welcome screen with suggested questions"
@@ -753,14 +753,14 @@ git add -A && git commit -m "feat: add AIChatWelcome.vue — welcome screen with
 
 ---
 
-## Task 8: 前端 — DocmostService 增加 history 参数
+## 任务 8: 前端 — DocmostService 增加 history 参数
 
 **目标:** `docmost.ts` 的 `aiAnswers()` 方法支持传递 history
 
-**Files:**
-- Modify: `wiki/docs/.vitepress/theme/services/docmost.ts`
+**文件：**
+- 修改：`wiki/docs/.vitepress/theme/services/docmost.ts`
 
-**Step 1: 修改 aiAnswers 方法签名**
+**第 1 步：修改aiAnswers方法签名**
 
 修改 `docmost.ts` 第 91 行的 `aiAnswers` 方法，增加 `history` 参数：
 
@@ -791,13 +791,13 @@ git add -A && git commit -m "feat: add AIChatWelcome.vue — welcome screen with
 
 （后续代码不变）
 
-**Step 2: 验证编译**
+**步骤 2：验证编译**
 
 ```bash
 cd wiki && npx vitepress build docs 2>&1 | head -20
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add -A && git commit -m "feat(docmost-service): add history param to aiAnswers for multi-turn conversation"
@@ -805,14 +805,14 @@ git add -A && git commit -m "feat(docmost-service): add history param to aiAnswe
 
 ---
 
-## Task 9: 前端 — 重写 AIChat.vue（集成所有改动）
+## 任务 9: 前端 — 重写 AIChat.vue（集成所有改动）
 
 **目标:** 瘦身 AIChat.vue，集成来源卡片、推荐问题、多轮对话发送，去除来源 markdown 追加
 
-**Files:**
-- Modify: `wiki/docs/.vitepress/theme/components/AIChat.vue`
+**文件：**
+- 修改：`wiki/docs/.vitepress/theme/components/AIChat.vue`
 
-**Step 1: 重写 AIChat.vue script 部分**
+**第 1 步：重写AIChat.vue脚本部分**
 
 核心改动点：
 1. import 新组件 `AIChatSources` 和 `AIChatWelcome`
@@ -955,7 +955,7 @@ const sendMessage = async (content: string) => {
 }
 ```
 
-**Step 2: 修改 template 部分**
+**第 2 步：修改模板部分**
 
 替换欢迎信息区域（第 407-416 行）：
 
@@ -1003,7 +1003,7 @@ const bubbleItems = computed(() => {
 })
 ```
 
-**Step 3: 添加 import 语句**
+**第三步：添加导入语句**
 
 在 `<script setup>` 顶部添加：
 
@@ -1013,13 +1013,13 @@ import AIChatWelcome from './AIChatWelcome.vue'
 import type { AiSource } from '../types'
 ```
 
-**Step 4: 验证编译**
+**步骤 4：验证编译**
 
 ```bash
 cd wiki && npx vitepress build docs 2>&1 | head -20
 ```
 
-**Step 5: 浏览器手动验证**
+**步骤 5：浏览器手动验证**
 
 ```bash
 cd wiki && npx vitepress dev docs --host
@@ -1034,7 +1034,7 @@ cd wiki && npx vitepress dev docs --host
 - [ ] Dify 模式不受影响
 - [ ] Dark 模式样式正常
 
-**Step 6: Commit**
+**第 6 步：承诺**
 
 ```bash
 git add -A && git commit -m "feat: rebuild AIChat.vue — multi-turn conversation, source cards, suggested questions"
@@ -1042,13 +1042,13 @@ git add -A && git commit -m "feat: rebuild AIChat.vue — multi-turn conversatio
 
 ---
 
-## Task 10: 清理和最终验证
+## 任务 10: 清理和最终验证
 
 **目标:** 确保所有改动协同工作，无回退
 
-**Files:** 无新增修改
+**文件：** 无新增修改
 
-**Step 1: 全量编译检查**
+**步骤 1：全量编译检查**
 
 ```bash
 cd wiki && npx vitepress build docs
@@ -1058,15 +1058,15 @@ cd wiki && npx vitepress build docs
 cd apps/server && npx tsc --noEmit
 ```
 
-**Step 2: 检查 git 状态**
+**第 2 步：检查git状态**
 
 ```bash
 git status && git log --oneline -10
 ```
 
-Expected: 干净工作区，8-9 个有序 commit
+预计：洁净工作区，8-9个小区
 
-**Step 3: 最终浏览器验证**
+**步骤 3：最终浏览器验证**
 
 完整测试流程：
 1. 启动后端 `pnpm dev`
@@ -1079,27 +1079,27 @@ Expected: 干净工作区，8-9 个有序 commit
 8. Dark 模式切换
 9. ESC 关闭面板
 
-**Step 4: 确认无遗留死代码**
+**步骤 4：确认无遗留死代码**
 
 ```bash
 grep -r "AIChatMessage" wiki/docs/.vitepress/ --include="*.vue" --include="*.ts"
 ```
 
-Expected: 无结果
+预计：无结果
 
 ---
 
 ## 任务依赖图
 
 ```
-Task 1 (清理死代码) ──┐
-Task 2 (类型扩展) ────┤
-Task 3 (后端 DTO) ────┼── Task 4 (后端 RAG) ──┐
+任务 1 (清理死代码) ──┐
+任务 2 (类型扩展) ────┤
+任务 3 (后端 DTO) ────┼── 任务 4 (后端 RAG) ──┐
                       │                        │
-Task 5 (抽离样式) ────┤                        │
-Task 6 (来源卡片) ────┤                        │
-Task 7 (欢迎组件) ────┤                        │
-Task 8 (Service) ─────┼── Task 9 (重写 AIChat) ── Task 10 (验证)
+任务 5 (抽离样式) ────┤                        │
+任务 6 (来源卡片) ────┤                        │
+任务 7 (欢迎组件) ────┤                        │
+任务 8 (Service) ─────┼── 任务 9 (重写 AIChat) ── 任务 10 (验证)
 ```
 
-Task 1-3, 5-8 可并行，Task 4 依赖 Task 3，Task 9 依赖 Task 4-8，Task 10 最后执行。
+任务 1-3, 5-8 可配件，任务 4 依赖任务 3，任务 9 依赖任务 4-8，任务 10 最后执行。

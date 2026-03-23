@@ -1,12 +1,12 @@
 # 高级 RAG 检索管线实施计划
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **对于Claude：** 必须使用的子技能：使用超能力：executing-plans来逐个任务地实施该计划。
 
-**Goal:** 将 wiki AI 问答从"整页单向量"升级为业内最佳实践的多层检索管线：分块嵌入 + 混合搜索(BM25+Vector) + 上下文嵌入 + Rerank + 多模态图片/图表索引。
+**目标：** 将 wiki AI 问答从"整页单向量"升级为业内最佳实践的多层检索管线：分块嵌入 + 混合搜索(BM25+Vector) + 上下文嵌入 + Rerank + 多模态图片/图表索引。
 
-**Architecture:** 页面保存时按 ~400 token 分块（代码块不可分割），用轻量 LLM 为每个 chunk 添加文档级上下文前缀后生成 embedding；同时提取图片描述（VLM → 缓存到 attachments.textContent）和 Drawio/Excalidraw 文本（从附件文件通过 StorageService 读取解析）作为独立 chunk。检索时 BM25（pg_jieba 中文分词）和向量搜索并行执行，RRF 融合到 page 级别后由专用 Rerank 模型精排（未配置时 LLM fallback），最终 top-5 结果送入 LLM 生成回答。
+**架构：** 页面保存时按 ~400 token 分块（代码块不可分割），用轻量 LLM 为每个 chunk 添加文档级上下文前缀后生成 embedding；同时提取图片描述（VLM → 缓存到 attachments.textContent）和 Drawio/Excalidraw 文本（从附件文件通过 StorageService 读取解析）作为独立 chunk。检索时 BM25（pg_jieba 中文分词）和向量搜索并行执行，RRF 融合到 page 级别后由专用 Rerank 模型精排（未配置时 LLM fallback），最终 top-5 结果送入 LLM 生成回答。
 
-**Tech Stack:** NestJS + Kysely + pgvector (HNSW) + PostgreSQL tsvector (pg_jieba) + Vercel AI SDK + BullMQ + OpenAI-compatible Rerank API + StorageService (local/S3)
+**技术栈：** NestJS + Kysely + pgvector (HNSW) + PostgreSQL tsvector (pg_jieba) + Vercel AI SDK + BullMQ + OpenAI 兼容的 Rerank API + StorageService (本地/S3)
 
 ---
 
@@ -14,18 +14,18 @@
 
 | # | 问题 | 决策 |
 |---|------|------|
-| Q1 | 中文分词 | 安装 pg_jieba，tsvector 双语（english + jiebacfg） |
-| Q2 | Rerank 接口 | `AI_RERANK_MODEL` + `AI_RERANK_API_URL`(可选)，OpenAI-compatible |
-| Q3 | 搜索粒度 | 向量 chunk→page 聚合，BM25 page 级，RRF page 级融合 |
-| Q4 | 上下文嵌入成本 | cheapest model 生成前缀，仅增量 |
+| Q1 | 中文分词 | 安装pg_jieba，tsvector双语（english + jiebacfg） |
+| Q2 | 重新排序接口 | `AI_RERANK_MODEL` + `AI_RERANK_API_URL`(任选)，兼容OpenAI |
+| Q3 | 搜索粒度 | 支持chunk→page聚合，BM25页级，RRF页级融合 |
+| Q4 | 上下文嵌入成本 | 最便宜的模式生成邻居，仅增量 |
 | Q5 | 图片队列策略 | 同一 job 顺序执行，图片失败不阻塞文本 |
 | Q6 | 查询延迟 | 接受 3~5s 首 token，全管线串行 |
-| Q7 | 多模态环境变量 | VLM 复用 completion model，Rerank 独立 |
-| Q8 | 图片描述缓存 | 缓存到 attachments.textContent |
+| Q7 | 多模态环境变量 | VLM 复用完成模型，Rerank 独立 |
+| Q8 | 图片描述缓存 | 缓存到attachments.textContent |
 | Q9 | Drawio/Excalidraw | 数据在附件文件中，通过 StorageService.read() 读取 |
-| Q10 | Rerank 降级 | 未配置时 LLM rerank fallback |
+| Q10 | 重新排名降级 | 未配置时LLM重新排名后备 |
 | Q11 | 图表文本提取 | 始终启用 |
-| Q12 | 旧 embedding 迁移 | 手动重新激活全量重建 |
+| Q12 | 旧嵌入迁移 | 手动重新激活全量重建 |
 | Q13 | Embed 节点 | 不索引 |
 | Q14 | 代码块分块 | 不可分割单元 |
 
@@ -33,7 +33,7 @@
 
 | 组件 | 未配置/失败时 | 行为 |
 |------|-------------|------|
-| AI_RERANK_MODEL | 用 AI_COMPLETION_MODEL 做 LLM rerank | 功能不变，速度稍慢 |
+| AI_RERANK_MODEL | 使用AI_COMPLETION_MODEL做LLM重新排名 | 功能不变，速度稍慢 |
 | VLM (图片描述) | 静默跳过图片 embedding | 图片不可检索，文本/图表正常 |
 | pg_jieba | 中文 BM25 失效，靠向量搜索 | 英文 BM25 正常 |
 | 上下文前缀 LLM | 用模板 `"本段来自《{title}》"` | 效果降低但不报错 |
@@ -41,12 +41,12 @@
 
 ---
 
-## Task 1: 文本分块工具函数
+## 任务 1: 文本分块工具函数
 
-**Files:**
-- Create: `apps/server/src/ee/ai/utils/chunker.ts`
+**文件：**
+- 创建：`apps/server/src/ee/ai/utils/chunker.ts`
 
-**Step 1: 创建文件**
+**步骤 1：创建文件**
 
 ```typescript
 // apps/server/src/ee/ai/utils/chunker.ts
@@ -160,7 +160,7 @@ export function chunkText(text: string, maxChars = 1600, overlapRatio = 0.2): Te
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/utils/chunker.ts
@@ -169,12 +169,12 @@ git commit -m "feat(ai): add text chunking utility with code block protection"
 
 ---
 
-## Task 2: ProseMirror 内容提取工具
+## 任务 2: ProseMirror 内容提取工具
 
-**Files:**
-- Create: `apps/server/src/ee/ai/utils/content-extractor.ts`
+**文件：**
+- 创建：`apps/server/src/ee/ai/utils/content-extractor.ts`
 
-**Step 1: 创建文件**
+**步骤 1：创建文件**
 
 ```typescript
 // apps/server/src/ee/ai/utils/content-extractor.ts
@@ -270,7 +270,7 @@ export function extractExcalidrawText(jsonData: string): string {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/utils/content-extractor.ts
@@ -279,13 +279,13 @@ git commit -m "feat(ai): add content extractor for images, drawio, excalidraw"
 
 ---
 
-## Task 3: 环境变量 — Rerank 配置
+## 任务 3: 环境变量 — Rerank 配置
 
-**Files:**
-- Modify: `apps/server/src/integrations/environment/environment.validation.ts:148-151`
-- Modify: `apps/server/src/integrations/environment/environment.service.ts:266-269`
+**文件：**
+- 修改：`apps/server/src/integrations/environment/environment.validation.ts:148-151`
+- 修改：`apps/server/src/integrations/environment/environment.service.ts:266-269`
 
-**Step 1: 在 validation.ts 的 `OLLAMA_API_URL` 后、class 闭合 `}` 前添加**
+**第 1 步：在validation.ts的`OLLAMA_API_URL`后、class关闭`}`前添加**
 
 ```typescript
   @IsOptional()
@@ -297,7 +297,7 @@ git commit -m "feat(ai): add content extractor for images, drawio, excalidraw"
   AI_RERANK_API_URL: string;
 ```
 
-**Step 2: 在 environment.service.ts 的 `getOpenAiApiUrl()` 方法后添加**
+**第 2 步：在environment.service.ts的`getOpenAiApiUrl()`方法后添加**
 
 ```typescript
   getAiRerankModel(): string {
@@ -309,7 +309,7 @@ git commit -m "feat(ai): add content extractor for images, drawio, excalidraw"
   }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/server/src/integrations/environment/environment.validation.ts apps/server/src/integrations/environment/environment.service.ts
@@ -318,14 +318,14 @@ git commit -m "feat(ai): add AI_RERANK_MODEL and AI_RERANK_API_URL env config"
 
 ---
 
-## Task 4: ai-search.service.ts 全面重构
+## 任务 4: ai-search.service.ts 全面重构
 
-**Files:**
-- Modify: `apps/server/src/ee/ai/services/ai-search.service.ts`
+**文件：**
+- 修改：`apps/server/src/ee/ai/services/ai-search.service.ts`
 
 这是最核心的 Task。完全重写该文件，包含以下方法：
 
-**Step 1: 重写整个文件**
+**步骤 1：重写整个文件**
 
 ```typescript
 // apps/server/src/ee/ai/services/ai-search.service.ts
@@ -838,7 +838,7 @@ export class AiSearchService {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/services/ai-search.service.ts
@@ -847,17 +847,17 @@ git commit -m "feat(ai): full rewrite - hybrid search, rerank, smart context, ch
 
 ---
 
-## Task 5: 重构 embedding 生成管线 — ai-queue.processor.ts
+## 任务 5: 重构 embedding 生成管线 — ai-queue.processor.ts
 
-**Files:**
-- Modify: `apps/server/src/ee/ai/ai-queue.processor.ts`
-- Modify: `apps/server/src/ee/ai/ai.module.ts` (注入 StorageService)
+**文件：**
+- 修改：`apps/server/src/ee/ai/ai-queue.processor.ts`
+- 修改：`apps/server/src/ee/ai/ai.module.ts` (注入StorageService)
 
-**Step 1: ai.module.ts 导入 StorageModule**
+**第 1 步：ai.module.ts导入StorageModule**
 
-在 `ai.module.ts` 中 `@Module` 添加 imports（StorageModule 已全局注册，但 StorageService 需要显式注入）：
+在 `ai.module.ts` 中 `@Module` 添加导入（StorageModule 已全局注册，但 StorageService 需要显式注入）：
 
-在 `ai-queue.processor.ts` 的 constructor 中添加：
+在 `ai-queue.processor.ts` 的构造函数中添加：
 
 ```typescript
 import { StorageService } from '../../integrations/storage/storage.service';
@@ -866,7 +866,7 @@ import { StorageService } from '../../integrations/storage/storage.service';
 private readonly storageService: StorageService,
 ```
 
-**Step 2: 重写 upsertPageEmbedding 及相关方法**
+**第 2 步：重写upsertPageEmbedding及相关方法**
 
 将 `upsertPageEmbedding` 签名改为：
 
@@ -879,14 +879,14 @@ private async upsertPageEmbedding(
 ```
 
 完整逻辑：
-1. 删除旧 embeddings
-2. chunkText(text) → 每个 chunk 调 generateContextPrefix → generateEmbedding → INSERT (metadata: {type:'text', contextPrefix})
-3. extractDiagramNodes(prosemirrorContent) → 读附件文件（storageService.read(filePath)）→ extractDrawioText/extractExcalidrawText → embed → INSERT (metadata: {type:'diagram'})
-4. extractImageNodes(prosemirrorContent) → 查 attachments.textContent 缓存 → 未命中则 storageService.read → base64 → VLM generateText → 缓存到 attachments.textContent → embed → INSERT (metadata: {type:'image', description})
+1.删除旧嵌入
+2. chunkText(text)→每个chunk调generateContextPrefix→generateEmbedding→INSERT(metadata: {type:'text', contextPrefix})
+3. extractDiagramNodes(prosemirrorContent) → 读附件文件（storageService.read(filePath)）→ extractDrawioText/extractExcalidrawText → 嵌入 → INSERT (元数据: {type:'diagram'})
+4. extractImageNodes(prosemirrorContent)→查attachments.textContent缓存→未命中则storageService.read→base64→VLMgenerateText→缓存到attachments.textContent→embed→INSERT(元数据:{type:'image',description})
 
-**Step 3: 更新 generatePageEmbeddings**
+**步骤 3：更新generatePageEmbeddings**
 
-新增 select `content` 列，传递给 upsertPageEmbedding：
+添加选择 `content` 列，提交给 upsertPageEmbedding：
 
 ```typescript
 const page = await this.db
@@ -902,7 +902,7 @@ await this.upsertPageEmbedding(page.id, workspaceId, text, page.title || 'Untitl
 
 同样更新 `generateWorkspaceEmbeddings`。
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/ai-queue.processor.ts apps/server/src/ee/ai/ai.module.ts
@@ -911,12 +911,12 @@ git commit -m "feat(ai): chunked embedding with contextual prefix, image caption
 
 ---
 
-## Task 6: 数据库索引优化
+## 任务 6: 数据库索引优化
 
-**Files:**
-- Modify: `apps/server/src/ee/ai/ai-queue.processor.ts` — `createEmbeddingsTable()` 方法
+**文件：**
+- 修改：`apps/server/src/ee/ai/ai-queue.processor.ts` — `createEmbeddingsTable()`方法
 
-**Step 1: 在现有索引后添加**
+**步骤 1：在现有索引后添加**
 
 ```typescript
 await sql`
@@ -936,7 +936,7 @@ await sql`
 `.execute(this.db);
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/ai-queue.processor.ts
@@ -945,12 +945,12 @@ git commit -m "feat(ai): add HNSW, chunk, and metadata indexes for page_embeddin
 
 ---
 
-## Task 7: pg_jieba 中文分词（需确认部署环境）
+## 任务 7: pg_jieba 中文分词（需确认部署环境）
 
-**Files:**
+**文件：**
 - 可能新增迁移文件: `apps/server/src/database/migrations/YYYYMMDD-pg-jieba-tsvector.ts`
 
-**Step 1: 创建迁移文件**
+**步骤 1：创建迁移文件**
 
 ```typescript
 import { type Kysely, sql } from 'kysely';
@@ -996,7 +996,7 @@ export async function down(db: Kysely<any>): Promise<void> {
 
 **注意**: pg_jieba 需要在 PostgreSQL 中编译安装。Docker 环境需要定制镜像。迁移文件做了 try/catch，pg_jieba 不存在时静默跳过。
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/database/migrations/
@@ -1005,28 +1005,28 @@ git commit -m "feat(ai): add pg_jieba Chinese full-text search migration (gracef
 
 ---
 
-## Task 8: 集成测试
+## 任务 8: 集成测试
 
-**Step 1:** 重启后端 `pnpm dev`
+**步骤 1：** 重启后端 `pnpm dev`
 
-**Step 2:** Workspace Settings → 重新激活 AI Search（触发全量重建）
+**第 2 步：**工作区设置→重新激活AI Search（触发全量重建）
 
-**Step 3:** 验证清单：
+**步骤 3：** 验证清单：
 
 - [ ] 日志显示每页生成多条 embedding（chunk 级）
 - [ ] 图片描述生成成功（或 VLM 不支持时跳过）
 - [ ] Drawio/Excalidraw 文本提取正常
-- [ ] attachments.textContent 被写入图片描述缓存
+- [ ] Attachments.textContent 被写入图片描述服务器
 - [ ] 精确关键词搜索有效（BM25 命中）
 - [ ] 语义模糊查询有效（向量搜索命中）
 - [ ] 来源数量动态变化（0~5 个），不再固定
-- [ ] 来源包含 type 标记（text/image/diagram）
+- [ ] 来源包含类型标记（文本/图像/图表）
 - [ ] 当前页面回答使用相关段落（非前 4000 字符）
-- [ ] Rerank 模型调用成功（或 LLM fallback 正常）
+- [ ] Rerank 模型调用成功（或LLM后备正常）
 - [ ] 多轮对话正常
 - [ ] 图片上传问答正常
 
-**Step 4: Final Commit**
+**第 4 步：最终提交**
 
 ```bash
 git commit -m "feat(ai): complete advanced RAG pipeline - all tasks verified"

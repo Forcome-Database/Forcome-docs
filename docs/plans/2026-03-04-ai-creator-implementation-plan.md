@@ -1,27 +1,27 @@
 # AI Creator 5 阶段智能工作流 — 实施计划
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **对于Claude：** 必须使用的子技能：使用超能力：executing-plans来逐个任务地实施该计划。
 
-**Goal:** 将 AI Creator 从单步直出正文改造为 5 阶段智能创作工作流（探索→澄清→方案→大纲→正文），支持 LangGraph interrupt 人工介入、图文融合、精确替换。
+**目标：** 将 AI Creator 从单步直出正文改造为 5 阶段智能创作工作流（探索→澄清→方案→大纲→正文），支持 LangGraph interrupt 人工介入、图文融合、精确替换。
 
-**Architecture:** Python Agent Service 使用 LangGraph interrupt + AsyncPostgresSaver 实现 human-in-the-loop 暂停/恢复。NestJS 网关新增 resume 路由代理。前端新增 3 种交互型气泡组件，统一内容交付逻辑，支持流式写入编辑器。
+**架构：** Python代理服务使用LangGraph中断+AsyncPostgresSaver实现人机循环暂停/恢复。NestJS网关新增恢复路由代理。新增3种交互型气泡组件，统一内容交付逻辑，支持流式写入编辑器。
 
-**Tech Stack:** Python 3.12 / LangGraph 0.2+ / langgraph-checkpoint-postgres / FastAPI / NestJS 11 / React 18 / Jotai / TipTap 3
+**技术栈：** Python 3.12 / LangGraph 0.2+ / langgraph-checkpoint-postgres / FastAPI / NestJS 11 / React 18 / Jotai / TipTap 3
 
-**Design Doc:** `docs/plans/2026-03-04-ai-creator-optimization-design.md`
+**设计文档：** `docs/plans/2026-03-04-ai-creator-optimization-design.md`
 
 ---
 
-## Phase 1: Python Agent — 状态与模式扩展（P0）
+## 阶段 1: Python Agent — 状态与模式扩展（P0）
 
-### Task 1: 扩展 AgentState 和请求/响应模式
+### 任务 1：扩展 AgentState 和请求/响应模式
 
-**Files:**
-- Modify: `agent-service/app/agent/state.py` (全文重写)
-- Modify: `agent-service/app/schemas/request.py` (新增 resume 请求)
-- Modify: `agent-service/app/schemas/response.py` (新增 await_input 事件)
+**文件：**
+- 修改： `agent-service/app/agent/state.py` (全文重写)
+- 修改：`agent-service/app/schemas/request.py`（新增恢复请求）
+- 修改：`agent-service/app/schemas/response.py`（新增await_input事件）
 
-**Step 1: 扩展 AgentState**
+**步骤 1：扩展 AgentState**
 
 ```python
 # agent-service/app/agent/state.py
@@ -85,7 +85,7 @@ class AgentState(TypedDict):
     _thread_id: str
 ```
 
-**Step 2: 新增 resume 请求模式**
+**第 2 步：添加resume请求模式**
 
 ```python
 # agent-service/app/schemas/request.py
@@ -126,7 +126,7 @@ class AgentStopRequest(BaseModel):
     task_id: str
 ```
 
-**Step 3: 新增 await_input 和 session 事件类型**
+**第 3 步：添加await_input和session事件类型**
 
 ```python
 # agent-service/app/schemas/response.py
@@ -193,7 +193,7 @@ SSEEvent = (
 )
 ```
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add agent-service/app/agent/state.py agent-service/app/schemas/request.py agent-service/app/schemas/response.py
@@ -202,12 +202,12 @@ git commit -m "feat(agent): extend AgentState with phase artifacts, add resume r
 
 ---
 
-### Task 2: 添加 langgraph-checkpoint-postgres 依赖
+### 任务 2：添加 langgraph-checkpoint-postgres 依赖
 
-**Files:**
-- Modify: `agent-service/pyproject.toml`
+**文件：**
+- 修改：`agent-service/pyproject.toml`
 
-**Step 1: 添加依赖**
+**步骤 1：添加依赖**
 
 在 `pyproject.toml` 的 `dependencies` 列表中添加：
 
@@ -218,11 +218,11 @@ git commit -m "feat(agent): extend AgentState with phase artifacts, add resume r
 
 `langgraph-checkpoint-postgres` 需要 `psycopg` v3（异步 PostgreSQL 驱动）。
 
-**Step 2: 安装依赖**
+**步骤 2：安装依赖**
 
-Run: `cd agent-service && pip install -e ".[dev]"`
+运行： `cd agent-service && pip install -e ".[dev]"`
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add agent-service/pyproject.toml
@@ -231,14 +231,14 @@ git commit -m "feat(agent): add langgraph-checkpoint-postgres dependency"
 
 ---
 
-## Phase 2: Python Agent — 新节点实现（P0）
+## 阶段 2: Python Agent — 新节点实现（P0）
 
-### Task 3: 重构 planner → explorer 节点
+### 任务 3：重构 planner → explorer 节点
 
-**Files:**
-- Rename: `agent-service/app/agent/nodes/planner.py` → `agent-service/app/agent/nodes/explorer.py`
+**文件：**
+- 重命名：`agent-service/app/agent/nodes/planner.py` → `agent-service/app/agent/nodes/explorer.py`
 
-**Step 1: 重命名并重构**
+**步骤 1：重命名并重构**
 
 Explorer 节点保留原 planner 的调研计划能力，但职责缩小为只负责"探索调研"（搜索/解析/爬取）。不再负责生成内容大纲。
 
@@ -428,14 +428,14 @@ async def explorer_node(state: AgentState) -> dict:
     }
 ```
 
-**Step 2: 删除原 researcher.py（逻辑已合并到 explorer）**
+**步骤2：删除原researcher.py（逻辑已合并到explorer）**
 
 ```bash
 # researcher.py 的逻辑已完全合并到 explorer.py，可以删除
 rm agent-service/app/agent/nodes/researcher.py
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add agent-service/app/agent/nodes/explorer.py
@@ -445,12 +445,12 @@ git commit -m "feat(agent): create explorer node (merges planner + researcher), 
 
 ---
 
-### Task 4: 创建 clarifier 节点
+### 任务 4：创建 clarifier 节点
 
-**Files:**
-- Create: `agent-service/app/agent/nodes/clarifier.py`
+**文件：**
+- 创建：`agent-service/app/agent/nodes/clarifier.py`
 
-**Step 1: 实现 clarifier 节点**
+**第 1 步：实现澄清符**
 
 ```python
 # agent-service/app/agent/nodes/clarifier.py
@@ -540,7 +540,7 @@ async def clarifier_node(state: AgentState) -> dict:
     }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/nodes/clarifier.py
@@ -549,12 +549,12 @@ git commit -m "feat(agent): add clarifier node with LangGraph interrupt for huma
 
 ---
 
-### Task 5: 创建 proposer 节点
+### 任务 5：创建 proposer 节点
 
-**Files:**
-- Create: `agent-service/app/agent/nodes/proposer.py`
+**文件：**
+- 创建：`agent-service/app/agent/nodes/proposer.py`
 
-**Step 1: 实现 proposer 节点**
+**步骤1：实现提案者节点**
 
 ```python
 # agent-service/app/agent/nodes/proposer.py
@@ -646,7 +646,7 @@ async def proposer_node(state: AgentState) -> dict:
     }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/nodes/proposer.py
@@ -655,12 +655,12 @@ git commit -m "feat(agent): add proposer node with interrupt for writing approac
 
 ---
 
-### Task 6: 创建 outliner 节点
+### 任务 6：创建 outliner 节点
 
-**Files:**
-- Create: `agent-service/app/agent/nodes/outliner.py`
+**文件：**
+- 创建：`agent-service/app/agent/nodes/outliner.py`
 
-**Step 1: 实现 outliner 节点**
+**步骤 1：实现outliner 节点**
 
 ```python
 # agent-service/app/agent/nodes/outliner.py
@@ -772,7 +772,7 @@ async def outliner_node(state: AgentState) -> dict:
     }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/nodes/outliner.py
@@ -781,12 +781,12 @@ git commit -m "feat(agent): add outliner node with mandatory interrupt for outli
 
 ---
 
-### Task 7: 重构 executor → writer 节点（含图片上下文映射）
+### 任务 7：重构 executor → writer 节点（含图片上下文映射）
 
-**Files:**
-- Rename: `agent-service/app/agent/nodes/executor.py` → `agent-service/app/agent/nodes/writer.py`
+**文件：**
+- 重命名：`agent-service/app/agent/nodes/executor.py` → `agent-service/app/agent/nodes/writer.py`
 
-**Step 1: 重构 writer 节点**
+**第 1 步：重构writer节点**
 
 关键改进：
 - 基于 `confirmed_outline` 生成正文（而非自由发挥）
@@ -920,7 +920,7 @@ async def writer_node(state: AgentState) -> dict:
     return {"draft_content": draft_content}
 ```
 
-**Step 2: 删除原文件并提交**
+**步骤 2：删除原文件并提交**
 
 ```bash
 git add agent-service/app/agent/nodes/writer.py
@@ -930,12 +930,12 @@ git commit -m "feat(agent): create writer node with outline-driven generation an
 
 ---
 
-### Task 8: 更新 reviewer 节点
+### 任务 8：更新 reviewer 节点
 
-**Files:**
-- Modify: `agent-service/app/agent/nodes/reviewer.py`
+**文件：**
+- 修改：`agent-service/app/agent/nodes/reviewer.py`
 
-**Step 1: 修改 reviewer，修订只回 writer**
+**第一步：修改审稿人，修改只回作者**
 
 ```python
 # agent-service/app/agent/nodes/reviewer.py
@@ -1017,7 +1017,7 @@ async def reviewer_node(state: AgentState) -> dict:
     }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/nodes/reviewer.py
@@ -1026,12 +1026,12 @@ git commit -m "feat(agent): update reviewer to only loop back to writer, add out
 
 ---
 
-### Task 9: 重建 LangGraph 图（interrupt + Checkpointer）
+### 任务 9：重建 LangGraph 图（interrupt + Checkpointer）
 
-**Files:**
-- Rewrite: `agent-service/app/agent/graph.py`
+**文件：**
+- 重写：`agent-service/app/agent/graph.py`
 
-**Step 1: 重建图**
+**步骤 1：重建图**
 
 ```python
 # agent-service/app/agent/graph.py
@@ -1112,7 +1112,7 @@ def build_agent_graph():
 agent_graph_builder = build_agent_graph()
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add agent-service/app/agent/graph.py
@@ -1121,12 +1121,12 @@ git commit -m "feat(agent): rebuild LangGraph with 6 nodes, interrupt points, an
 
 ---
 
-### Task 10: 重构 main.py（Checkpointer + resume 端点）
+### 任务 10：重构 main.py（Checkpointer + resume 端点）
 
-**Files:**
-- Rewrite: `agent-service/app/main.py`
+**文件：**
+- 重写：`agent-service/app/main.py`
 
-**Step 1: 重构 main.py**
+**第 1 步：重构main.py**
 
 ```python
 # agent-service/app/main.py
@@ -1357,7 +1357,7 @@ async def stop_agent(request: AgentStopRequest):
     return {"status": "not_found", "task_id": request.task_id}
 ```
 
-**Step 2: 在 config.py 中添加 database_url**
+**第 2 步：在config.py中添加database_url**
 
 在 `agent-service/app/config.py` 的 `Settings` 类中添加：
 
@@ -1366,7 +1366,7 @@ async def stop_agent(request: AgentStopRequest):
 database_url: str = ""  # e.g. "postgresql://user:pass@localhost:5432/docmost"
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add agent-service/app/main.py agent-service/app/config.py
@@ -1375,16 +1375,16 @@ git commit -m "feat(agent): rebuild main.py with Checkpointer, resume endpoint, 
 
 ---
 
-## Phase 3: NestJS 网关适配（P0）
+## 阶段 3: NestJS 网关适配（P0）
 
-### Task 11: 更新 Agent 网关（新增 resume 路由）
+### 任务 11：更新 Agent 网关（新增 resume 路由）
 
-**Files:**
-- Modify: `apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts`
-- Modify: `apps/server/src/ee/ai/agent-gateway/dto/agent-run.dto.ts`
-- Create: `apps/server/src/ee/ai/agent-gateway/dto/agent-resume.dto.ts`
+**文件：**
+- 修改：`apps/server/src/ee/ai/agent-gateway/agent-gateway.controller.ts`
+- 修改：`apps/server/src/ee/ai/agent-gateway/dto/agent-run.dto.ts`
+- 创建：`apps/server/src/ee/ai/agent-gateway/dto/agent-resume.dto.ts`
 
-**Step 1: 新增 AgentResumeDto**
+**第 1 步：添加 AgentResumeDto**
 
 ```typescript
 // apps/server/src/ee/ai/agent-gateway/dto/agent-resume.dto.ts
@@ -1399,7 +1399,7 @@ export class AgentResumeDto {
 }
 ```
 
-**Step 2: 修改 AgentRunDto — 添加 threadId**
+**步骤2：修改AgentRunDto — 添加threadId**
 
 在 `agent-run.dto.ts` 中添加可选的 `threadId` 字段：
 
@@ -1409,7 +1409,7 @@ export class AgentResumeDto {
 threadId?: string;
 ```
 
-**Step 3: 在 controller 中添加 resume 路由**
+**第 3 步：在控制器中添加恢复路由**
 
 在 `agent-gateway.controller.ts` 中添加新的 `@Post('resume')` 端点，复用 http.request SSE 代理模式，将请求转发到 Python 的 `/agent/resume`。
 
@@ -1417,7 +1417,7 @@ threadId?: string;
 - 路径改为 `/agent/resume`
 - Body 为 JSON（不是 multipart），包含 `thread_id` 和 `resume_value`
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/agent-gateway/
@@ -1426,16 +1426,16 @@ git commit -m "feat(gateway): add /agent/resume route and AgentResumeDto"
 
 ---
 
-## Phase 4: 前端 — 类型、状态、服务层（P0）
+## 阶段 4: 前端 — 类型、状态、服务层（P0）
 
-### Task 12: 扩展前端类型和 Atom
+### 任务 12：扩展前端类型和 Atom
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts`
-- Modify: `apps/client/src/ee/ai/types/agent.types.ts`
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts`
+- 修改：`apps/client/src/ee/ai/types/agent.types.ts`
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`
 
-**Step 1: 扩展消息类型**
+**步骤 1：扩展消息类型**
 
 在 `ai-creator.types.ts` 中，将 `AiCreatorMessage.role` 扩展为支持新类型：
 
@@ -1455,7 +1455,7 @@ export interface AiCreatorMessage {
 }
 ```
 
-**Step 2: 扩展 AgentSSEEvent**
+**步骤 2：扩展 AgentSSEEvent**
 
 在 `agent.types.ts` 中添加新事件类型：
 
@@ -1467,7 +1467,7 @@ export interface AgentSSEEvent {
 }
 ```
 
-**Step 3: 新增 threadId atom**
+**第 3 步：添加threadId原子**
 
 在 `ai-creator-atoms.ts` 中添加：
 
@@ -1476,7 +1476,7 @@ export interface AgentSSEEvent {
 export const agentThreadIdAtom = atom<Record<string, string>>({});
 ```
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts \
@@ -1487,13 +1487,13 @@ git commit -m "feat(frontend): extend message types with clarify/propose/outline
 
 ---
 
-### Task 13: 新增 resumeAgent API 和更新 useAgent hook
+### 任务 13：新增 resumeAgent API 和更新 useAgent hook
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/services/agent-service.ts`
-- Modify: `apps/client/src/ee/ai/hooks/use-agent.ts`
+**文件：**
+- 修改：`apps/client/src/ee/ai/services/agent-service.ts`
+- 修改：`apps/client/src/ee/ai/hooks/use-agent.ts`
 
-**Step 1: 添加 resumeAgent 函数**
+**第 1 步：添加resumeAgent函数**
 
 在 `agent-service.ts` 中新增：
 
@@ -1525,7 +1525,7 @@ export function resumeAgent(
 }
 ```
 
-**Step 2: 更新 useAgent hook**
+**第 2 步：更新useAgent钩子**
 
 在 `use-agent.ts` 中：
 - 处理 `await_input` 事件：将其转化为对应类型的消息添加到面板
@@ -1541,7 +1541,7 @@ case 'session':
   break;
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/services/agent-service.ts \
@@ -1551,14 +1551,14 @@ git commit -m "feat(frontend): add resumeAgent API and await_input handling in u
 
 ---
 
-## Phase 5: 前端 — 交互型气泡组件（P0）
+## 阶段 5: 前端 — 交互型气泡组件（P0）
 
-### Task 14: 创建大纲气泡组件
+### 任务 14：创建大纲气泡组件
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-outline-bubble.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-outline-bubble.tsx`
 
-**Step 1: 实现大纲气泡**
+**步骤 1：实现大纲气泡**
 
 包含：
 - 默认只读 Markdown 渲染（复用 `renderBubbleHtml`）
@@ -1567,7 +1567,7 @@ git commit -m "feat(frontend): add resumeAgent API and await_input handling in u
 - 「重新规划」按钮 → 调用 `resumeAgent({action: "regenerate"})`
 - 用户也可通过输入框对话反馈
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-outline-bubble.tsx
@@ -1576,21 +1576,21 @@ git commit -m "feat(frontend): add outline bubble component with edit/confirm/re
 
 ---
 
-### Task 15: 创建澄清问题和方案选择气泡
+### 任务 15：创建澄清问题和方案选择气泡
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-clarify-bubble.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-propose-bubble.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-clarify-bubble.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-propose-bubble.tsx`
 
-**Step 1: 澄清问题气泡**
+**步骤 1：澄清问题气泡**
 
 显示问题列表 + textarea 输入框 + 提交按钮。提交后调用 `resumeAgent({answers: "用户回答"})`。
 
-**Step 2: 方案选择气泡**
+**步骤 2：方案选择气泡**
 
 显示方案卡片列表（带标题和描述）+ 选择按钮 + 可选反馈输入。选择后调用 `resumeAgent({selected_proposal: index, feedback: "..."})`。
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-clarify-bubble.tsx \
@@ -1600,12 +1600,12 @@ git commit -m "feat(frontend): add clarify and propose bubble components"
 
 ---
 
-### Task 16: 更新消息渲染分发
+### 任务 16：更新消息渲染分发
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx`
 
-**Step 1: 在消息渲染中分发新气泡类型**
+**步骤 1：在消息渲染中分发新气泡类型**
 
 在 `AiCreatorMessageItem` 组件中，根据 `message.role` 分发到对应气泡：
 
@@ -1621,7 +1621,7 @@ if (message.role === 'outline') {
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx
@@ -1630,14 +1630,14 @@ git commit -m "feat(frontend): dispatch clarify/propose/outline message types to
 
 ---
 
-## Phase 6: 前端 — insertMode 重构与图片验证（P0）
+## 阶段 6: 前端 — insertMode 重构与图片验证（P0）
 
-### Task 17: 重构 insertMode 逻辑
+### 任务 17：重构 insertMode 逻辑
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
 
-**Step 1: 替换 shouldAppend 逻辑**
+**步骤1：替换shouldAppend逻辑**
 
 找到 `ai-creator-input.tsx` 中的 `shouldAppend`（约第 240 行）和 `insertMode`（约第 271 行），替换为：
 
@@ -1657,7 +1657,7 @@ const insertMode = selection
       : 'overwrite';
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx
@@ -1666,12 +1666,12 @@ git commit -m "fix(frontend): refactor insertMode — default to overwrite, appe
 
 ---
 
-### Task 18: 验证图片转换管线
+### 任务 18：验证图片转换管线
 
-**Files:**
-- Test manually: `markdownToHtml` with image syntax
+**文件：**
+- 手动测试：`markdownToHtml` 使用图像语法
 
-**Step 1: 验证 markdownToHtml 图片处理**
+**步骤1：验证markdownToHtml 图片处理**
 
 在浏览器控制台或测试文件中验证：
 
@@ -1684,7 +1684,7 @@ console.log(html);
 // 期望: 包含 <img src="/api/files/xxx/doc-img-0.png" alt="系统架构图">
 ```
 
-**Step 2: 如果图片不正确，添加预处理**
+**步骤 2：如果图片不正确，添加预处理**
 
 在 `ai-creator-message-item.tsx` 的 `renderEditorHtml` 中，在 `markdownToHtml` 之前预处理图片：
 
@@ -1697,7 +1697,7 @@ function preprocessImages(md: string): string {
 }
 ```
 
-**Step 3: Commit（如有修改）**
+**第三步：提交（如有修改）**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx
@@ -1706,16 +1706,16 @@ git commit -m "fix(frontend): ensure markdownToHtml correctly converts image syn
 
 ---
 
-## Phase 7: 前端 — 流式写入编辑器（P1）
+## 阶段 7: 前端 — 流式写入编辑器（P1）
 
-### Task 19: 实现流式写入编辑器 + 锁定/解锁
+### 任务 19：实现流式写入编辑器 + 锁定/解锁
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx`
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator.module.css`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx`
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator.module.css`
 
-**Step 1: 在 panel 中添加编辑器快照和锁定逻辑**
+**步骤 1：在 panel 中添加编辑器快照和锁定逻辑**
 
 ```typescript
 // ai-creator-panel.tsx — 新增状态
@@ -1746,7 +1746,7 @@ function rollbackEditor() {
 }
 ```
 
-**Step 2: 在 input 中累积段落后批量插入**
+**步骤 2：在 input 中累积段落后批量插入**
 
 ```typescript
 // 累积 Markdown 到完整段落后插入编辑器
@@ -1768,11 +1768,11 @@ if (paragraphs.length > 1) {
 }
 ```
 
-**Step 3: 添加锁定样式**
+**步骤 3：添加锁定样式**
 
 在 `ai-creator.module.css` 中添加编辑器锁定视觉反馈样式。
 
-**Step 4: Commit**
+**第 4 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx \
@@ -1783,14 +1783,14 @@ git commit -m "feat(frontend): implement streaming content into editor with lock
 
 ---
 
-## Phase 8: NestJS 普通模式大纲支持（P1）
+## 阶段 8: NestJS 普通模式大纲支持（P1）
 
-### Task 20: 普通模式两阶段 SSE（大纲→正文）
+### 任务 20：普通模式两阶段 SSE（大纲→正文）
 
-**Files:**
-- Modify: `apps/server/src/ee/ai/ai.controller.ts`
+**文件：**
+- 修改：`apps/server/src/ee/ai/ai.controller.ts`
 
-**Step 1: 修改 creatorGenerate 端点**
+**第 1 步：修改creatorGenerate端点**
 
 在 `ai.controller.ts` 的 `creatorGenerate` 中：
 - 第一次 SSE 流：system prompt 指示"仅输出结构化大纲"
@@ -1798,7 +1798,7 @@ git commit -m "feat(frontend): implement streaming content into editor with lock
 - 用户确认后，前端发第二次请求携带 `confirmedOutline`
 - 第二次 SSE 流：基于大纲生成正文
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/ai.controller.ts
@@ -1813,17 +1813,17 @@ git commit -m "feat(server): add two-phase SSE for normal mode outline support"
 
 - [ ] Agent 模式 5 阶段完整流程（从 `POST /agent/run` 到 `done` 事件）
 - [ ] Explorer 自动调研（搜索/解析/爬取）
-- [ ] Clarifier 智能跳过或 interrupt + 前端澄清气泡
-- [ ] Proposer 智能跳过或 interrupt + 前端方案气泡
+- [ ] 澄清器 智能跳过或中断 + 前置澄清气泡
+- [ ] Proposer 智能跳过或中断 + 引入方案气泡
 - [ ] Outliner 必经 interrupt + 前端大纲气泡（查看/编辑/确认/重新规划）
 - [ ] Writer 基于确认的大纲 + 调研素材生成正文
 - [ ] Reviewer 质量审查 + 最多 3 次修订循环（仅回 Writer）
 - [ ] `POST /agent/resume` 正确恢复图执行
-- [ ] Checkpointer 持久化状态（PostgreSQL）
-- [ ] insertMode 默认 overwrite，仅"续写"时 append
+- [ ] 检查点持久化状态（PostgreSQL）
+- [ ] insertMode 默认覆盖，仅“续写”时追加
 - [ ] 选中文本精确替换（复用 SelectionSnapshot）
 - [ ] 图片上下文映射使 LLM 准确放置图片
-- [ ] PDF/Word 提取图片正确嵌入为 TipTap image 节点
+- [ ] PDF/Word 提取图片正确嵌入为TipTap image 节点
 - [ ] 全部 9 个工具可用
 
 ### P1 验收

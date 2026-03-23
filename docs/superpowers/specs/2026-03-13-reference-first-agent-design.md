@@ -1,53 +1,53 @@
-# Reference-First Agent Design
+# 参考优先代理设计
 
-**Status:** Revised after critical review
+**状态：** 经过严格审查后修订
 
-**Problem Statement**
+**问题陈述**
 
-The current Docmost AI Creator fails in the exact place users expect competence: when a request includes an external link, uploaded document, uploaded image, or otherwise clearly depends on evidence, the system may still jump into clarification, proposal, outline, or drafting before it has actually read the source material.
+当前的 Docmost AI Creator 在用户期望的能力方面失败了：当请求包含外部链接、上传的文档、上传的图像或以其他方式明显依赖于证据时，系统仍然可能在实际阅读源材料之前跳入澄清、建议、大纲或起草。
 
-The product therefore feels like a workflow engine performing ceremony rather than an agent doing the obvious work first.
+因此，该产品感觉就像是执行仪式的工作流引擎，而不是首先执行明显工作的代理。
 
-The fix is not “better prompts” and not “more stages.” The fix is a small set of hard execution invariants:
+解决办法不是“更好的提示”，也不是“更多的阶段”。修复方法是一小组硬执行不变量：
 
-- required evidence must be acquired before generation
-- required evidence failure must stop execution
-- clarification must be a fallback, not a stage
-- visible progress must reflect real actions, not ritual
+- 必须在生成之前获取所需的证据
+- 所需证据失败必须停止执行
+- 澄清必须是后备措施，而不是阶段
+- 看得见的进步必须反映真实的行动，而不是仪式
 
-## Goals
+## 目标
 
-- Read required sources before drafting.
-- Search before drafting when the task semantically requires external evidence.
-- Stop and explain when required evidence cannot be retrieved or parsed.
-- Treat uploaded files, uploaded images, external links, and current page context as one unified evidence system.
-- Ask clarifying questions only when a concrete unresolved decision remains after evidence gathering.
-- Make the product feel closer to Codex or Claude Code:
-  - do the obvious work first
-  - gather evidence before talking
-  - stop when blocked
-  - avoid user-facing workflow theater
+- 在起草之前阅读所需的来源。
+- 当任务在语义上需要外部证据时，在起草之前进行搜索。
+- 当无法检索或解析所需证据时停下来并解释。
+- 将上传的文件、上传的图像、外部链接和当前页面上下文视为一个统一的证据系统。
+- 仅当证据收集后仍有具体未解决的决定时才提出澄清问题。
+- 使产品感觉更接近 Codex 或 Claude Code：
+  - 首先做明显的工作
+  - 在谈话之前收集证据
+  - 受阻时停止
+  - 避免面向用户的工作流程剧场
 
-## Non-Goals
+## 非目标
 
-- Rebuilding the entire AI Creator graph in one phase.
-- Reworking the full UI state model.
-- Making proposal/outline/reviewer behavior perfect in the same change.
-- Creating a large multi-layer evidence contract before proving the core behavior.
+- 一阶段重建整个 AI Creator 图。
+- 重新设计完整的 UI 状态模型。
+- 在同一个变更中使提案/大纲/审稿人行为变得完美。
+- 在证明核心行为之前创建大型多层证据合约。
 
-## Core Design Decision
+## 核心设计决策
 
-Do **not** solve this as a large stage redesign first.
+不要首先将这个问题作为大型舞台重新设计来解决。
 
-Solve it as a **runtime invariant**:
+将其作为**运行时不变量**来解决：
 
-> If required evidence has not succeeded, the system cannot proceed to any user-facing drafting or planning output.
+> 如果所需的证据未成功，系统将无法继续进行任何面向用户的起草或规划输出。
 
-That is the primary behavior change. Everything else is secondary.
+这是主要的行为改变。其他一切都是次要的。
 
-## Unified Evidence Model
+## 统一证据模型
 
-All source-like inputs should be treated as evidence sources of the same class:
+所有类似源的输入都应被视为同一类的证据源：
 
 - `reference_url`
 - `uploaded_document`
@@ -55,7 +55,7 @@ All source-like inputs should be treated as evidence sources of the same class:
 - `page_context`
 - `web_search`
 
-Each evidence source needs only a minimal shared state:
+每个证据源只需要一个最小的共享状态：
 
 ```ts
 type EvidenceItem = {
@@ -68,133 +68,133 @@ type EvidenceItem = {
 };
 ```
 
-This should be the only evidence truth the runtime depends on.
+这应该是运行时所依赖的唯一证据。
 
-## Evidence Rules
+## 证据规则
 
-### 1. External links
+### 1.外部链接
 
-If the user includes one or more external URLs and the request says or implies “refer to this,” “rewrite based on this,” “summarize this,” “imitate this,” or otherwise anchors the task to the link, that URL becomes required evidence.
+如果用户包含一个或多个外部 URL，并且请求表示或暗示“参考此”、“基于此重写”、“总结此”、“模仿此”或以其他方式将任务锚定到链接，则该 URL 将成为必需的证据。
 
-The system must read it before drafting.
+系统在起草之前必须阅读它。
 
-### 2. Uploaded documents
+### 2.上传文件
 
-If the user uploads a document and the task depends on that document, it becomes required evidence.
+如果用户上传文档并且任务依赖于该文档，则该文档将成为必需的证据。
 
-Examples:
-- “Based on this PDF, write an onboarding guide”
-- “Reorganize this Word document into a tutorial”
+示例：
+- “根据此 PDF，编写入门指南”
+- “将这个Word文档重新整理成教程”
 
-Document parsing failure must block the run if the uploaded document is the primary source.
+如果上传的文档是主要来源，则文档解析失败必须阻止运行。
 
-### 3. Uploaded images
+### 3.上传图片
 
-If the task depends on image contents, the image becomes required evidence and must go through visual understanding first.
+如果任务依赖于图像内容，图像就成为必要的证据，必须首先经过视觉理解。
 
-Examples:
-- “Write steps based on this screenshot”
-- “Explain this architecture image”
+示例：
+- “根据此屏幕截图编写步骤”
+- “解释一下这个建筑图像”
 
-Image understanding failure must block the run if the image is needed to complete the task safely.
+如果需要图像来安全地完成任务，则图像理解失败必须阻止运行。
 
-### 4. Current page context
+### 4.当前页面上下文
 
-If the user asks to continue, transform, or build on the current page, the current page is evidence.
+如果用户要求在当前页面上继续、转换或构建，当前页面就是证据。
 
-If page context cannot be loaded and it is required for the request, the run must stop.
+如果无法加载页面上下文并且请求需要该页面上下文，则运行必须停止。
 
-### 5. Search
+### 5. 搜索
 
-Search is required when the task depends on external facts not already supplied by the user or retrieved from provided evidence.
+当任务依赖于用户尚未提供或从提供的证据中检索到的外部事实时，需要进行搜索。
 
-Examples:
-- freshness-sensitive requests
-- “compare with current best practices”
-- “what changed recently”
-- tasks that require outside factual grounding
+示例：
+- 对新鲜度敏感的要求
+- “与当前最佳实践进行比较”
+- “最近发生了什么变化”
+- 需要外部事实依据的任务
 
-Search should not be triggered just because the request is broad. It should be triggered when the task cannot be completed responsibly from existing evidence.
+不应仅仅因为请求广泛而触发搜索。当根据现有证据无法负责任地完成任务时，应该触发它。
 
-## Upload Handling
+## 上传处理
 
-Uploaded files and images should not be treated as miscellaneous attachments. They should enter the same evidence-first path as URLs.
+上传的文件和图像不应被视为杂项附件。他们应该输入与 URL 相同的证据优先路径。
 
-### Uploaded document handling
+### 上传文件处理
 
-1. Parse first.
-2. Preserve structure where possible.
-3. Use parsed content as primary evidence before asking questions.
-4. Only ask clarification if the parsed source still leaves a real decision unresolved.
+1.先解析。
+2. 尽可能保留结构。
+3. 在提问之前使用解析后的内容作为主要证据。
+4. 仅当解析的源代码仍然留下未解决的真正决定时才要求澄清。
 
-### Uploaded image handling
+### 上传图片处理
 
-1. Run vision first.
-2. Extract task-relevant content:
-   - UI labels
+1.先运行愿景。
+2.提取任务相关内容：
+   - 用户界面标签
    - steps
-   - warnings
-   - relationships
-   - diagram structure
-3. Use that evidence before asking questions or drafting.
+   - 警告
+   - 关系
+   - 图表结构
+3. 在提问或起草之前使用该证据。
 
-### Mixed evidence input
+### 混合证据输入
 
-If the user provides multiple evidence sources together, they form one evidence set.
+如果用户同时提供多个证据源，则它们形成一个证据集。
 
-Example:
-- uploaded PDF
-- screenshot
-- external README URL
+示例：
+- 上传的PDF
+- 屏幕截图
+- 外部自述文件 URL
 
-The system should:
-1. collect all required evidence
-2. process each required source
-3. stop if any required source fails
-4. only then decide whether clarification is necessary
+系统应该：
+1.收集所有必要的证据
+2. 处理每个需要的源
+3. 如果任何所需的源失败则停止
+4. 然后才决定是否需要澄清
 
-## Clarification Policy
+## 澄清政策
 
-Clarification is not a stage. It is a fallback.
+澄清不是一个阶段。这是一个后备。
 
-The system should ask a question only when:
+系统仅应在以下情况下提出问题：
 
-- evidence gathering succeeded or exhausted available obvious actions
-- execution is blocked by a specific unresolved decision
-- the system can name exactly what decision is missing
+- 证据收集成功或已用尽可用的明显行动
+- 执行因特定的未解决的决定而受阻
+- 系统可以准确指出缺少的决策
 
-Examples of valid clarification after evidence:
+证据后有效澄清的示例：
 
-- target audience is unknown and materially changes the output
-- the user did not specify whether to preserve detail or compress aggressively
-- multiple plausible transformations remain after reading the source
+- 目标受众未知并且会严重改变输出
+- 用户没有指定是保留细节还是积极压缩
+- 阅读源代码后仍然存在多个看似合理的转换
 
-Invalid clarification:
+无效的说明：
 
-- asking style questions before reading the source
-- asking for information that can be extracted automatically
-- asking because the system skipped obvious search/read actions
+- 在阅读源代码之前询问风格问题
+- 询问可以自动提取的信息
+- 询问是因为系统跳过了明显的搜索/读取操作
 
-## Runtime Hard Gate
+## 运行时硬门
 
-This is the most important design rule.
+这是最重要的设计规则。
 
-Before any clarify/propose/outline/write path can emit user-visible output, the runtime must check:
+在任何澄清/建议/大纲/写入路径可以发出用户可见的输出之前，运行时必须检查：
 
 - do all required evidence items have `status == success`?
 
 If no:
 
-- emit blocked state
-- explain which evidence failed and why
-- stop execution
-- do not allow downstream generation
+- 发出阻塞状态
+- 解释哪些证据失败以及原因
+- 停止执行
+- 不允许下游发电
 
-This must be enforced in execution code, not just prompts and not just reviewer logic.
+这必须在执行代码中强制执行，而不仅仅是提示，也不仅仅是审阅者逻辑。
 
-## Visible Product States
+## 可见的产品状态
 
-Keep visible states minimal and useful:
+保持可见状态最少且有用：
 
 - `reading sources`
 - `searching`
@@ -202,74 +202,74 @@ Keep visible states minimal and useful:
 - `blocked`
 - `writing`
 
-Do not expose a richer stage ladder unless the user gains something actionable from it.
+不要暴露更丰富的阶梯，除非用户从中获得了可操作的东西。
 
-## What This Phase Deliberately Does Not Try to Perfect
+## 这个阶段故意不试图完美的事情
 
-These are important, but secondary:
+这些很重要，但也是次要的：
 
-- proposal suppression logic
-- outline suppression logic
-- reviewer sophistication
-- broad observability dashboards
-- large typed contracts across every boundary
+- 提案抑制逻辑
+- 轮廓抑制逻辑
+- 审稿人的成熟度
+- 广泛的可观察性仪表板
+- 跨越各个边界的大型合同
 
-They can improve later. They are not the core fix.
+他们可以稍后改进。它们不是核心修复。
 
-## Success Criteria
+## 成功标准
 
-The user experience must satisfy these end-to-end rules:
+用户体验必须满足以下端到端规则：
 
-1. If a prompt includes a required URL, the system reads it before writing.
-2. If a task clearly requires search, the system searches before writing.
-3. If a required link/doc/image/page/search step fails, the system stops and explains the failure.
-4. If enough evidence exists, the system does not ask unnecessary questions.
-5. If evidence is insufficient but the missing decision is specific, the system asks one meaningful clarification question.
+1. 如果提示包含所需的 URL，系统会在写入之前读取它。
+2. 如果任务明确需要搜索，系统会先搜索再写入。
+3. 如果所需的链接/文档/图像/页面/搜索步骤失败，系统将停止并解释失败。
+4. 如果存在足够的证据，系统不会提出不必要的问题。
+5. 如果证据不足，但缺失的决定是具体的，系统会提出一个有意义的澄清问题。
 
-## Phase 1 Scope
+## 阶段 1 Scope
 
-Phase 1 should implement only:
+第一阶段应仅实施：
 
-- single authoritative evidence derivation
-- unified evidence handling for URLs, uploaded documents, uploaded images, and page context
-- hard execution gate for required evidence
-- fail-stop behavior
-- minimal visible states
-- end-to-end tests for the core bad behaviors
+- 单一权威证据推导
+- 对 URL、上传的文档、上传的图像和页面上下文进行统一的证据处理
+- 所需证据的硬执行门
+- 故障停止行为
+- 最小可见状态
+- 针对核心不良行为的端到端测试
 
-## Phase 2 Candidates
+## 阶段 2 Candidates
 
-Only after Phase 1 works reliably:
+只有第一阶段可靠工作后：
 
-- make proposal and outline truly opportunistic
-- add richer evidence-to-output reviewer checks
-- add stronger observability and rollout controls
-- add recovery loops for supplementary research when first-pass evidence proves insufficient
+- 使提案和大纲真正具有机会主义色彩
+- 添加更丰富的证据以输出审阅者检查
+- 添加更强的可观察性和推出控制
+- 当首次证据不足时，添加恢复循环以进行补充研究
 
-## Expected Product Behavior
+## 预期的产品行为
 
 Given:
 
 `参照这个 README 写一份安装指南 https://...`
 
-the system should:
+系统应该：
 
-1. detect the URL as required evidence
-2. read it first
-3. stop immediately if the read fails
-4. write directly if the task is now clear
-5. ask a focused question only if a concrete unresolved decision remains
+1.检测URL作为所需证据
+2.先读一下
+3.读取失败立即停止
+4.如果现在任务明确了就直接写
+5. 仅当具体的未解决决定仍然存在时才提出重点问题
 
 Given:
 
 “根据我上传的 PDF 和这张截图，写一份操作手册”
 
-the system should:
+系统应该：
 
-1. parse the PDF
-2. understand the screenshot
-3. block if either required source fails
-4. use the gathered evidence before asking anything
-5. only ask if audience/format/detail expectations still cannot be inferred
+1.解析PDF
+2. 理解截图
+3. 如果任一所需源失败则阻止
+4. 在提出任何问题之前使用收集到的证据
+5. 仅询问观众/形式/细节期望是否仍无法推断
 
-That is the behavior shift required to make the product feel like an evidence-first agent instead of a staged workflow engine.
+这是让产品感觉像是一个证据优先的代理而不是一个分阶段的工作流引擎所需的行为转变。

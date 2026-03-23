@@ -1,48 +1,48 @@
-# AI Creator v3 — Implementation Plan
+# AI Creator v3 — 实施计划
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **对于智能体执行者：** 要求：使用 superpowers:subagent-driven-development （如果子代理可用）或 superpowers:executing-plans 来实施此计划。步骤使用复选框 (`- [ ]`) 语法进行跟踪。
 
-**Goal:** Refactor AI Creator from a 3-column chat-based workbench to a lightweight command panel with inline review, solving 5 critical UX problems (UI clutter, section incoherence, chat/document disconnect, selection rewriting conflicts, content loss on re-optimize).
+**目标：** 将 AI Creator 从基于 3 列聊天的工作台重构为具有内联审查的轻量级命令面板，解决 5 个关键的 UX 问题（UI 混乱、部分不连贯、聊天/文档断开、选择重写冲突、重新优化时内容丢失）。
 
-**Architecture:** Three-channel routing (selection rewriting via existing ai-menu in NestJS, document optimization via new agent-service endpoint, creation from scratch via simplified prompt chain). Command paradigm replaces chat paradigm. Snapshot+Undo for content safety (v1), inline diff decorations for visual review (v2).
+**架构：** 三通道路由（通过 NestJS 中现有的 ai 菜单进行选择重写，通过新的代理服务端点进行文档优化，通过简化的提示链从头开始创建）。命令范式取代了聊天范式。用于内容安全的快照+撤消 (v1)，用于视觉审查的内联差异装饰 (v2)。
 
-**Tech Stack:** PydanticAI (Python agent-service), NestJS 11 + Fastify (gateway), React 18 + Mantine 8 + Jotai (frontend), TipTap 3 / ProseMirror (editor), MineRU (PDF parsing), Vitest (frontend tests), pytest (backend tests), Chrome E2E (browser verification).
+**技术栈：** PydanticAI（Python代理服务）、NestJS 11 + Fastify（网关）、React 18 + Mantine 8 + Jotai（前端）、TipTap 3 / ProseMirror（编辑器）、MineRU（PDF解析）、Vitest（前端测试）、pytest（后端测试）、Chrome E2E（浏览器验证）。
 
 **Spec:** `docs/superpowers/specs/2026-03-20-ai-creator-v3-redesign.md`
 
 ---
 
-## File Map
+## 文件映射
 
-### New files
+### 新文件
 
-**Backend (Python agent-service):**
-- `agent-service/app/orchestrator/engine_v3.py` — Simplified 2-layer orchestrator (~400 lines)
-- `agent-service/app/orchestrator/tools/change_summary.py` — Deterministic change summary generator
-- `agent-service/app/orchestrator/tools/heartbeat.py` — SSE heartbeat loop utility
-- `agent-service/tests/orchestrator/test_engine_v3.py` — Engine v3 unit tests
-- `agent-service/tests/orchestrator/test_change_summary.py` — Change summary tests
-- `apps/client/src/ee/ai/utils/editor-diff.ts` — v2: Frontend ProseMirror diff computation
-- `agent-service/tests/integration/test_api_v3.py` — API integration tests
+**后端（Python 代理服务）：**
+- `agent-service/app/orchestrator/engine_v3.py` — 简化的 2 层协调器（~400 行）
+- `agent-service/app/orchestrator/tools/change_summary.py` — 确定性变更摘要生成器
+- `agent-service/app/orchestrator/tools/heartbeat.py` — SSE 心跳循环实用程序
+- `agent-service/tests/orchestrator/test_engine_v3.py` — 引擎 v3 单元测试
+- `agent-service/tests/orchestrator/test_change_summary.py` — 更改摘要测试
+- `apps/client/src/ee/ai/utils/editor-diff.ts` — v2：前端 ProseMirror 差异计算
+- `agent-service/tests/integration/test_api_v3.py` — API 集成测试
 
-**Backend (NestJS gateway):**
+**后端（NestJS 网关）：**
 - `apps/server/src/ee/ai/dto/document-optimize.dto.ts` — DocumentOptimizeDto
 - `apps/server/src/ee/ai/dto/document-create.dto.ts` — DocumentCreateDto
 
-**Frontend:**
-- `apps/client/src/ee/ai/components/ai-command-panel/AiCommandPanel.tsx` — Main command panel
-- `apps/client/src/ee/ai/components/ai-command-panel/QuickActions.tsx` — 6-grid quick actions
-- `apps/client/src/ee/ai/components/ai-command-panel/CommandInput.tsx` — Input box + toolbar
-- `apps/client/src/ee/ai/components/ai-command-panel/RecentOps.tsx` — Operation history
-- `apps/client/src/ee/ai/components/ai-command-panel/AiRunningOverlay.tsx` — Running state UI
-- `apps/client/src/ee/ai/components/ai-review-sidebar/ReviewSidebar.tsx` — v1 review panel
-- `apps/client/src/ee/ai/components/ai-review-sidebar/ChangeList.tsx` — v2: change list with accept/reject
-- `apps/client/src/ee/ai/components/ai-review/DiffDecorationPlugin.ts` — v2: ProseMirror plugin
-- `apps/client/src/ee/ai/hooks/useAiCommand.ts` — Command panel hook
-- `apps/client/src/ee/ai/hooks/useAiReview.ts` — Review mode hook
-- `apps/client/src/ee/ai/hooks/useAiStream.ts` — Generic SSE stream hook
-- `apps/client/src/ee/ai/services/ai-document-service.ts` — Document optimize/create API calls
-- `apps/client/src/ee/ai/types/command.types.ts` — v3 type definitions
+**前端：**
+- `apps/client/src/ee/ai/components/ai-command-panel/AiCommandPanel.tsx` — 主命令面板
+- `apps/client/src/ee/ai/components/ai-command-panel/QuickActions.tsx` — 6 网格快速操作
+- `apps/client/src/ee/ai/components/ai-command-panel/CommandInput.tsx` — 输入框+工具栏
+- `apps/client/src/ee/ai/components/ai-command-panel/RecentOps.tsx` — 操作历史记录
+- `apps/client/src/ee/ai/components/ai-command-panel/AiRunningOverlay.tsx` — 运行状态 UI
+- `apps/client/src/ee/ai/components/ai-review-sidebar/ReviewSidebar.tsx` — v1 审核小组
+- `apps/client/src/ee/ai/components/ai-review-sidebar/ChangeList.tsx` — v2：通过接受/拒绝更改列表
+- `apps/client/src/ee/ai/components/ai-review/DiffDecorationPlugin.ts` — v2: ProseMirror 插件
+- `apps/client/src/ee/ai/hooks/useAiCommand.ts` — 命令面板挂钩
+- `apps/client/src/ee/ai/hooks/useAiReview.ts` — 查看模式挂钩
+- `apps/client/src/ee/ai/hooks/useAiStream.ts` — 通用 SSE 流挂钩
+- `apps/client/src/ee/ai/services/ai-document-service.ts` — 文档优化/创建 API 调用
+- `apps/client/src/ee/ai/types/command.types.ts` — v3 类型定义
 
 **Tests:**
 - `apps/client/src/ee/ai/components/__tests__/AiCommandPanel.test.tsx`
@@ -50,21 +50,21 @@
 - `apps/client/src/ee/ai/components/__tests__/ai-menu-isolation.test.tsx`
 - `apps/client/src/ee/ai/hooks/__tests__/useAiCommand.test.ts`
 
-### Modified files
+### 修改文件
 
-**Backend:**
-- `agent-service/app/main.py` — Add new `/agent/document/optimize` and `/agent/document/create` endpoints
-- `agent-service/app/orchestrator/engine.py` — Import engine_v3 (coexist with old `run()`)
-- `apps/server/src/ee/ai/ai.controller.ts` — Add `POST /api/ai/document/optimize` and `/create` routes
-- `apps/server/src/ee/ai/ai.module.ts` — Register new routes
+**后端：**
+- `agent-service/app/main.py` — 添加新的 `/agent/document/optimize` 和 `/agent/document/create` 端点
+- `agent-service/app/orchestrator/engine.py` — 导入engine_v3（与旧的`run()`共存）
+- `apps/server/src/ee/ai/ai.controller.ts` — 添加 `POST /api/ai/document/optimize` 和 `/create` 路线
+- `apps/server/src/ee/ai/ai.module.ts` — 注册新路线
 
-**Frontend:**
-- `apps/client/src/features/editor/page-editor.tsx` — Mount AiCommandPanel (feature flag)
-- `apps/client/src/ee/ai/components/editor/ai-menu/ai-menu.tsx` — Decouple from ai-creator atoms
-- `apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts` — Add new atoms
+**前端：**
+- `apps/client/src/features/editor/page-editor.tsx` — 挂载 AiCommandPanel（功能标志）
+- `apps/client/src/ee/ai/components/editor/ai-menu/ai-menu.tsx` — 与人工智能创造者原子解耦
+- `apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts` — 添加新原子
 - `.env.example` — Add `VITE_AI_CREATOR_V3`
 
-### Files to delete (Phase 5)
+### 要删除的文件（阶段 5）
 
 - `apps/client/src/ee/ai/components/ai-creator/ai-creator-panel.tsx`
 - `apps/client/src/ee/ai/components/ai-creator/ai-creator-messages.tsx`
@@ -87,14 +87,14 @@
 
 ---
 
-## Phase 0: Preparation
+## 阶段 0: Preparation
 
-### Task 1: Create feature branch and verify baseline
+### 任务 1：创建 功能分支 and verify baseline
 
-**Files:**
-- No code changes
+**文件：**
+- 没有代码更改
 
-- [ ] **Step 1: Create feature branch**
+- [ ] **第 1 步：创建功能分支**
 
 ```bash
 git checkout master
@@ -102,17 +102,17 @@ git pull origin master
 git checkout -b feat/ai-creator-v3
 ```
 
-- [ ] **Step 2: Run existing backend tests to establish baseline**
+- [ ] **第 2 步：运行现有后端测试来建立基线**
 
-Run: `cd agent-service && python -m pytest tests/ -q --tb=short 2>&1 | tail -20`
-Expected: All existing tests pass (note any pre-existing failures).
+运行： `cd agent-service && python -m pytest tests/ -q --tb=short 2>&1 | tail -20`
+预期：所有现有测试均通过（注意任何预先存在的失败）。
 
-- [ ] **Step 3: Run existing frontend build to verify no errors**
+- [ ] **第 3 步：运行现有的前端构建以验证没有错误**
 
-Run: `cd apps/client && pnpm build 2>&1 | tail -10`
-Expected: Build succeeds.
+运行： `cd apps/client && pnpm build 2>&1 | tail -10`
+预期：构建成功。
 
-- [ ] **Step 4: Add feature flag to .env.example**
+- [ ] **第 4 步：将功能标志添加到 .env.example**
 
 Add to `.env.example`:
 ```
@@ -120,7 +120,7 @@ Add to `.env.example`:
 VITE_AI_CREATOR_V3=false
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add .env.example
@@ -132,15 +132,15 @@ EOF
 
 ---
 
-## Phase 1: Backend Simplification
+## 阶段 1: Backend Simplification
 
-### Task 2: Implement change summary generator
+### 任务 2：实现 change summary generator
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/change_summary.py`
-- Test: `agent-service/tests/orchestrator/test_change_summary.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/change_summary.py`
+- 测试： `agent-service/tests/orchestrator/test_change_summary.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **第 1 步：编写失败的测试**
 
 ```python
 # agent-service/tests/orchestrator/test_change_summary.py
@@ -201,12 +201,12 @@ class TestChangeSummary:
         assert summary.images_kept == 1
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
+- [ ] **第 2 步：运行测试以验证 RED**
 
-Run: `cd agent-service && python -m pytest tests/orchestrator/test_change_summary.py -q`
-Expected: FAIL (module does not exist).
+运行： `cd agent-service && python -m pytest tests/orchestrator/test_change_summary.py -q`
+预期：失败（模块不存在）。
 
-- [ ] **Step 3: Implement change_summary.py**
+- [ ] **第 3 步：实施change_summary.py**
 
 ```python
 # agent-service/app/orchestrator/tools/change_summary.py
@@ -265,12 +265,12 @@ def generate_change_summary(
     )
 ```
 
-- [ ] **Step 4: Run tests to verify GREEN**
+- [ ] **第 4 步：运行测试以验证绿色**
 
-Run: `cd agent-service && python -m pytest tests/orchestrator/test_change_summary.py -v`
-Expected: All 8 tests PASS.
+运行： `cd agent-service && python -m pytest tests/orchestrator/test_change_summary.py -v`
+预期：所有 8 项测试均通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/tools/change_summary.py agent-service/tests/orchestrator/test_change_summary.py
@@ -280,13 +280,13 @@ EOF
 )"
 ```
 
-### Task 3: Implement engine_v3 with handle_document
+### 任务 3：实现 engine_v3 with handle_document
 
-**Files:**
-- Create: `agent-service/app/orchestrator/engine_v3.py`
-- Test: `agent-service/tests/orchestrator/test_engine_v3.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/engine_v3.py`
+- 测试： `agent-service/tests/orchestrator/test_engine_v3.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **第 1 步：编写失败的测试**
 
 ```python
 # agent-service/tests/orchestrator/test_engine_v3.py
@@ -402,12 +402,12 @@ class TestDocumentPromptStrategy:
         assert "专业的文档编辑" in prompt
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
+- [ ] **第 2 步：运行测试以验证 RED**
 
-Run: `cd agent-service && python -m pytest tests/orchestrator/test_engine_v3.py -q`
-Expected: FAIL (module does not exist).
+运行： `cd agent-service && python -m pytest tests/orchestrator/test_engine_v3.py -q`
+预期：失败（模块不存在）。
 
-- [ ] **Step 3: Implement engine_v3.py**
+- [ ] **第 3 步：实现engine_v3.py**
 
 ```python
 # agent-service/app/orchestrator/engine_v3.py
@@ -550,12 +550,12 @@ class EngineV3:
         yield SSEEvent(type="done", data={"content": full_content})
 ```
 
-- [ ] **Step 4: Run tests to verify GREEN**
+- [ ] **第 4 步：运行测试以验证绿色**
 
-Run: `cd agent-service && python -m pytest tests/orchestrator/test_engine_v3.py -v`
-Expected: All tests PASS.
+运行： `cd agent-service && python -m pytest tests/orchestrator/test_engine_v3.py -v`
+预期：所有测试均通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/engine_v3.py agent-service/tests/orchestrator/test_engine_v3.py
@@ -565,13 +565,13 @@ EOF
 )"
 ```
 
-### Task 4: Add FastAPI endpoints for document optimize and create
+### 任务 4：添加 FastAPI endpoints for document optimize and create
 
-**Files:**
-- Modify: `agent-service/app/main.py`
-- Test: `agent-service/tests/integration/test_api_v3.py`
+**文件：**
+- 修改：`agent-service/app/main.py`
+- 测试： `agent-service/tests/integration/test_api_v3.py`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **第 1 步：编写失败的测试**
 
 ```python
 # agent-service/tests/integration/test_api_v3.py
@@ -609,14 +609,14 @@ class TestDocumentCreateEndpoint:
         assert resp.status_code == 200
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
+- [ ] **第 2 步：运行测试以验证 RED**
 
-Run: `cd agent-service && python -m pytest tests/integration/test_api_v3.py -q`
-Expected: FAIL (endpoints do not exist).
+运行： `cd agent-service && python -m pytest tests/integration/test_api_v3.py -q`
+预期：失败（端点不存在）。
 
-- [ ] **Step 3: Add endpoints to main.py**
+- [ ] **第 3 步：将端点添加到main.py**
 
-Add after the existing `/agent/run` endpoint (around line 212 of `main.py`):
+在现有的 `/agent/run` 端点之后添加（在 `main.py` 的第 212 行附近）：
 
 ```python
 @app.post("/agent/document/optimize", dependencies=[Depends(verify_internal_secret)])
@@ -695,12 +695,12 @@ async def create_document(request: Request):
     return EventSourceResponse(_event_generator())
 ```
 
-- [ ] **Step 4: Run tests to verify GREEN**
+- [ ] **第 4 步：运行测试以验证绿色**
 
-Run: `cd agent-service && python -m pytest tests/integration/test_api_v3.py -v`
-Expected: PASS.
+运行： `cd agent-service && python -m pytest tests/integration/test_api_v3.py -v`
+预期：通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/main.py agent-service/tests/integration/test_api_v3.py
@@ -710,14 +710,14 @@ EOF
 )"
 ```
 
-### Task 5: Add NestJS gateway routes
+### 任务 5：添加 NestJS gateway routes
 
-**Files:**
-- Create: `apps/server/src/ee/ai/dto/document-optimize.dto.ts`
-- Create: `apps/server/src/ee/ai/dto/document-create.dto.ts`
-- Modify: `apps/server/src/ee/ai/ai.controller.ts`
+**文件：**
+- 创建：`apps/server/src/ee/ai/dto/document-optimize.dto.ts`
+- 创建：`apps/server/src/ee/ai/dto/document-create.dto.ts`
+- 修改：`apps/server/src/ee/ai/ai.controller.ts`
 
-- [ ] **Step 1: Create DTOs**
+- [ ] **第 1 步：创建 DTO**
 
 ```typescript
 // apps/server/src/ee/ai/dto/document-optimize.dto.ts
@@ -777,9 +777,9 @@ export class DocumentCreateDto {
 }
 ```
 
-- [ ] **Step 2: Add routes to AiController**
+- [ ] **第 2 步：添加路由到AiController**
 
-Add after line 399 of `apps/server/src/ee/ai/ai.controller.ts`:
+在`apps/server/src/ee/ai/ai.controller.ts`第399行后添加：
 
 ```typescript
 @Post('document/optimize')
@@ -855,12 +855,12 @@ async createDocument(
 }
 ```
 
-- [ ] **Step 3: Verify TypeScript compilation**
+- [ ] **步骤 3：验证 TypeScript 编译**
 
-Run: `cd apps/server && pnpm build 2>&1 | tail -10`
-Expected: Build succeeds.
+运行： `cd apps/server && pnpm build 2>&1 | tail -10`
+预期：构建成功。
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
 ```bash
 git add apps/server/src/ee/ai/dto/document-optimize.dto.ts apps/server/src/ee/ai/dto/document-create.dto.ts apps/server/src/ee/ai/ai.controller.ts
@@ -872,15 +872,15 @@ EOF
 
 ---
 
-## Phase 2: Frontend Command Panel
+## 阶段 2: Frontend Command Panel
 
-### Task 6: Create v3 type definitions and new atoms
+### 任务 6：创建 v3 type definitions and new atoms
 
-**Files:**
-- Create: `apps/client/src/ee/ai/types/command.types.ts`
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/types/command.types.ts`
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`
 
-- [ ] **Step 1: Create type definitions**
+- [ ] **第 1 步：创建类型定义**
 
 ```typescript
 // apps/client/src/ee/ai/types/command.types.ts
@@ -944,7 +944,7 @@ export const QUICK_ACTIONS: QuickAction[] = [
 ];
 ```
 
-- [ ] **Step 2: Add new atoms**
+- [ ] **第 2 步：添加新原子**
 
 Add to `apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`:
 
@@ -955,7 +955,7 @@ import type { AiPanelMode } from '../../types/command.types';
 export const aiPanelModeAtom = atom<AiPanelMode>('command');
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/types/command.types.ts apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts
@@ -965,12 +965,12 @@ EOF
 )"
 ```
 
-### Task 7: Create useAiStream hook
+### 任务 7：创建 useAiStream hook
 
-**Files:**
-- Create: `apps/client/src/ee/ai/hooks/useAiStream.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/hooks/useAiStream.ts`
 
-- [ ] **Step 1: Implement SSE stream hook**
+- [ ] **第 1 步：实现SSE流挂钩**
 
 ```typescript
 // apps/client/src/ee/ai/hooks/useAiStream.ts
@@ -1076,7 +1076,7 @@ export function useAiStream() {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **第 2 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/hooks/useAiStream.ts
@@ -1086,13 +1086,13 @@ EOF
 )"
 ```
 
-### Task 8: Create useAiCommand hook
+### 任务 8：创建 useAiCommand hook
 
-**Files:**
-- Create: `apps/client/src/ee/ai/hooks/useAiCommand.ts`
-- Create: `apps/client/src/ee/ai/services/ai-document-service.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/hooks/useAiCommand.ts`
+- 创建：`apps/client/src/ee/ai/services/ai-document-service.ts`
 
-- [ ] **Step 1: Create document service**
+- [ ] **第 1 步：创建文档服务**
 
 ```typescript
 // apps/client/src/ee/ai/services/ai-document-service.ts
@@ -1122,7 +1122,7 @@ export function getDocumentCreateUrl(): string {
 }
 ```
 
-- [ ] **Step 2: Create useAiCommand hook**
+- [ ] **第 2 步：创建useAiCommand钩子**
 
 ```typescript
 // apps/client/src/ee/ai/hooks/useAiCommand.ts
@@ -1294,7 +1294,7 @@ export function useAiCommand({ pageId, editor, titleEditor }: UseAiCommandOption
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/hooks/useAiCommand.ts apps/client/src/ee/ai/services/ai-document-service.ts
@@ -1304,17 +1304,17 @@ EOF
 )"
 ```
 
-### Task 9: Create AiCommandPanel component
+### 任务 9：创建 AiCommandPanel component
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-command-panel/AiCommandPanel.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-command-panel/QuickActions.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-command-panel/CommandInput.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-command-panel/RecentOps.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-command-panel/AiCommandPanel.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-command-panel/QuickActions.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-command-panel/CommandInput.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-command-panel/RecentOps.tsx`
 
-> Note: These are Mantine 8 components following Docmost's existing style patterns (see `ai-creator.module.css` for reference colors and spacing).
+> 注意：这些是 Mantine 8 组件，遵循 Docmost 的现有样式模式（有关参考颜色和间距，请参阅 `ai-creator.module.css`）。
 
-- [ ] **Step 1: Create QuickActions component**
+- [ ] **第 1 步：创建 QuickActions 组件**
 
 ```typescript
 // apps/client/src/ee/ai/components/ai-command-panel/QuickActions.tsx
@@ -1350,16 +1350,16 @@ export function QuickActions({ onAction, disabled }: QuickActionsProps) {
 }
 ```
 
-- [ ] **Step 2: Create RecentOps, CommandInput, and main AiCommandPanel**
+- [ ] **第 2 步：创建RecentOps、CommandInput和主AiCommandPanel**
 
-These follow the same Mantine pattern. Implement each with proper props and Docmost styling. The main `AiCommandPanel.tsx` composes all sub-components and connects to `useAiCommand`.
+它们遵循相同的 Mantine 模式。使用适当的 props 和 Docmost 样式来实现每个。主`AiCommandPanel.tsx`组成所有子组件并连接到`useAiCommand`。
 
-- [ ] **Step 3: Verify build**
+- [ ] **第 3 步：验证构建**
 
-Run: `cd apps/client && pnpm build 2>&1 | tail -10`
-Expected: Build succeeds.
+运行： `cd apps/client && pnpm build 2>&1 | tail -10`
+预期：构建成功。
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-command-panel/
@@ -1369,12 +1369,12 @@ EOF
 )"
 ```
 
-### Task 10: Create ReviewSidebar component
+### 任务 10：创建 ReviewSidebar component
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-review-sidebar/ReviewSidebar.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-review-sidebar/ReviewSidebar.tsx`
 
-- [ ] **Step 1: Implement ReviewSidebar**
+- [ ] **第 1 步：实施 ReviewSidebar**
 
 ```typescript
 // apps/client/src/ee/ai/components/ai-review-sidebar/ReviewSidebar.tsx
@@ -1442,7 +1442,7 @@ export function ReviewSidebar({ changeSummary, onAccept, onReject, onReoptimize 
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **第 2 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-review-sidebar/
@@ -1452,14 +1452,14 @@ EOF
 )"
 ```
 
-### Task 11: Mount command panel with feature flag
+### 任务 11：挂载 command panel with feature flag
 
-**Files:**
-- Modify: `apps/client/src/features/editor/page-editor.tsx`
+**文件：**
+- 修改：`apps/client/src/features/editor/page-editor.tsx`
 
-- [ ] **Step 1: Add feature flag and conditional rendering**
+- [ ] **第 1 步：添加功能标志和条件渲染**
 
-In `page-editor.tsx`, add conditional rendering:
+在`page-editor.tsx`中，添加条件渲染：
 
 ```typescript
 // At the top, import
@@ -1476,12 +1476,12 @@ const useV3 = import.meta.env.VITE_AI_CREATOR_V3 === 'true';
 )}
 ```
 
-- [ ] **Step 2: Verify build and manual check**
+- [ ] **第 2 步：验证构建和手动检查**
 
-Run: `cd apps/client && pnpm build 2>&1 | tail -10`
-Expected: Build succeeds.
+运行： `cd apps/client && pnpm build 2>&1 | tail -10`
+预期：构建成功。
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
 ```bash
 git add apps/client/src/features/editor/page-editor.tsx
@@ -1491,44 +1491,44 @@ EOF
 )"
 ```
 
-### Task 12: Browser verification — TC-01 to TC-04
+### 任务 12：浏览器验证 — TC-01 to TC-04
 
-> Use `mcp__claude-in-chrome__*` tools to verify in real Chrome browser.
+> 使用`mcp__claude-in-chrome__*`工具在真实的Chrome浏览器中进行验证。
 
-- [ ] **Step 1: Start dev server**
+- [ ] **第 1 步：启动开发服务器**
 
-Run: `pnpm dev` (in background)
+运行：`pnpm dev`（在后台）
 
-- [ ] **Step 2: Set feature flag and rebuild**
+- [ ] **第 2 步：设置功能标志并重建**
 
-Set `VITE_AI_CREATOR_V3=true` in `.env`, restart dev server.
+在`.env`中设置`VITE_AI_CREATOR_V3=true`，重新启动开发服务器。
 
-- [ ] **Step 3: Execute TC-01 (Command panel renders)**
+- [ ] **步骤 3：执行 TC-01（命令面板渲染）**
 
-Open Chrome → navigate to a page with content → verify:
-- Right-side AI command panel visible (300px width)
-- 6 quick action buttons in 2x3 grid
-- Input box at bottom with toolbar
-- Panel collapsible
+打开 Chrome → 导航到包含内容的页面 → 验证：
+- 右侧 AI 命令面板可见（300 像素宽度）
+- 2x3 网格中的 6 个快速操作按钮
+- 底部输入框带有工具栏
+- 面板可折叠
 
-- [ ] **Step 4: Execute TC-02 (Document optimization — plain text)**
+- [ ] **步骤 4：执行 TC-02（文档优化 — 纯文本）**
 
-Click [优化全文] → verify:
-- Panel shows "running" state
-- After completion: ReviewSidebar appears with change summary
-- Click [撤销] → content restored
+点击【优化全文】→验证：
+- 面板显示“运行”状态
+- 完成后：ReviewSidebar 会出现，其中包含更改摘要
+- 点击【恢复】→恢复内容
 
-- [ ] **Step 5: Execute TC-03 (Document optimization — with images)**
+- [ ] **步骤 5：执行 TC-03（文档优化 - 带图像）**
 
-On a page with images → click [优化全文] → verify:
-- Change summary shows "X/X 保留 ✓"
-- Images still present in editor
+在有图片的页面→点击【优化全文】→验证：
+- 变更摘要显示“X/X 保留✓”
+- 图像仍然存在于编辑器中
 
-- [ ] **Step 6: Screenshot and record results**
+- [ ] **第 6 步：截图并记录结果**
 
-Use `mcp__claude-in-chrome__screenshot_mcp` to capture each state.
+使用 `mcp__claude-in-chrome__screenshot_mcp` 捕获每个状态。
 
-- [ ] **Step 7: Commit verification results**
+- [ ] **第 7 步：提交验证结果**
 
 ```bash
 git commit --allow-empty -m "$(cat <<'EOF'
@@ -1539,26 +1539,26 @@ EOF
 
 ---
 
-## Phase 3: ai-menu Decoupling
+## 阶段 3: ai-menu Decoupling
 
-### Task 13: Decouple ai-menu from ai-creator atoms
+### 任务 13：解耦 ai-menu from ai-creator atoms
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/editor/ai-menu/ai-menu.tsx`
-- Test: `apps/client/src/ee/ai/components/__tests__/ai-menu-isolation.test.tsx`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/editor/ai-menu/ai-menu.tsx`
+- 测试： `apps/client/src/ee/ai/components/__tests__/ai-menu-isolation.test.tsx`
 
-- [ ] **Step 1: Audit current ai-menu atom dependencies**
+- [ ] **第 1 步：审核当前的 ai-menu 原子依赖性**
 
-Read `ai-menu.tsx` and identify all imports from `ai-creator-atoms.ts` or `ai-creator-*.ts`. These must be removed or replaced.
+读取 `ai-menu.tsx` 并识别来自 `ai-creator-atoms.ts` 或 `ai-creator-*.ts` 的所有导入。这些必须被移除或更换。
 
-- [ ] **Step 2: Remove shared atom dependencies**
+- [ ] **第 2 步：删除共享原子依赖项**
 
 In `ai-menu.tsx`:
-- Remove imports of `aiCreatorSelectionAtom`, `aiCreatorSelectionRangeAtom`
-- Use ai-menu's own local state for selection
-- After successful operation (replace/insert), write to `recentOps` via `addRecentOp()` from a shared utility
+- 删除 `aiCreatorSelectionAtom`、`aiCreatorSelectionRangeAtom` 的导入
+- 使用ai-menu自己的本地状态进行选择
+- 成功操作（替换/插入）后，从共享实用程序通过 `addRecentOp()` 写入 `recentOps`
 
-- [ ] **Step 3: Write isolation test**
+- [ ] **第 3 步：编写隔离测试**
 
 ```typescript
 // apps/client/src/ee/ai/components/__tests__/ai-menu-isolation.test.tsx
@@ -1578,12 +1578,12 @@ describe('ai-menu isolation', () => {
 });
 ```
 
-- [ ] **Step 4: Run test**
+- [ ] **第 4 步：运行测试**
 
-Run: `cd apps/client && pnpm vitest run src/ee/ai/components/__tests__/ai-menu-isolation.test.tsx`
-Expected: PASS.
+运行： `cd apps/client && pnpm vitest run src/ee/ai/components/__tests__/ai-menu-isolation.test.tsx`
+预期：通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/components/editor/ai-menu/ apps/client/src/ee/ai/components/__tests__/ai-menu-isolation.test.tsx
@@ -1593,20 +1593,20 @@ EOF
 )"
 ```
 
-### Task 14: Browser verification — TC-05, TC-06
+### 任务 14：浏览器验证 — TC-05, TC-06
 
-- [ ] **Step 1: Execute TC-05 (Selection rewriting independence)**
+- [ ] **步骤 1：执行 TC-05（选择重写独立性）**
 
-Select text → Bubble Menu → Ask AI → 润色 → Replace → Verify:
-- Command panel's RecentOps shows the operation
-- No chat bubbles appear in command panel
-- No state contamination
+选择文本→气泡菜单→询问AI→润色→替换→验证：
+- 命令面板的RecentOps显示操作
+- 命令面板中不会出现聊天气泡
+- 无状态污染
 
-- [ ] **Step 2: Execute TC-06 (Consecutive selection rewrites)**
+- [ ] **步骤2：执行TC-06（连续选择重写）**
 
-Three consecutive selection rewrites → verify no conflicts, all in RecentOps.
+连续三个选择重写→验证没有冲突，全部在RecentOps中。
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
 ```bash
 git commit --allow-empty -m "$(cat <<'EOF'
@@ -1617,15 +1617,15 @@ EOF
 
 ---
 
-## Phase 4: Creation from Scratch
+## 阶段 4: Creation from Scratch
 
-### Task 15: Implement creation flow in command panel
+### 任务 15：实现 creation flow in command panel
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/hooks/useAiCommand.ts` — add `submitCreate()`
-- Modify: `apps/client/src/ee/ai/components/ai-command-panel/AiCommandPanel.tsx` — detect blank page
+**文件：**
+- 修改：`apps/client/src/ee/ai/hooks/useAiCommand.ts` — 添加`submitCreate()`
+- 修改：`apps/client/src/ee/ai/components/ai-command-panel/AiCommandPanel.tsx` — 检测空白页
 
-- [ ] **Step 1: Add submitCreate to useAiCommand**
+- [ ] **第 1 步：添加submitCreate到useAiCommand**
 
 ```typescript
 const submitCreate = useCallback(async (instruction: string, templateId?: string, needBrief = false) => {
@@ -1674,14 +1674,14 @@ const submitCreate = useCallback(async (instruction: string, templateId?: string
 }, [editor, pageId, start, setPanelMode, sessionState]);
 ```
 
-- [ ] **Step 2: Detect blank page in AiCommandPanel**
+- [ ] **步骤 2：检测 AiCommandPanel 中的空白页**
 
 ```typescript
 const isBlankPage = !editor?.getText()?.trim();
 // If blank page, submitCreate instead of submitOptimize
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/hooks/useAiCommand.ts apps/client/src/ee/ai/components/ai-command-panel/AiCommandPanel.tsx
@@ -1691,35 +1691,35 @@ EOF
 )"
 ```
 
-### Task 16: Browser verification — TC-07, TC-08
+### 任务 16：浏览器验证 — TC-07, TC-08
 
-- [ ] **Step 1: Execute TC-07 (Blank page creation)**
-- [ ] **Step 2: Execute TC-08 (Creation with file upload)**
-- [ ] **Step 3: Commit**
+- [ ] **步骤 1：执行 TC-07（创建空白页）**
+- [ ] **步骤2：执行TC-08（通过文件上传创建）**
+- [ ] **第 3 步：提交**
 
 ---
 
-## Phase 5: Cleanup Old Code
+## 阶段 5: Cleanup Old Code
 
-### Task 17: Remove deprecated frontend components
+### 任务 17：移除 deprecated 前端 components
 
-**Files:**
-- Delete: All files listed in "Files to delete" section above
+**文件：**
+- 删除：上面“要删除的文件”部分列出的所有文件
 
-- [ ] **Step 1: Remove old panel components**
+- [ ] **第 1 步：移除旧面板组件**
 
-Delete the listed files. Update any imports that reference them.
+删除列出的文件。更新引用它们的任何导入。
 
-- [ ] **Step 2: Remove deprecated atoms**
+- [ ] **第 2 步：删除已弃用的原子**
 
-Remove `aiCreatorAutoInsertAtom`, `agentModeAtom` from `ai-creator-atoms.ts` (if not used elsewhere).
+从 `ai-creator-atoms.ts` 中删除 `aiCreatorAutoInsertAtom`、`agentModeAtom`（如果不在其他地方使用）。
 
-- [ ] **Step 3: Verify build**
+- [ ] **第 3 步：验证构建**
 
-Run: `cd apps/client && pnpm build 2>&1 | tail -10`
-Expected: Build succeeds.
+运行： `cd apps/client && pnpm build 2>&1 | tail -10`
+预期：构建成功。
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
 ```bash
 git add -A
@@ -1729,18 +1729,18 @@ EOF
 )"
 ```
 
-### Task 18: Remove deprecated backend code
+### 任务 18：移除 deprecated 后端 code
 
-- [ ] **Step 1: Remove backend files**
+- [ ] **第 1 步：删除后端文件**
 
-Delete: `section_writer.py`, `section_revision.py`, `create_blueprint.py`, `write_tools.py`, `evaluate.py`, `fix_tools.py`, `evaluator.py`, `consistency_checker.py`, `fixer.py`
+删除：`section_writer.py`、`section_revision.py`、`create_blueprint.py`、`write_tools.py`、`evaluate.py`、`fix_tools.py`、`evaluator.py`、`consistency_checker.py`、`fixer.py`
 
-- [ ] **Step 2: Verify backend tests still pass**
+- [ ] **第 2 步：验证后端测试是否仍然通过**
 
-Run: `cd agent-service && python -m pytest tests/ -q --tb=short 2>&1 | tail -20`
-Expected: Pre-existing tests for deleted modules will fail. Remove those test files too.
+运行： `cd agent-service && python -m pytest tests/ -q --tb=short 2>&1 | tail -20`
+预期：已删除模块的现有测试将失败。也删除那些测试文件。
 
-- [ ] **Step 3: Commit**
+- [ ] **第 3 步：提交**
 
 ```bash
 git add -A
@@ -1750,35 +1750,35 @@ EOF
 )"
 ```
 
-### Task 19: Browser regression — TC-09
+### 任务 19：浏览器回归 — TC-09
 
-- [ ] **Step 1: Execute TC-01 through TC-08 again**
-- [ ] **Step 2: Check console for errors**
-- [ ] **Step 3: Commit**
+- [ ] **步骤 1：再次执行 TC-01 至 TC-08**
+- [ ] **第 2 步：检查控制台是否有错误**
+- [ ] **第 3 步：提交**
 
 ---
 
-## Phase 6: v2 Inline Diff
+## 阶段 6: v2 Inline Diff
 
-### Task 20: Implement frontend diff computation
+### 任务 20：实现 前端 diff computation
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-review/DiffDecorationPlugin.ts`
-- Create: `apps/client/src/ee/ai/components/ai-review-sidebar/ChangeList.tsx`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-review/DiffDecorationPlugin.ts`
+- 创建：`apps/client/src/ee/ai/components/ai-review-sidebar/ChangeList.tsx`
 
-- [ ] **Step 1: Implement computeEditorDiff**
+- [ ] **第 1 步：实施computeEditorDiff**
 
-The diff is computed entirely on the frontend using ProseMirror Node comparison (as specified in spec section 13.8).
+差异完全在前端使用 ProseMirror 节点比较（如规范第 13.8 节中指定）计算。
 
-- [ ] **Step 2: Implement DiffDecorationPlugin**
+- [ ] **第 2 步：实施 DiffDecorationPlugin**
 
-ProseMirror Plugin using `Decoration.inline` for deletions and `Decoration.widget` for insertions and accept/reject buttons (as specified in spec section 7.3).
+ProseMirror 插件使用 `Decoration.inline` 进行删除，使用 `Decoration.widget` 进行插入和接受/拒绝按钮（如规范第 7.3 节中指定）。
 
-- [ ] **Step 3: Implement ChangeList component**
+- [ ] **第 3 步：实现 ChangeList 组件**
 
-Mantine-based list of changes with progress bar, per-change accept/reject buttons, and click-to-jump functionality.
+基于 Mantine 的更改列表，带有进度条、每次更改接受/拒绝按钮以及点击跳转功能。
 
-- [ ] **Step 4: Integrate with useAiReview hook**
+- [ ] **第 4 步：与 useAiReview 挂钩集成**
 
 ```typescript
 // apps/client/src/ee/ai/hooks/useAiReview.ts
@@ -1790,7 +1790,7 @@ export function useAiReview(editor: any, changes: BlockChange[]) {
 }
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-review/ apps/client/src/ee/ai/hooks/useAiReview.ts
@@ -1800,44 +1800,44 @@ EOF
 )"
 ```
 
-### Task 21: Browser verification — TC-11 to TC-14
+### 任务 21：浏览器验证 — TC-11 to TC-14
 
-- [ ] **Step 1: Execute TC-11 (Inline diff basic)**
-- [ ] **Step 2: Execute TC-12 (Per-change accept/reject)**
-- [ ] **Step 3: Execute TC-13 (Change list jump-to)**
-- [ ] **Step 4: Execute TC-14 (Full reject = restore)**
-- [ ] **Step 5: Commit**
-
----
-
-## Notes for the Implementer
-
-- **Never delete a file without first verifying it has no remaining imports.** Use `grep -r "filename" apps/ agent-service/` before deleting.
-- **The NestJS gateway uses `http.request` (not `fetch`) for SSE.** This is non-negotiable — `fetch` buffers SSE on Node.js.
-- **MineRU configuration requires `MINERU_ENABLED=true` and valid `MINERU_API_TOKEN`.** Tests should mock MineRU, not call the real API.
-- **Feature flag `VITE_AI_CREATOR_V3` is build-time (Vite).** Changing it requires a rebuild, not just a page refresh.
-- **Yjs collaboration**: When implementing `setContent()`, ensure `Y.UndoManager` is used for undo, not ProseMirror History (see spec section 13.2).
-- **Markdown serialization**: Use the existing `prosemirrorToMarkdown()` from `@docmost/editor-ext` for `originalContent` (see spec section 13.3).
-
-## Success Criteria
-
-- [ ] All Phase 1-5 backend tests pass
-- [ ] All Phase 2-4 frontend component tests pass
-- [ ] Browser TC-01 through TC-10 pass (v1 complete)
-- [ ] Browser TC-11 through TC-14 pass (v2 complete)
-- [ ] engine.py v3 is under 400 lines
-- [ ] No console errors in browser
-- [ ] Feature flag toggle works (v3 on/off)
+- [ ] **第 1 步：执行 TC-11（内联差异基本）**
+- [ ] **步骤 2：执行 TC-12（每次更改接受/拒绝）**
+- [ ] **步骤 3：执行 TC-13（更改列表跳转）**
+- [ ] **步骤 4：执行 TC-14（完全拒绝 = 恢复）**
+- [ ] **第 5 步：提交**
 
 ---
 
-## Errata: Plan Review Fixes
+## 实施者须知
+
+- **在没有首先验证文件没有剩余导入的情况下，切勿删除文件。** 在删除之前使用 `grep -r "filename" apps/ agent-service/`。
+- **NestJS 网关使用 `http.request`（而不是 `fetch`）进行 SSE。** 这是不可协商的 — `fetch` 在 Node.js 上缓冲 SSE。
+- **MineRU 配置需要 `MINERU_ENABLED=true` 和有效的 `MINERU_API_TOKEN`。** 测试应该模拟 MineRU，而不是调用真正的 API。
+- **功能标志 `VITE_AI_CREATOR_V3` 是构建时 (Vite)。** 更改它需要重建，而不仅仅是页面刷新。
+- **Yjs 协作**：实现 `setContent()` 时，确保 `Y.UndoManager` 用于撤消，而不是 ProseMirror 历史记录（请参阅规范第 13.2 节）。
+- **Markdown 序列化**：将 `@docmost/editor-ext` 中的现有 `prosemirrorToMarkdown()` 用于 `originalContent`（请参阅规范第 13.3 节）。
+
+## 成功标准
+
+- [ ] 所有阶段 1-5 后端测试均通过
+- [ ] 所有第 2-4 阶段前端组件测试均通过
+- [ ] 浏览器 TC-01 至 TC-10 通过（v1 已完成）
+- [ ] 浏览器 TC-11 至 TC-14 通过（v2 完成）
+- [ ] engine.py v3 低于 400 行
+- [ ] 浏览器中没有控制台错误
+- [ ] 功能标志切换有效（v3 开/关）
+
+---
+
+## 勘误表：计划审核修复
 
 > 以下修正来自 plan review，实施时以此为准。原文中的对应部分应视为被替代。
 
-### E1: NestJS 路由归属修正（Critical）
+### E1：NestJS路由归属修改（严重）
 
-**问题**: Task 5 将新路由加到 `AiController`，但 `AiController` 不注入 `AgentGatewayService`，且没有 `http.request` SSE 代理能力。`proxyAgentStream()` 是 `AgentGatewayController` 的私有方法。
+**问题**: 任务 5 将新路由加到 `AiController`，但 `AiController` 不注入 `AgentGatewayService`，且没有 `http.request` SSE 代理能力。`proxyAgentStream()` 是 `AgentGatewayController` 的私有方法。
 
 **修正**: 新路由加到 `AgentGatewayController`（而非 `AiController`），复用其已有的 `http.request` SSE 代理基础设施。
 
@@ -1907,7 +1907,7 @@ async createDocument(
 
 **问题**: Plan 中 `_stream_llm` 只返回完整字符串，无法产生流式 SSE 事件，前端在整个生成期间收不到任何数据。
 
-**修正**: `_stream_llm` 改为 async generator，逐 chunk yield：
+修改****: `_stream_llm`改为异步生成器，逐块产量：
 
 ```python
 # agent-service/app/orchestrator/engine_v3.py
@@ -1931,11 +1931,11 @@ async def handle_document(self, request: DocumentRequest) -> AsyncIterator[SSEEv
     # ... (Step 4 同前) ...
 ```
 
-测试中 mock `_stream_llm` 改为 mock `create_llm` 返回一个 fake stream。
+测试中mock `_stream_llm`改为mock `create_llm`返回一个假流。
 
-### E3: `setContent()` 必须先转 HTML（Critical）
+### E3: `setContent()` 必须先转 HTML（关键）
 
-**问题**: `contentRef.current` 是原始 markdown，TipTap `setContent()` 需要 HTML 或 JSON。
+**问题**: `contentRef.current` 是原始markdown，TipTap `setContent()` 需要 HTML 或 JSON。
 
 **修正**: 在 `useAiCommand.ts` 中所有 `setContent` 调用前加转换：
 
@@ -1951,11 +1951,11 @@ if (contentRef.current) {
 // submitCreate 的 onComplete 中同理
 ```
 
-### E4: Yjs 协作安全实现（Critical）
+### E4: Yjs 协作安全实现（严重）
 
-**问题**: 无 Y.UndoManager 使用，无 awareness 锁定。
+**问题**：无Y.UndoManager使用，无意识锁定。
 
-**修正**: 在 `useAiCommand` 中添加 Yjs 安全逻辑。这需要一个新的 Task（插入为 Task 8.5）：
+**修正**: 在 `useAiCommand` 中添加 Yjs 安全逻辑。这需要一个新的 Task（插入为 任务 8.5）：
 
 ```typescript
 // apps/client/src/ee/ai/hooks/useAiCommand.ts
@@ -1999,7 +1999,7 @@ if (provider?.awareness) {
 }
 ```
 
-### E5: 后端心跳循环（Important）
+### E5: 胸部循环（重要）
 
 在 `handle_document` 中启动并行心跳任务：
 
@@ -2023,7 +2023,7 @@ async def _heartbeat(self, queue: asyncio.Queue, interval: float = 10.0):
 
 注意：`handle_document` 是 async generator，心跳需在调用方（`main.py` 的 `_run` 函数）中启动。
 
-### E6: Markdown 序列化修正（Important）
+### E6: Markdown 序列化修改（重要）
 
 `originalContent` 的获取改为使用 `@docmost/editor-ext` 的序列化器：
 
@@ -2036,7 +2036,7 @@ const originalContent = prosemirrorToMarkdown(editor.state.doc, editor.schema);
 
 替代原先的 `editor.storage?.markdown?.getMarkdown?.()` 调用。
 
-### E7: 大文档截断（Important）
+### E7：大文档截断（重要）
 
 在 `engine_v3.py` 的 `handle_document` Step 2 后添加：
 
@@ -2053,16 +2053,16 @@ if estimated > MAX_INPUT_TOKENS:
     })
 ```
 
-### E8: ai-menu 解耦修正（Important）
+### E8: ai-menu 解耦修改（重要）
 
-**问题**: Plan reviewer 确认 `ai-menu.tsx` 实际上**已经不直接导入** `ai-creator-atoms.ts`。Task 13 的解耦工作基于错误前提。
+**问题**: Plan reviewer 确认 `ai-menu.tsx` 实际上**已经不直接导入** `ai-creator-atoms.ts`。任务 13 的解耦工作基于错误前提。
 
-**修正**: Task 13 改为：
+**修正**: 任务 13 改为：
 1. **审计确认** ai-menu 确实没有 ai-creator 依赖（验证性步骤）
-2. **添加 recentOps 写入**：ai-menu 操作完成后写入 localStorage recentOps
-3. **行为测试**：验证 ai-menu replace/insert 操作后 recentOps 更新
+2. **添加recentOps 写入**：ai-menu 完成后写入localStorage recentOps
+3. **行为测试**：验证ai-menu替换/插入操作后recentOps更新
 
-### E9: stale closure 修复（Important）
+### E9：陈旧关闭修复（重要）
 
 `submitCreate` 的 `onComplete` 中使用 `sessionState.recentOps`，但 `sessionState` 在闭包创建时被捕获。
 
@@ -2110,7 +2110,7 @@ const handleAction = (action: QuickAction) => {
 // 语气列表：专业, 友好, 正式, 轻松, 学术
 ```
 
-### E11: v2 File Map 修正
+### E11: v2 文件地图修改
 
 从 File Map 中移除后端 diff 文件（v2 diff 在前端计算）：
 - ~~`agent-service/app/orchestrator/tools/diff_engine.py`~~ → 删除

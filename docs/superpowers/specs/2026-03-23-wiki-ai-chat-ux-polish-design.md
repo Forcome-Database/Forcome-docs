@@ -1,269 +1,269 @@
-# Wiki AI Chat UX Polish Design
+# Wiki AI Chat UX 润色设计
 
-**Date:** 2026-03-23
-**Status:** Approved for planning
-**Scope:** Public wiki `AI Ask` panel interaction polish in the VitePress wiki frontend
-
----
-
-## 1. Goal
-
-Improve the wiki `AI Ask` panel so it feels like a reliable product feature instead of a functional prototype.
-
-This phase focuses on frontend interaction quality:
-- make the panel easier to start using
-- make answering state easier to understand
-- make sources easier to trust
-- make history and recovery less disruptive
-
-This phase does **not** redesign the retrieval pipeline again. It assumes the current backend source/citation fixes remain in place and uses the existing public wiki SSE API unless a small additive field is clearly necessary.
+**日期：** 2026-03-23
+**状态：** 批准规划
+**范围：** VitePress wiki 前端中的公开 wiki `AI Ask` 面板交互完善
 
 ---
 
-## 2. Current Problems
+## 1. 目标
 
-### 2.1 Welcome state is generic
+改进 wiki `AI Ask` 面板，使其感觉像是一个可靠的产品功能，而不是一个功能原型。
 
-The welcome view uses fixed suggestions and does not reflect the current page context, so first-use guidance is weak.
+此阶段重点关注前端交互质量：
+- 使面板更容易开始使用
+- 让回答状态更容易理解
+- 使消息来源更容易信任
+- 减少历史和恢复的破坏性
 
-Current implementation:
+此阶段不会再次重新设计检索管道。它假设当前的后端源/引文修复仍然存在，并使用现有的公开 wiki SSE API，除非明显需要一个小的附加字段。
+
+---
+
+## 2. 当前的问题
+
+### 2.1 欢迎状态是通用的
+
+欢迎视图使用固定建议，不反映当前页面上下文，因此首次使用指导较弱。
+
+目前的实施：
 - [AIChatWelcome.vue](e:/test/Docmost/wiki/docs/.vitepress/theme/components/AIChatWelcome.vue)
 
-Observed issues:
-- every page shows the same three prompts
-- the panel does not explain whether answers come from the current page, related pages, or both
-- the first action feels like “type anything” instead of a guided task
+观察到的问题：
+- 每个页面显示相同的三个提示
+- 面板不解释答案是否来自当前页面、相关页面或两者
+- 第一个动作感觉像是“输入任何内容”而不是指导任务
 
-### 2.2 Composer is visually complete but interaction-light
+### 2.2 Composer 视觉上完整，但交互较少
 
-The footer shows context, image previews, sender, and shortcut hints, but these pieces are stacked rather than coordinated.
+页脚显示上下文、图像预览、发件人和快捷方式提示，但这些部分是堆叠的而不是协调的。
 
-Current implementation:
+目前的实施：
 - [AIChat.vue](e:/test/Docmost/wiki/docs/.vitepress/theme/components/AIChat.vue#L771)
 - [ai-chat.css](e:/test/Docmost/wiki/docs/.vitepress/theme/styles/ai-chat.css#L541)
 
-Observed issues:
-- the context tag is passive, not actionable
-- the shortcut hint is always visible even when it is not the most important information
-- loading state is mostly delegated to the sender; the panel does not clearly tell the user what is happening
-- image attachment state is visible, but not integrated into the send affordance
+观察到的问题：
+- 上下文标签是被动的，不可操作的
+- 快捷方式提示始终可见，即使它不是最重要的信息
+- 加载状态主要委托给发送者；面板没有清楚地告诉用户发生了什么
+- 图像附件状态可见，但未集成到发送功能中
 
-### 2.3 Source display is too weak for trust-building
+### 2.3 来源显示对于建立信任来说太弱
 
-The current source module is correct structurally, but too subtle and too sparse to do trust work for the answer.
+当前的源模块在结构上是正确的，但过于微妙且过于稀疏，无法为答案进行信任工作。
 
-Current implementation:
+目前的实施：
 - [AIChatSources.vue](e:/test/Docmost/wiki/docs/.vitepress/theme/components/AIChatSources.vue)
 - [ai-chat.css](e:/test/Docmost/wiki/docs/.vitepress/theme/styles/ai-chat.css#L609)
 
-Observed issues:
-- sources are hidden behind a small disclosure control
-- cards only show document title, not why the document was cited
-- the UI does not distinguish between “current page grounding” and “retrieved related documents”
-- users must click before they know whether the answer is actually grounded
+观察到的问题：
+- 消息来源隐藏在小型披露控制背后
+- 卡片仅显示文档标题，而不显示引用该文档的原因
+- UI不区分“当前页面接地”和“检索到的相关文档”
+- 用户必须点击才能知道答案是否真正有根据
 
-### 2.4 History mode is disruptive
+### 2.4 历史模式具有破坏性
 
-Switching to history replaces the whole message area, which breaks conversational continuity.
+切换到历史记录会替换整个消息区域，这会破坏对话的连续性。
 
-Current implementation:
+目前的实施：
 - [AIChat.vue](e:/test/Docmost/wiki/docs/.vitepress/theme/components/AIChat.vue#L741)
 - [ai-chat.css](e:/test/Docmost/wiki/docs/.vitepress/theme/styles/ai-chat.css#L820)
 
-Observed issues:
-- current conversation disappears while browsing history
-- the user is moved into a different mode instead of getting a lightweight picker
-- history entry preview is useful, but the switch cost is too high
+观察到的问题：
+- 浏览历史记录时当前对话消失
+- 用户被转移到不同的模式，而不是获得轻量级选择器
+- 历史条目预览很有用，但切换成本太高
 
-### 2.5 Recovery states are present but not productized
+### 2.5 恢复状态存在但未产品化
 
-The panel has an inline error box and retry button, but failure recovery still feels technical.
+该面板有一个内联错误框和重试按钮，但故障恢复仍然感觉技术性。
 
-Current implementation:
+目前的实施：
 - [ai-chat.css](e:/test/Docmost/wiki/docs/.vitepress/theme/styles/ai-chat.css#L505)
 
-Observed issues:
-- errors are generic and visually detached from the message that failed
-- retry exists, but the panel does not clearly frame whether it will retry the same question or regenerate a fresh answer
-- the interaction model for “stop”, “retry”, and “regenerate” is not clearly separated
+观察到的问题：
+- 错误是通用的并且在视觉上与失败的消息分离
+- 存在重试，但专家组没有明确说明是否会重试相同的问题或重新生成新的答案
+- “停止”、“重试”和“重新生成”的交互模型没有明确分开
 
 ---
 
-## 3. Approaches Considered
+## 3. 考虑的方法
 
-### Approach A: CSS-only polish
+### 方法 A：仅对 CSS 进行优化
 
-Adjust spacing, borders, and hover states while keeping structure unchanged.
+调整间距、边框和悬停状态，同时保持结构不变。
 
-Pros:
-- fastest to ship
-- low regression risk
+优点：
+- 最快发货
+- 低回归风险
 
-Cons:
-- does not solve guidance, trust, or recovery problems
-- improves appearance more than behavior
+缺点：
+- 不解决指导、信任或恢复问题
+- 改善外表多于行为
 
-Decision: rejected as insufficient.
+决定：因不足而被拒绝。
 
-### Approach B: Incremental interaction polish on the current architecture
+### 方法 B：对当前架构进行增量交互完善
 
-Keep the existing `AIChat.vue` architecture for now, add small focused UI components, and improve state presentation without changing the panel’s product boundary.
+暂时保留现有的 `AIChat.vue` 架构，添加小型集中 UI 组件，并在不更改面板产品边界的情况下改进状态呈现。
 
-Pros:
-- solves the highest-value interaction issues
-- can be delivered in one implementation plan
-- keeps risk low while preparing for future decomposition
+优点：
+- 解决最高价值的交互问题
+- 可以在一个实施计划中交付
+- 保持低风险，同时为未来分解做好准备
 
-Cons:
-- does not fully fix the large-file structure problem in `AIChat.vue`
-- some backend-driven state richness is deferred
+缺点：
+- 没有完全修复`AIChat.vue`中的大文件结构问题
+- 一些后端驱动的状态丰富性被推迟
 
-Decision: **recommended**.
+决定：**推荐**。
 
-### Approach C: Full information architecture redesign
+### 方法 C：全面信息架构重新设计
 
-Split the panel into tabs/subviews, redesign history, source evidence, composer, and onboarding together.
+将面板拆分为选项卡/子视图、重新设计历史记录、源证据、作曲家和入门。
 
-Pros:
-- best long-term UX ceiling
-- allows a cleaner component model
+优点：
+- 最佳长期用户体验上限
+- 允许更清晰的组件模型
 
-Cons:
-- too large for one safe iteration
-- likely to mix UX work with architecture refactor and new backend contracts
+缺点：
+- 对于一次安全迭代来说太大
+- 可能将用户体验工作与架构重构和新的后端合同混合在一起
 
-Decision: defer until after the incremental polish phase lands.
-
----
-
-## 4. Chosen Design
-
-This phase adopts **Approach B** and introduces five improvements:
-
-1. contextual welcome prompts
-2. a dynamic composer status bar
-3. a stronger source summary strip
-4. a lighter-weight history drawer
-5. clearer recovery actions
-
-Each improvement is designed to be independently understandable and testable.
+决定：推迟到增量抛光阶段落地之后。
 
 ---
 
-## 5. UX Design Details
+## 4. 选择设计
 
-### 5.1 Contextual welcome state
+本阶段采用**方法B**并引入五项改进：
 
-Replace static suggestions with page-aware suggestions derived from the current page title and panel context.
+1.上下文欢迎提示
+2.动态的 composer 状态栏
+3.更强大的源摘要条
+4. 更轻量级的历史抽屉
+5. 更明确的恢复行动
 
-Behavior:
-- if `pageTitle` exists, generate three prompts using that title
-- if `pageTitle` does not exist, fall back to generic prompts
-- show one short line explaining the grounding mode:
+每项改进都被设计为可独立理解和测试。
+
+---
+
+## 5. 用户体验设计细节
+
+### 5.1 上下文欢迎状态
+
+将静态建议替换为从当前页面标题和面板上下文派生的页面感知建议。
+
+行为：
+- 如果 `pageTitle` 存在，则使用该标题生成三个提示
+- 如果 `pageTitle` 不存在，则返回通用提示
+- 显示一小行解释接地模式：
   - “优先基于当前页面回答”
-  - if current implementation also retrieves related pages, add “必要时补充相关公开文档”
+  - 如果当前实现还检索相关页面，则添加“必要时补充相关公开文档”
 
-Example prompts:
+提示示例：
 - `总结这页的核心内容`
 - `提取这页里的关键步骤`
 - `这页提到了哪些相关文档或资源`
 
-Why:
-- reduces blank-state hesitation
-- aligns first action with page QA instead of general chat
+为什么：
+- 减少空白状态犹豫
+- 将第一个操作与页面质量检查而不是一般聊天保持一致
 
-### 5.2 Dynamic composer status bar
+### 5.2 动态编辑器状态栏
 
-Replace the always-on shortcut sentence with a compact status row above or below the sender.
+将始终在线的快捷语句替换为发件人上方或下方的紧凑状态行。
 
-The row should adapt by state:
+该行应按状态进行调整：
 
-- idle with page context:
+- 页面上下文空闲：
   - `当前上下文：<page title>`
-- idle with images:
+- 闲置图像：
   - `已附加 2 张图片`
-- generating:
+- 生成：
   - `正在生成回答...`
-- after failure:
+- 失败后：
   - `本次回答失败，可重试或修改问题后重发`
 
-The shortcut hint should not disappear entirely, but should move to a lower-emphasis treatment:
-- show as subdued helper text only when the input is idle and empty
-- hide it while loading or when error guidance is more important
+快捷方式提示不应完全消失，而应转向较低的重点处理：
+- 仅当输入空闲且为空时显示为柔和的帮助文本
+- 在加载时或错误指导更重要时隐藏它
 
-Why:
-- puts the most relevant system feedback closest to the send action
-- reduces visual clutter during active work
+为什么：
+- 将最相关的系统反馈放置在最接近发送操作的位置
+- 减少活跃工作期间的视觉混乱
 
-### 5.3 Source summary strip
+### 5.3 源摘要条
 
-Keep the existing expandable source list, but add a visible one-line summary before the disclosure.
+保留现有的可扩展源列表，但在披露之前添加可见的一行摘要。
 
-Example summary patterns:
+摘要模式示例：
 - `答案基于当前页面与 2 篇相关文档`
 - `答案基于 3 篇相关文档`
 - `答案仅基于当前页面`
 
-Expanded state improvements:
-- keep page sources as the only visible card type in public wiki source UI
-- add a short secondary label per card when possible:
+扩展状态改进：
+- 将页面源保留为公共维基源 UI 中唯一可见的卡片类型
+- 如果可能的话，为每张卡添加一个简短的辅助标签：
   - `当前页面`
   - `相关文档`
-- if a snippet is not available from backend, do not fake one
+- 如果后端无法提供片段，请勿伪造片段
 
-Why:
-- trust begins before expansion
-- users immediately know whether the answer is grounded narrowly or broadly
+为什么：
+- 信任始于扩张之前
+- 用户立即知道答案是狭义的还是广义的
 
-### 5.4 History drawer instead of hard mode switch
+### 5.4 历史抽屉代替硬模式切换
 
-Change history from full content replacement to a lightweight overlay drawer inside the panel.
+将历史记录从完整内容替换更改为面板内的轻量级覆盖抽屉。
 
-Behavior:
-- current chat remains visually present beneath a right-to-left or fade-in drawer
-- drawer contains the existing history list
-- selecting an entry closes the drawer and loads that conversation
-- closing the drawer returns to the current conversation without context loss
+行为：
+- 当前的聊天在视觉上仍然存在于从右到左或淡入抽屉的下方
+- 抽屉包含现有的历史列表
+- 选择一个条目会关闭抽屉并加载该对话
+- 关闭抽屉可返回当前对话，而不会丢失上下文
 
-Why:
-- history browsing becomes reversible
-- users stop feeling like they left the chat to enter a different screen
+为什么：
+- 历史浏览变得可逆
+- 用户不再感觉他们离开聊天进入不同的屏幕
 
-### 5.5 Recovery actions
+### 5.5 恢复操作
 
-Clarify three different actions:
+澄清三个不同的行动：
 
 - `停止生成`
-  - only visible while streaming
+  - 仅在流式传输时可见
 - `重试`
-  - retries the last failed request payload
+  - 重试上次失败的请求负载
 - `重新生成`
-  - available on completed assistant messages when applicable
+  - 适用时可在已完成的助理消息中使用
 
-This phase only requires `停止生成` and `重试` if `重新生成` would require broader request-state retention than currently exists.
+如果 `重新生成` 需要比当前更广泛的请求状态保留，则此阶段仅需要 `停止生成` 和 `重试`。
 
-Failure presentation:
-- bind the error to the most recent failed interaction
-- keep the global inline error surface, but visually tie it to the latest answer block or composer state row
+故障演示：
+- 将错误绑定到最近失败的交互
+- 保留全局内联错误表面，但在视觉上将其与最新的答案块或作曲家状态行联系起来
 
-Why:
-- different user intents need different controls
-- makes failures recoverable without guesswork
+为什么：
+- 不同的用户意图需要不同的控制
+- 无需猜测即可恢复故障
 
 ---
 
-## 6. Component and State Design
+## 6. 组件和状态设计
 
-### 6.1 New or changed frontend units
+### 6.1 新的或更改的前端单元
 
 #### `AIChatWelcome`
 
-Responsibility:
-- render the empty state
-- accept page-aware prompt data
-- show grounding hint
+责任：
+- 渲染空状态
+- 接受页面感知提示数据
+- 显示接地提示
 
-Inputs:
+输入：
 - `pageTitle?: string`
 - `isConfigured: boolean`
 - `modifierKey: string`
@@ -272,182 +272,182 @@ Inputs:
 
 #### `AIChatSources`
 
-Responsibility:
-- normalize current page and related page citations into a source summary and expandable list
+责任：
+- 将当前页面和相关页面引用规范化为源摘要和可扩展列表
 
-Inputs:
+输入：
 - `sources?: AiSource[]`
 - `citations?: AiCitation[]`
-- optional normalized metadata for summary labels
+- 用于摘要标签的可选标准化元数据
 
-Outputs:
-- visible summary strip
-- expandable page-only source cards for public wiki
+输出：
+- 可见的摘要条
+- 用于公共维基的可扩展的仅页面源卡
 
 #### `AIChatHistoryDrawer`
 
-Responsibility:
-- display history as an overlay drawer instead of replacing the whole message region
+责任：
+- 将历史记录显示为覆盖抽屉，而不是替换整个消息区域
 
-Inputs:
+输入：
 - `entries`
 - `currentRoutePath`
 - `open`
 
-Events:
+活动：
 - `close`
 - `select`
 
-This can begin as a small extracted component or remain inline if extraction would create more churn than value. The responsibility boundary must still be clear.
+这可以从一个小的提取组件开始，或者如果提取会产生比价值更多的流失，则可以保持内联。责任边界还是要明确。
 
-#### Composer status state
+#### 作曲家状态
 
-This does not need its own file initially, but it does need an explicit computed view model in `AIChat.vue` or a dedicated composable.
+这最初不需要自己的文件，但它确实需要 `AIChat.vue` 中的显式计算视图模型或专用可组合项。
 
-Suggested derived state:
+建议的派生状态：
 - `mode: 'idle' | 'loading' | 'error' | 'image-ready'`
 - `label: string`
 - `showShortcutHint: boolean`
 
-### 6.2 Data contract stance
+### 6.2 数据合约立场
 
-This phase should prefer existing data and avoid new backend dependencies unless strictly necessary.
+除非绝对必要，否则此阶段应优先选择现有数据并避免新的后端依赖项。
 
-Allowed additive backend contract change:
-- an optional citation/category hint if frontend cannot infer “current page” vs “related page” cleanly
+允许附加后端合约更改：
+- 如果前端无法清楚地推断“当前页面”与“相关页面”，则可选的引用/类别提示
 
-Explicitly out of scope for this phase:
-- retrieval progress SSE stages
-- snippet extraction contract changes
-- attachment/source rendering redesign beyond current public wiki page-only display rule
-
----
-
-## 7. Visual and Interaction Rules
-
-### 7.1 Hierarchy
-
-- source summary should be visible but quieter than answer text
-- status row should be stronger than keyboard-help text
-- history drawer should feel secondary to the current conversation
-
-### 7.2 Motion
-
-- keep current panel enter/leave motion
-- add subtle drawer transition for history
-- avoid loading spinners in multiple places at once
-- when streaming, prefer one clear active state near the composer instead of scattered activity indicators
-
-### 7.3 Accessibility
-
-- source toggle must expose `aria-expanded`
-- history drawer must trap focus while open if it behaves as a modal sublayer
-- close and back actions must remain keyboard accessible
-- loading/error status text should be readable by assistive technology where practical
-
-### 7.4 Mobile behavior
-
-- retain full-width panel on mobile
-- ensure history drawer uses the full available panel width on small screens
-- do not let the status row or context tag wrap into a visually noisy stack when the keyboard is open
+明显超出此阶段的范围：
+- 检索进度 SSE 阶段
+- 片段提取合同变更
+- 附件/源渲染重新设计超出了当前公共维基页面仅显示规则
 
 ---
 
-## 8. Error Handling
+## 7. 视觉和交互规则
 
-This design must treat error handling as a first-class interaction, not a fallback banner.
+### 7.1 层次结构
 
-Requirements:
-- failed send should still leave the prior user question visible
-- retry should target the failed request, not a blank new message
-- aborting a stream should not look like a transport error
-- if AI returns “insufficient information”, that is a normal answer state, not an error state
+- 源摘要应该是可见的，但比答案文本更安静
+- 状态行应该比键盘帮助文本更强大
+- 历史抽屉应该感觉比当前对话次要
 
-Non-goal:
-- deep transport diagnostics in the UI
+### 7.2 运动
 
----
+- 保持当前面板进入/离开动作
+- 为历史添加微妙的抽屉过渡
+- 避免同时在多个位置加载旋转器
+- 流式传输时，更喜欢作曲家附近有一个清晰的活动状态，而不是分散的活动指示器
 
-## 9. Testing Requirements
+### 7.3 辅助功能
 
-### 9.1 Component behavior
+- 源切换必须公开 `aria-expanded`
+- 如果历史抽屉充当模态子层，则在打开时必须捕获焦点
+- 关闭和返回操作必须保持键盘可访问
+- 在可行的情况下，加载/错误状态文本应可通过辅助技术读取
 
-- welcome prompts change when `pageTitle` changes
-- source summary text changes correctly for:
-  - current-page-only
-  - current page + related pages
-  - related-pages-only
-- history drawer opens and closes without destroying current conversation view
-- status row changes correctly across idle, loading, image-ready, and error states
+### 7.4 移动行为
 
-### 9.2 Interaction behavior
-
-- clicking a welcome suggestion sends the correct prompt
-- while streaming, stop action is visible and retry is hidden
-- after failure, retry is visible and status text updates
-- source toggle announces expanded/collapsed state
-
-### 9.3 Regression coverage
-
-- current public wiki answer flow still renders message content and page sources correctly
-- image upload preview still works
-- mobile panel width and scroll behavior do not regress
+- 在移动设备上保留全宽面板
+- 确保历史抽屉在小屏幕上使用完整可用的面板宽度
+- 当键盘打开时，不要让状态行或上下文标签包装成视觉上嘈杂的堆栈
 
 ---
 
-## 10. Acceptance Criteria
+## 8. 错误处理
 
-- opening `AI Ask` on a documentation page shows page-aware onboarding instead of generic onboarding
-- the composer communicates the current state without relying on a permanent shortcut sentence
-- users can tell, before expanding details, whether an answer is grounded in the current page, related pages, or both
-- opening history no longer feels like leaving the conversation
-- failed answers provide a clear recovery path
+此设计必须将错误处理视为一流的交互，而不是后备横幅。
 
----
+要求：
+- 发送失败仍应使先前的用户问题可见
+- 重试应该针对失败的请求，而不是空白的新消息
+- 中止流不应该看起来像传输错误
+- 如果AI返回“信息不足”，那是正常的应答状态，而不是错误状态
 
-## 11. Non-Goals
-
-This design does not include:
-- another RAG retrieval architecture change
-- attachment download source cards in the public wiki UI
-- multi-tab conversation management
-- thumbs up/down feedback
-- full component decomposition of `AIChat.vue`
-
-Those can be addressed in later phases if this polish phase succeeds.
+非目标：
+- 用户界面中的深度传输诊断
 
 ---
 
-## 12. Risks and Mitigations
+## 9. 测试要求
 
-### Risk: UI scope expands into backend redesign
+### 9.1 组件行为
 
-Mitigation:
-- restrict this phase to frontend-first improvements
-- treat backend contract additions as optional and additive only
+- 当`pageTitle`改变时欢迎提示改变
+- 源摘要文本正确更改为：
+  - 仅当前页面
+  - 当前页面+相关页面
+  - 仅限相关页面
+- 历史抽屉打开和关闭而不破坏当前对话视图
+- 状态行在空闲、加载、图像就绪和错误状态下正确更改
 
-### Risk: `AIChat.vue` becomes harder to maintain during polish
+### 9.2 交互行为
 
-Mitigation:
-- extract only the new units with clear value, such as history drawer or source summary helpers
-- avoid mixing cosmetic refactors with behavior changes
+- 单击欢迎建议会发送正确的提示
+- 流式传输时，停止操作可见，重试隐藏
+- 失败后，重试可见并且状态文本更新
+- 源切换宣布展开/折叠状态
 
-### Risk: source summary overstates certainty
+### 9.3 回归覆盖率
 
-Mitigation:
-- only state what current citation data can justify
-- do not fabricate snippets, sections, or grounding claims
+- 当前的公共维基回答流程仍然正确呈现消息内容和页面源
+- 图片上传预览仍然有效
+- 移动面板宽度和滚动行为不会回归
 
 ---
 
-## 13. Ready-for-Planning Notes
+## 10. 验收标准
 
-The implementation plan should be split into small tasks with TDD discipline and should likely proceed in this order:
+- 在文档页面上打开 `AI Ask` 显示页面感知的入门而不是通用的入门
+- 作曲家无需依赖永久的快捷句子即可传达当前状态
+- 在展开详细信息之前，用户可以判断答案是否基于当前页面、相关页面或两者
+- 打开历史记录不再感觉像离开对话
+- 失败的答案提供了清晰的恢复路径
 
-1. contextual welcome prompts
-2. composer status row
-3. source summary strip
-4. history drawer
-5. recovery action cleanup
+---
 
-That order maximizes user-facing value while minimizing interaction risk.
+## 11. 非目标
+
+本设计不包括：
+- RAG 检索架构的另一个变化
+- 在公共维基用户界面中下载附件源卡
+- 多选项卡对话管理
+- 竖起大拇指/反对反馈
+- `AIChat.vue` 的完整组件分解
+
+如果此完善阶段成功，这些问题可以在后续阶段解决。
+
+---
+
+## 12. 风险和缓解措施
+
+### 风险：UI 范围扩展到后端重新设计
+
+缓解措施：
+- 将此阶段限制为前端优先的改进
+- 将后端合同添加视为可选且仅可添加
+
+### 风险：`AIChat.vue` 在抛光过程中变得更难维护
+
+缓解措施：
+- 仅提取具有明确价值的新单元，例如历史抽屉或源摘要助手
+- 避免将外观重构与行为改变混合在一起
+
+### 风险：来源摘要夸大了确定性
+
+缓解措施：
+- 仅说明当前引文数据可以证明的合理性
+- 请勿编造片段、章节或接地声明
+
+---
+
+## 13. 准备计划笔记
+
+实施计划应按照 TDD 原则分为小任务，并可能按以下顺序进行：
+
+1.上下文欢迎提示
+2. 作曲家状态行
+3. 源码摘要条
+4.历史抽屉
+5.恢复动作清理
+
+该顺序最大化了面向用户的价值，同时最小化了交互风险。

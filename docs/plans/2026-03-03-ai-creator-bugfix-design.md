@@ -1,4 +1,4 @@
-# AI Creator 模块 Bug 修复设计
+# AI Creator模块Bug修复设计
 
 **日期**: 2026-03-03
 **状态**: 已批准
@@ -8,23 +8,23 @@
 
 | ID | 严重度 | 问题 | 文件 |
 |----|--------|------|------|
-| P0-1 | CRITICAL | 选区范围在流式期间过期，导致内容插入到错误位置 | ai-creator-input.tsx |
-| P0-2 | CRITICAL | 流式错误/中断后空 assistant 消息残留在历史中 | ai-creator-input.tsx |
+| P0-1 | 关键 | 选区范围在流式期间过期，导致内容插入到错误位置 | ai-creator-input.tsx |
+| P0-2 | 关键 | 流式错误/中断后空 assistant 消息残留在历史中 | ai-creator-input.tsx |
 | P1-1 | HIGH | 代码复制按钮事件委托无对应 DOM 元素 | ai-creator-message-item.tsx |
 | P1-2 | HIGH | 对话历史中丢失选区上下文，多轮修改无连续性 | ai-creator-input.tsx |
 | P1-3 | HIGH | handleStop 不清理部分/空消息 | ai-creator-input.tsx |
-| P1-4 | HIGH | SSE onComplete 双重调用风险 | ai-service.ts |
-| P2-1 | MEDIUM | 历史消息无 content 长度限制（成本攻击） | ai.controller.ts |
-| P2-2 | MEDIUM | DOMPurify 允许 img src 无协议限制 | ai-creator-message-item.tsx |
+| P1-4 | HIGH | 上证所onComplete双重调用风险 | ai-service.ts |
+| P2-1 | 中 | 历史消息无 content 长度限制（成本攻击） | ai控制器.ts |
+| P2-2 | 中 | DOMPurify 允许 img src 无协议限制 | ai-creator-message-item.tsx |
 | P3-1 | LOW | extractTitle 函数重复定义 | ai-creator-input.tsx, ai-creator-message-item.tsx |
-| P3-2 | LOW | Jotai nullable atom 类型断言 hack 重复 3+ 次 | ai-creator-input.tsx |
+| P3-2 | LOW | Jotai nullableatom 类型断言 hack 重复 3+ 次 | ai-creator-input.tsx |
 
 ## 涉及文件（7 个）
 
 | 文件 | 操作 |
 |------|------|
 | `ai-creator-utils.ts` | **新建** — 共享工具函数 |
-| `ai-creator-atoms.ts` | 修改 — 新增 nullable atom helper |
+| `ai-creator-atoms.ts` | 修改 — 新增可为 null 的原子助手 |
 | `ai-creator.types.ts` | 修改 — 新增 SelectionSnapshot 类型 |
 | `ai-creator-input.tsx` | 修改 — P0-1, P0-2, P1-2, P1-3, P3-1, P3-2 |
 | `ai-creator-message-item.tsx` | 修改 — P1-1, P2-2, P3-1 |
@@ -116,7 +116,7 @@ content: m.selectionContext
   : m.content,
 ```
 
-### P1-4: onComplete 幂等保护
+### P1-4: on完成 幂等保护
 
 在 `generateAiContentStream` 和 `creatorGenerate` 中:
 ```typescript
@@ -129,7 +129,7 @@ if (!completed) { completed = true; onComplete?.(); }
 
 ### P2-1: 历史消息长度限制
 
-后端 controller 中:
+内部控制器中:
 ```typescript
 history = parsed
   .filter((m: any) => m.role && m.content)
@@ -140,7 +140,7 @@ history = parsed
   .slice(-10);
 ```
 
-### P2-2: DOMPurify URI 限制
+### P2-2：DOMPurify URI 限制
 
 ```typescript
 const PURIFY_CONFIG = {
@@ -159,7 +159,7 @@ export function stripTimestamp(content: string): string { ... }
 
 两个文件改为 `import { extractTitle, stripTimestamp } from './ai-creator-utils'`。
 
-### P3-2: Jotai nullable atom helper
+### P3-2：Jotai 可空原子助手
 
 在 `ai-creator-atoms.ts` 中:
 ```typescript

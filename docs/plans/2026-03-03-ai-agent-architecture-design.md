@@ -20,24 +20,24 @@
 
 | 决策点 | 选择 | 理由 |
 |--------|------|------|
-| 部署架构 | 独立 Python 微服务 | LangGraph + Docling 原生 Python 生态 |
-| 文档解析 | Docling | 轻量、多格式支持、内置 OCR |
-| LLM 配置 | 双层（复用 Docmost + Agent 可覆盖）| 灵活性最大 |
+| 部署架构 | 独立 Python 微服务 | LangGraph + Dodling 原生 Python 生态 |
+| 文档解析 | 多克林 | 轻量、多格式支持、内置 OCR |
+| LLM 配置 | 双层（用Docmost + Agent可覆盖）| 灵活性最大 |
 | 前端交互 | 轻量增强（步骤进度嵌入气泡）| 改动最小、体验一致 |
 | 图片能力 | 生成(NanoBanana) + 理解(VLM) + 标注(Pillow) | 完整图文能力 |
-| 编辑器写入 | 前端 TipTap API 插入 | 简单可靠、协作友好 |
+| 编辑器写入 | 前端 TipTap API 插件 | 简单可靠、协作友好 |
 
 ### 1.3 技术栈
 
-- **Agent 编排**：LangGraph（Plan-Execute-Review 闭环）
-- **Agent 服务**：Python 3.12 + FastAPI + Uvicorn
+- **代理编排**：LangGraph（Plan-Execute-Review闭环）
+- **代理服务**：Python 3.12 + FastAPI + Uvicorn
 - **文档解析**：Docling 2.x
 - **网络搜索**：Tavily AI API
 - **网页爬取**：Firecrawl API
 - **图片生成**：Nano Banana 2 API
 - **图片标注**：Pillow
-- **图片理解**：VLM（复用 Docmost AI_VLM_MODEL 配置）
-- **网关层**：NestJS（现有 Docmost 服务）
+- **图片理解**：VLM（复用Docmost AI_VLM_MODEL配置）
+- **网关层**：NestJS（现有Docmost服务）
 - **通信**：REST + SSE（Agent ↔ NestJS），Redis（状态同步）
 
 ---
@@ -97,10 +97,10 @@
 
 | 模块 | 语言/框架 | 职责 |
 |------|-----------|------|
-| **AgentGateway** (新增) | NestJS/TypeScript | JWT 认证、Space 权限校验、Fastify multipart 文件提取、请求转发到 Agent Service、SSE 流式代理 |
-| **Agent Service** (新增) | Python/FastAPI | LangGraph 编排核心、工具注册与调度、LLM 调用、SSE 事件生成 |
-| **Tool Registry** (新增) | Python | 9 个标准工具实现，LangGraph Tool 接口，可插拔注册 |
-| **AI Module** (现有保留) | NestJS/TypeScript | 保留现有 AI 生成、RAG 搜索、模板管理功能 |
+| **代理网关**（新增） | NestJS/TypeScript | JWT认证、空间权限校验、Fastify多部分文件提取、请求转发到代理服务、SSE流式代理 |
+| **代理服务**（新增） | Python/FastAPI | LangGraph 编排核心、工具注册与调度、LLM 调用、SSE 事件生成 |
+| **工具注册表**（新增） | 蟒蛇 | 9 个标准工具实现，LangGraph Tool 接口，可插拔注册 |
+| **AI模块**（现有保留） | NestJS/TypeScript | 保留现有 AI 生成、RAG 搜索、模板管理功能 |
 
 ### 2.3 数据流
 
@@ -133,9 +133,9 @@ markdownToHtml → TipTap editor.chain().insertContent()
 
 ---
 
-## 3. LangGraph Agent 核心设计
+## 3. LangGraph Agent核心设计
 
-### 3.1 Agent 状态 (State)
+### 3.1 代理状态（州）
 
 ```python
 from typing import TypedDict, Literal
@@ -202,22 +202,22 @@ START → Planner → Researcher → Executor → Reviewer → [通过?]
 
 ### 3.3 节点职责
 
-**Planner 节点**：
+**规划师要点**：
 - 输入：用户指令 + 上下文（页面内容、选中文本、对话历史、上传文件元信息）
 - 意图分类：新建文档 / 修改段落 / 信息查询 / 翻译润色 / 图文混排
 - 输出：结构化执行计划 `list[PlanStep]`，每步标注需要的工具
 
-**Researcher 节点**：
+**研究员要点**：
 - 按计划调用工具：`docling_parser`（解析文件）、`tavily_search`（搜索）、`firecrawl_scrape`（爬取）、`docmost_rag`（知识库检索）、`docmost_page_read`（读页面）、`vlm_understand`（图片理解）
 - 输出：更新 `research_results` 和 `parsed_files`
 
-**Executor 节点**：
+**执行者节点**：
 - 构建完整 prompt = 系统提示 + 模板 + 调研摘要 + 用户指令 + 上下文
 - 调用 LLM 流式生成 Markdown 文档
 - 穿插调用 `nanobana_imggen`（图片生成）、`image_annotate`（图片标注）、`docmost_upload`（上传获取 URL）
 - 输出：更新 `draft_content`
 
-**Reviewer 节点**：
+**评审者要点**：
 - LLM 评审：需求满足度、内容完整性、格式正确性
 - 通过 → 设置 `final_content`
 - 不通过 → 设置 `needs_revision=True` + `revision_feedback`
@@ -251,18 +251,18 @@ Agent 执行过程中通过 SSE 推送以下事件：
 
 ---
 
-## 4. 工具注册表 (Tool Registry)
+## 4.工具园艺（工具注册表）
 
 ### 4.1 工具列表
 
 | # | 工具名 | 功能 | 实现 | 外部依赖 |
 |---|--------|------|------|----------|
-| 1 | `docling_parser` | 解析 PDF/Word/Excel/TXT/HTML/MD/Image | Docling SDK | Tesseract OCR |
-| 2 | `tavily_search` | 网络搜索，返回结构化结果 | Tavily Python SDK | TAVILY_API_KEY |
-| 3 | `firecrawl_scrape` | 爬取 URL，返回 Markdown | Firecrawl Python SDK | FIRECRAWL_API_KEY |
+| 1 | `docling_parser` | 解析PDF/Word/Excel/TXT/HTML/MD/Image | 文档SDK | 超立方 OCR |
+| 2 | `tavily_search` | 网络搜索，返回结构化结果 | 泰利Python SDK | TAVILY_API_KEY |
+| 3 | `firecrawl_scrape` | 爬取URL，返回Markdown | Firecrawl Python SDK | FIRECRAWL_API_KEY |
 | 4 | `nanobana_imggen` | AI 图片生成 | HTTP API 调用 | NANOBANA_API_KEY |
-| 5 | `image_annotate` | 图片标注（箭头、文字、框选、高亮）| Pillow | 无 |
-| 6 | `vlm_understand` | 图片内容理解与描述 | LangChain VLM | AI_VLM_MODEL |
+| 5 | `image_annotate` | 图片标注（箭头、文字、框选、高亮）| 枕头 | 无 |
+| 6 | `vlm_understand` | 图片内容理解与描述 | 浪链VLM | AI_VLM_模型 |
 | 7 | `docmost_page_read` | 读取 Docmost 页面内容 | HTTP → Docmost API | DOCMOST_INTERNAL_URL |
 | 8 | `docmost_rag` | 向量搜索 Docmost 知识库 | HTTP → Docmost API | DOCMOST_INTERNAL_URL |
 | 9 | `docmost_upload` | 上传文件/图片到 Docmost 存储 | HTTP → Docmost API | DOCMOST_INTERNAL_URL |
@@ -327,7 +327,7 @@ def docmost_upload(file_content_b64: str, filename: str, page_id: str) -> str:
 
 ---
 
-## 5. NestJS 网关层
+## 5.NestJS 网关层
 
 ### 5.1 新增 API 端点
 
@@ -377,7 +377,7 @@ export class AgentGatewayController {
 }
 ```
 
-### 5.3 请求体（NestJS → Agent Service）
+### 5.3 请求体（NestJS → 代理服务）
 
 ```json
 {
@@ -410,7 +410,7 @@ export class AgentGatewayController {
 - **内部通信密钥**：`AGENT_INTERNAL_SECRET`（环境变量），NestJS → Agent Service 每个请求携带 `X-Internal-Secret` 头
 - **网络隔离**：Agent Service 仅在 Docker 内网暴露 8100 端口
 - **文件校验**：NestJS 层校验文件大小（20MB）、类型白名单，然后以 base64 传递；大文件通过共享存储路径传递
-- **权限透传**：NestJS 校验用户 Space 权限后，将 workspace_id 和 user_id 传递给 Agent Service，Agent 调用 Docmost API 时携带
+- **权限透传**：NestJS验证用户空间权限后，将workspace_id和user_id提交给代理服务，代理调用Docmost API时携带
 
 ---
 
@@ -458,7 +458,7 @@ export class AgentGatewayController {
 | 文件 | 功能 |
 |------|------|
 | `ai-creator-agent-steps.tsx` | 步骤进度展示组件 |
-| `services/agent-service.ts` | Agent SSE API 调用 |
+| `services/agent-service.ts` | 代理SSE API调用 |
 | `hooks/use-agent.ts` | Agent 状态管理 |
 
 **修改**：
@@ -568,23 +568,23 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8100"]
 
 | 变量 | 必需 | 默认值 | 说明 |
 |------|------|--------|------|
-| `AGENT_SERVICE_URL` | 是 | `http://agent-service:8100` | Docmost 中配置 |
+| `AGENT_SERVICE_URL` | 是 | `http://agent-service:8100` | 文档最中配置 |
 | `AGENT_INTERNAL_SECRET` | 是 | - | 内部通信密钥 |
-| `TAVILY_API_KEY` | 是 | - | Tavily 搜索 |
-| `FIRECRAWL_API_KEY` | 是 | - | Firecrawl 爬虫 |
+| `TAVILY_API_KEY` | 是 | - | 塔维利搜索 |
+| `FIRECRAWL_API_KEY` | 是 | - | 火爬虫 |
 | `FIRECRAWL_API_URL` | 否 | `https://api.firecrawl.dev` | 自部署 Firecrawl |
 | `NANOBANA_API_KEY` | 是 | - | 图片生成 |
-| `AGENT_LLM_PROVIDER` | 否 | 继承 `AI_DRIVER` | 覆盖 LLM Provider |
-| `AGENT_LLM_MODEL` | 否 | 继承 `AI_COMPLETION_MODEL` | 覆盖 LLM Model |
-| `AGENT_LLM_API_KEY` | 否 | 继承 `OPENAI_API_KEY` | 覆盖 API Key |
-| `AGENT_LLM_API_URL` | 否 | 继承 `OPENAI_API_URL` | 覆盖 API URL |
+| `AGENT_LLM_PROVIDER` | 否 | 继承 `AI_DRIVER` | 覆盖LLM提供者 |
+| `AGENT_LLM_MODEL` | 否 | 继承 `AI_COMPLETION_MODEL` | 覆盖LLM模型 |
+| `AGENT_LLM_API_KEY` | 否 | 继承 `OPENAI_API_KEY` | 覆盖API密钥 |
+| `AGENT_LLM_API_URL` | 否 | 继承 `OPENAI_API_URL` | 覆盖API URL |
 | `AGENT_MAX_ITERATIONS` | 否 | `3` | 最大循环次数 |
 
 ---
 
 ## 8. 新增文件清单
 
-### 8.1 Agent Service (Python)
+### 8.1 代理服务（Python）
 
 ```
 agent-service/
@@ -666,8 +666,8 @@ apps/client/src/ee/ai/
 
 | 风险 | 影响 | 缓解措施 |
 |------|------|----------|
-| Agent Service 响应慢（LangGraph 多步编排）| 用户等待时间长 | SSE 步骤进度实时反馈 + 超时机制 + 可终止 |
-| 外部 API 不可用（Tavily/Firecrawl 挂掉）| 工具调用失败 | 工具级错误处理 + 降级提示 + Reviewer 跳过失败步骤 |
-| LLM Token 消耗大（多次调用 + Review 循环）| 成本高 | max_iterations 限制 + Planner 精简计划 + lite model 做 Review |
-| 大文件解析内存溢出 | Agent Service 崩溃 | 文件大小限制 + Docling 流式解析 + 超时终止 |
+| Agent Service响应慢（LangGraph 多步编排）| 用户等待时间长 | SSE 步骤进度实时反馈 + 超时机制 + 可终止 |
+| 外部API不可用（Tavily/Firecrawl 挂挂）| 工具调用失败 | 工具级错误处理 + 降级提示 + Reviewer 跳过失败步骤 |
+| LLM Token 消耗大（多次调用+审核循环）| 成本高 | max_iterations 限制 + Planner 专业计划 + 精简模型 做 Review |
+| 大文件解析内存溢出 | 代理服务崩溃 | 文件大小限制 + Docling 流式解析 + 超时终止 |
 | 跨服务通信延迟 | 整体响应变慢 | 内网通信 + 文件通过共享存储传递而非 base64 |

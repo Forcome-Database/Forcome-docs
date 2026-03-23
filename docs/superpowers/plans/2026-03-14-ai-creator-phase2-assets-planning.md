@@ -1,82 +1,82 @@
-# Phase 2: Assets & Planning — Implementation Plan
+# 阶段 2：素材与规划实施计划
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **对于智能体执行者：** 要求：使用 superpowers:subagent-driven-development （如果子代理可用）或 superpowers:executing-plans 来实施此计划。步骤使用复选框 (`- [ ]`) 语法进行跟踪。
 
-**Goal:** Build structured asset parsing, Smart Brief interaction, Creation Blueprint with visual planning, and the Level 2 task path.
+**目标：** 构建结构化资产解析、智能简报交互、具有可视化规划的创建蓝图以及 2 级任务路径。
 
-**Architecture:** AssetParser Worker uses Docling + VLM for deep asset extraction. VisualPlanner Worker analyzes sections to plan images. Smart Brief is a sidebar card. Blueprint is a popup modal with draggable sections. All powered by Orchestrator tools.
+**架构：** AssetParser Worker使用Docling + VLM进行深度资产提取。 VisualPlanner Worker 分析部分以规划图像。 Smart Brief 是一张侧边栏卡。蓝图是一个带有可拖动部分的弹出模式。全部由 Orchestrator 工具提供支持。
 
-**Tech Stack:** PydanticAI, Docling, Pillow, VLM, Mantine UI, @dnd-kit/sortable
+**技术栈：** PydanticAI、Docling、Pillow、VLM、Mantine UI、@dnd-kit/sortable
 
-**Prerequisites (from Phase 0 & Phase 1):**
-- Pydantic models: `CreationBrief`, `AssetMap`, `AssetItem`, `CreationBlueprint`, `SectionPlan`, `VisualPlan`
-- Chinese word counting utility (`app/utils/word_count.py`)
-- Orchestrator engine with ReAct loop (`app/orchestrator/engine.py`)
-- `ask_user` tool for user interaction interrupts
-- Existing tools: `docling_parser`, `vlm_understand`, `docmost_upload`, `tavily_search`, `firecrawl_scrape`, `docmost_rag`, `docmost_page_read`
-- SSE event protocol and `asyncio.Queue` event streaming
+**先决条件（从阶段 0 和阶段 1）：**
+- Pydantic 型号：`CreationBrief`、`AssetMap`、`AssetItem`、`CreationBlueprint`、`SectionPlan`、`VisualPlan`
+- 中文字数统计实用程序（`app/utils/word_count.py`）
+- 带有 ReAct 循环的 Orchestrator 引擎 (`app/orchestrator/engine.py`)
+- `ask_user` 用于用户交互中断的工具
+- 现有工具：`docling_parser`、`vlm_understand`、`docmost_upload`、`tavily_search`、`firecrawl_scrape`、`docmost_rag`、`docmost_page_read`
+- SSE 事件协议和 `asyncio.Queue` 事件流
 
 ---
 
-## File Structure Overview
+## 文件结构概述
 
-### New files (agent-service)
+### 新文件（代理服务）
 
-| File | Purpose |
+| 文件 | 用途 |
 |------|---------|
-| `agent-service/app/workers/__init__.py` | Workers package init |
-| `agent-service/app/workers/asset_parser.py` | AssetParser Worker — document & image processing |
-| `agent-service/app/workers/visual_planner.py` | VisualPlanner Worker — image/diagram strategy per section |
-| `agent-service/app/workers/researcher.py` | Researcher Worker — wraps search/scrape/RAG tools |
-| `agent-service/app/orchestrator/tools/parse_assets.py` | Orchestrator tool wrapping AssetParser |
-| `agent-service/app/orchestrator/tools/create_brief.py` | Orchestrator tool for Smart Brief generation |
-| `agent-service/app/orchestrator/tools/create_blueprint.py` | Orchestrator tool for Blueprint generation |
-| `agent-service/app/orchestrator/tools/research.py` | Orchestrator tool wrapping Researcher Worker |
-| `agent-service/tests/workers/__init__.py` | Workers test package |
-| `agent-service/tests/workers/test_asset_parser.py` | AssetParser unit tests |
-| `agent-service/tests/workers/test_visual_planner.py` | VisualPlanner unit tests |
-| `agent-service/tests/workers/test_researcher.py` | Researcher unit tests |
-| `agent-service/tests/orchestrator/test_parse_assets.py` | parse_assets tool tests |
-| `agent-service/tests/orchestrator/test_create_brief.py` | create_brief tool tests |
-| `agent-service/tests/orchestrator/test_create_blueprint.py` | create_blueprint tool tests |
-| `agent-service/tests/orchestrator/test_e2e_level2.py` | Level 2 end-to-end integration test |
+| `agent-service/app/workers/__init__.py` | 工人包初始化 |
+| `agent-service/app/workers/asset_parser.py` | AssetParser Worker — 文档和图像处理 |
+| `agent-service/app/workers/visual_planner.py` | VisualPlanner Worker — 每个部分的图像/图表策略 |
+| `agent-service/app/workers/researcher.py` | Researcher Worker — 包含搜索/抓取/RAG 工具 |
+| `agent-service/app/orchestrator/tools/parse_assets.py` | Orchestrator 工具包装 AssetParser |
+| `agent-service/app/orchestrator/tools/create_brief.py` | 用于生成智能简报的 Orchestrator 工具 |
+| `agent-service/app/orchestrator/tools/create_blueprint.py` | 用于生成蓝图的 Orchestrator 工具 |
+| `agent-service/app/orchestrator/tools/research.py` | Orchestrator 工具包装 研究人员 工作者 |
+| `agent-service/tests/workers/__init__.py` | 工人测试包 |
+| `agent-service/tests/workers/test_asset_parser.py` | AssetParser 单元测试 |
+| `agent-service/tests/workers/test_visual_planner.py` | VisualPlanner 单元测试 |
+| `agent-service/tests/workers/test_researcher.py` | 研究员单元测试 |
+| `agent-service/tests/orchestrator/test_parse_assets.py` | parse_assets 工具测试 |
+| `agent-service/tests/orchestrator/test_create_brief.py` | create_brief 工具测试 |
+| `agent-service/tests/orchestrator/test_create_blueprint.py` | create_blueprint 工具测试 |
+| `agent-service/tests/orchestrator/test_e2e_level2.py` | 2级端到端集成测试 |
 
-### New files (frontend)
+### 新文件（前端）
 
-| File | Purpose |
+| 文件 | 用途 |
 |------|---------|
-| `apps/client/src/ee/ai/components/ai-creator/smart-brief/SmartBriefCard.tsx` | Smart Brief sidebar card |
-| `apps/client/src/ee/ai/components/ai-creator/smart-brief/index.ts` | Smart Brief barrel export |
-| `apps/client/src/ee/ai/components/ai-creator/blueprint/BlueprintModal.tsx` | Blueprint popup modal |
-| `apps/client/src/ee/ai/components/ai-creator/blueprint/SectionCard.tsx` | Draggable section card |
-| `apps/client/src/ee/ai/components/ai-creator/blueprint/use-blueprint-editor.ts` | Blueprint state management hook |
-| `apps/client/src/ee/ai/components/ai-creator/blueprint/index.ts` | Blueprint barrel export |
+| `apps/client/src/ee/ai/components/ai-creator/smart-brief/SmartBriefCard.tsx` | 智能简报侧边栏卡 |
+| `apps/client/src/ee/ai/components/ai-creator/smart-brief/index.ts` | 智能短筒出口 |
+| `apps/client/src/ee/ai/components/ai-creator/blueprint/BlueprintModal.tsx` | 蓝图弹出模式 |
+| `apps/client/src/ee/ai/components/ai-creator/blueprint/SectionCard.tsx` | 可拖动的分区卡 |
+| `apps/client/src/ee/ai/components/ai-creator/blueprint/use-blueprint-editor.ts` | 蓝图状态管理挂钩 |
+| `apps/client/src/ee/ai/components/ai-creator/blueprint/index.ts` | 蓝图桶出口 |
 
-### Modified files
+### 修改文件
 
-| File | Change |
+| 文件 | 变更 |
 |------|--------|
-| `agent-service/app/orchestrator/engine.py` | Register Phase 2 tools, update system prompt |
-| `agent-service/app/orchestrator/prompts.py` | Add Level 2 orchestrator instructions |
-| `apps/client/src/ee/ai/components/ai-creator/ai-creator-chat.tsx` | Render SmartBriefCard and BlueprintModal on events |
+| `agent-service/app/orchestrator/engine.py` | 注册第二阶段工具，更新系统提示 |
+| `agent-service/app/orchestrator/prompts.py` | 添加 2 级协调器指令 |
+| `apps/client/src/ee/ai/components/ai-creator/ai-creator-chat.tsx` | 在事件上渲染 SmartBriefCard 和 BlueprintModal |
 
 ---
 
-## Chunk 1: AssetParser Worker — Document Parsing
+## 分块 1：AssetParser Worker：文档解析
 
-### Task 1: AssetParser Worker — document parsing
+### 任务 1：AssetParser Worker — document parsing
 
-The AssetParser wraps the existing `docling_parser` tool to extract structured assets from uploaded documents. Each extracted element (text segment, heading, table, code block) becomes an `AssetItem` in an `AssetMap`.
+AssetParser 封装了现有的 `docling_parser` 工具，用于从上传的文档中提取结构化资产。每个提取的元素（文本段、标题、表格、代码块）都成为 `AssetMap` 中的 `AssetItem`。
 
-**Files:**
-- Create: `agent-service/app/workers/__init__.py`
-- Create: `agent-service/app/workers/asset_parser.py`
-- Test: `agent-service/tests/workers/__init__.py`
-- Test: `agent-service/tests/workers/test_asset_parser.py`
+**文件：**
+- 创建：`agent-service/app/workers/__init__.py`
+- 创建：`agent-service/app/workers/asset_parser.py`
+- 测试： `agent-service/tests/workers/__init__.py`
+- 测试： `agent-service/tests/workers/test_asset_parser.py`
 
-**Context:** The existing `docling_parser` tool (`app/tools/docling_parser.py`) takes `(file_content_b64, filename, mimetype)` and returns JSON with `{"text": "...", "images": [...], "image_count": N}`. The `text` field contains markdown with headings. The `AssetItem` model (from `app/models/asset_map.py`) has types: `text`, `image`, `table`, `code`, `mermaid`, `heading_structure`. The `count_words` utility is at `app/utils/word_count.py`.
+**上下文：** 现有的 `docling_parser` 工具 (`app/tools/docling_parser.py`) 采用 `(file_content_b64, filename, mimetype)` 并返回带有 `{"text": "...", "images": [...], "image_count": N}` 的 JSON。 `text` 字段包含带有标题的 markdown。 `AssetItem` 模型（来自 `app/models/asset_map.py`）具有类型：`text`、`image`、`table`、`code`、`mermaid`、`heading_structure`。 `count_words` 实用程序位于 `app/utils/word_count.py`。
 
-- [ ] **Step 1: Write failing tests for AssetParser document parsing**
+- [ ] **第 1 步：为 AssetParser 文档解析编写失败测试**
 
 ```python
 # agent-service/tests/workers/__init__.py
@@ -214,15 +214,15 @@ class TestParseDocument:
             assert "word" in asset.summary.lower() or "字" in asset.summary
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_asset_parser.py -v
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.workers'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.workers'`
 
-- [ ] **Step 3: Implement AssetParser document parsing**
+- [ ] **第 3 步：实现AssetParser文档解析**
 
 ```python
 # agent-service/app/workers/__init__.py
@@ -444,7 +444,7 @@ def parse_document(
             summary=f"Section '{heading}': {wc} words",
         ))
 
-    # 5. Store raw image data for later processing (Task 2)
+    # 5. Store raw image data for later processing (任务 2)
     # Images are NOT processed here — see process_images()
 
     return AssetMap(
@@ -455,15 +455,15 @@ def parse_document(
     )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_asset_parser.py -v
 ```
 
-Expected: ALL 5 PASS
+预期：全部 5 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/workers/__init__.py agent-service/app/workers/asset_parser.py agent-service/tests/workers/__init__.py agent-service/tests/workers/test_asset_parser.py
@@ -472,21 +472,21 @@ git commit -m "feat(worker): add AssetParser document parsing with heading/table
 
 ---
 
-## Chunk 2: AssetParser Worker — Image Processing
+## 分块 2：AssetParser Worker：图像处理
 
-### Task 2: AssetParser Worker — image processing
+### 任务 2：AssetParser Worker — image processing
 
-Extend the AssetParser to handle images extracted by Docling: upload each to Docmost, classify via VLM, and create `AssetItem(type="image")` entries.
+扩展 AssetParser 以处理由 Docling 提取的图像：将每个图像上传到 Docmost，通过 VLM 分类，并创建 `AssetItem(type="image")` 条目。
 
-**Files:**
-- Modify: `agent-service/app/workers/asset_parser.py`
-- Test: `agent-service/tests/workers/test_asset_parser.py` (append)
+**文件：**
+- 修改：`agent-service/app/workers/asset_parser.py`
+- 测试：`agent-service/tests/workers/test_asset_parser.py`（附加）
 
-**Context:** The existing `vlm_understand` tool (`app/tools/vlm_understand.py`) takes `(image_b64, question)` and returns a text description. The existing `docmost_upload` tool (`app/tools/docmost_api.py`) takes `(file_content_b64, filename, page_id)` and returns a URL string.
+**上下文：** 现有的 `vlm_understand` 工具 (`app/tools/vlm_understand.py`) 采用 `(image_b64, question)` 并返回文本描述。现有的 `docmost_upload` 工具 (`app/tools/docmost_api.py`) 采用 `(file_content_b64, filename, page_id)` 并返回 URL 字符串。
 
-- [ ] **Step 1: Write failing tests for image processing**
+- [ ] **第 1 步：编写图像处理失败的测试**
 
-Append to `agent-service/tests/workers/test_asset_parser.py`:
+附加到`agent-service/tests/workers/test_asset_parser.py`：
 
 ```python
 class TestProcessImages:
@@ -563,15 +563,15 @@ class TestProcessImages:
         assert "Figure 1" in image_assets[0].summary
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_asset_parser.py::TestProcessImages -v
 ```
 
-Expected: FAIL — `ImportError: cannot import name 'process_images'`
+预期：失败 — `ImportError: cannot import name 'process_images'`
 
-- [ ] **Step 3: Implement image processing functions**
+- [ ] **第 3 步：实现图像处理功能**
 
 Add to `agent-service/app/workers/asset_parser.py`:
 
@@ -658,15 +658,15 @@ def process_images(
     return image_assets
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_asset_parser.py -v
 ```
 
-Expected: ALL 9 PASS (5 from Task 1 + 4 new)
+预期：全部 9 项通过（任务 1 中的 5 项 + 4 项新任务）
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/workers/asset_parser.py agent-service/tests/workers/test_asset_parser.py
@@ -675,19 +675,19 @@ git commit -m "feat(worker): add AssetParser image processing with VLM classific
 
 ---
 
-## Chunk 3: parse_assets Orchestrator Tool
+## 分块 3：parse_assets 编排器工具
 
-### Task 3: Register parse_assets as Orchestrator tool
+### 任务 3：Register parse_assets as Orchestrator tool
 
-Wrap the AssetParser Worker as a PydanticAI tool callable by the Orchestrator.
+将 AssetParser Worker 包装为可由 Orchestrator 调用的 PydanticAI 工具。
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/parse_assets.py`
-- Test: `agent-service/tests/orchestrator/test_parse_assets.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/parse_assets.py`
+- 测试： `agent-service/tests/orchestrator/test_parse_assets.py`
 
-**Context:** PydanticAI tools are plain functions decorated with the Orchestrator agent's `@agent.tool` decorator, or registered via the tools list. The orchestrator engine (`app/orchestrator/engine.py`) passes tools to the PydanticAI Agent. Each tool receives `RunContext` as first argument and returns a result that the LLM sees.
+**上下文：** PydanticAI 工具是用 Orchestrator 代理的 `@agent.tool` 装饰器装饰的普通函数，或者通过工具列表注册。协调器引擎 (`app/orchestrator/engine.py`) 将工具传递给 PydanticAI 代理。每个工具接收 `RunContext` 作为第一个参数并返回 LLM 看到的结果。
 
-- [ ] **Step 1: Write failing tests for parse_assets tool**
+- [ ] **第 1 步：为 parse_assets 工具编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_parse_assets.py
@@ -757,15 +757,15 @@ class TestParseAssetsTool:
         assert parsed["items"] == []
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_parse_assets.py -v
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.orchestrator.tools.parse_assets'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.orchestrator.tools.parse_assets'`
 
-- [ ] **Step 3: Implement parse_assets tool**
+- [ ] **第 3 步：实现parse_assets工具**
 
 ```python
 # agent-service/app/orchestrator/tools/parse_assets.py
@@ -835,15 +835,15 @@ async def parse_assets_impl(
     return result.model_dump_json()
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_parse_assets.py -v
 ```
 
-Expected: ALL 3 PASS
+预期：全部 3 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/tools/parse_assets.py agent-service/tests/orchestrator/test_parse_assets.py
@@ -852,19 +852,19 @@ git commit -m "feat(orchestrator): add parse_assets tool wrapping AssetParser Wo
 
 ---
 
-## Chunk 4: Smart Brief Generation
+## 分块 4：Smart Brief 生成
 
-### Task 4: Smart Brief generation tool
+### 任务 4：Smart Brief generation tool
 
-LLM analyzes user prompt + AssetMap to generate a `CreationBrief` with AI-recommended defaults, then presents it to the user via `ask_user`.
+LLM 分析用户提示 + AssetMap，生成具有 AI 推荐默认值的 `CreationBrief`，然后通过 `ask_user` 将其呈现给用户。
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/create_brief.py`
-- Test: `agent-service/tests/orchestrator/test_create_brief.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/create_brief.py`
+- 测试： `agent-service/tests/orchestrator/test_create_brief.py`
 
-**Context:** The `CreationBrief` model (from `app/models/brief.py`) has fields: `audience`, `goal`, `target_length`, `length_tolerance`, `style`, `tone`, `structure_strategy`, `image_strategy`, `constraints`. The `ask_user` tool (from Phase 1, `app/orchestrator/tools/user_interaction.py`) interrupts the agent loop and sends an SSE event to the frontend, then waits for user response via the `/v2/agent/resume` endpoint.
+**上下文：** `CreationBrief` 模型（来自 `app/models/brief.py`）具有字段：`audience`、`goal`、`target_length`、`length_tolerance`、`style`、`tone`、`structure_strategy`、`image_strategy`、`constraints`。 `ask_user` 工具（从第 1 阶段开始，`app/orchestrator/tools/user_interaction.py`）中断代理循环并向前端发送 SSE 事件，然后通过 `/v2/agent/resume` 端点等待用户响应。
 
-- [ ] **Step 1: Write failing tests for create_brief**
+- [ ] **第 1 步：为 create_brief 编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_create_brief.py
@@ -970,15 +970,15 @@ class TestCreateBrief:
         assert payload["target_length"] == 800
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_create_brief.py -v
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.orchestrator.tools.create_brief'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.orchestrator.tools.create_brief'`
 
-- [ ] **Step 3: Implement create_brief tool**
+- [ ] **第 3 步：实施 create_brief 工具**
 
 ```python
 # agent-service/app/orchestrator/tools/create_brief.py
@@ -1112,15 +1112,15 @@ async def generate_brief(
     return brief
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_create_brief.py -v
 ```
 
-Expected: ALL 4 PASS
+预期：全部 4 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/tools/create_brief.py agent-service/tests/orchestrator/test_create_brief.py
@@ -1129,19 +1129,19 @@ git commit -m "feat(orchestrator): add Smart Brief generation tool with LLM anal
 
 ---
 
-## Chunk 5: SmartBriefCard Frontend
+## 分块 5：SmartBriefCard 前端
 
-### Task 5: Smart Brief frontend — SmartBriefCard component
+### 任务 5：Smart Brief 前端 — SmartBriefCard component
 
-A Mantine Card that renders in the AI Creator sidebar when the `brief_ready` SSE event is received. Shows AI-recommended defaults and lets the user confirm or modify.
+当收到 `brief_ready` SSE 事件时，在 AI Creator 侧栏中呈现的 Mantine 卡。显示 AI 推荐的默认值并让用户确认或修改。
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/smart-brief/SmartBriefCard.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/smart-brief/index.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/smart-brief/SmartBriefCard.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/smart-brief/index.ts`
 
-**Context:** The AI Creator chat flow renders messages in `ai-creator-chat.tsx`. SSE events with `phase: "brief"` should trigger the SmartBriefCard. The frontend sends user responses back via the `/v2/agent/resume` endpoint. Mantine v8 components: `Card`, `Select`, `NumberInput`, `Button`, `Group`, `Stack`, `Text`, `Badge`.
+**上下文：** AI Creator 聊天流程在 `ai-creator-chat.tsx` 中呈现消息。带有 `phase: "brief"` 的 SSE 事件应触发 SmartBriefCard。前端通过 `/v2/agent/resume` 端点发回用户响应。 Mantine v8 组件：`Card`、`Select`、`NumberInput`、`Button`、`Group`、`Stack`、`Text`、`Badge`。
 
-- [ ] **Step 1: Create SmartBriefCard component**
+- [ ] **第 1 步：创建 SmartBriefCard 组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/smart-brief/SmartBriefCard.tsx
@@ -1387,7 +1387,7 @@ export function SmartBriefCard({
 }
 ```
 
-- [ ] **Step 2: Create barrel export**
+- [ ] **第 2 步：创建桶导出**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/smart-brief/index.ts
@@ -1395,15 +1395,15 @@ export { SmartBriefCard } from "./SmartBriefCard";
 export type { SmartBriefData } from "./SmartBriefCard";
 ```
 
-- [ ] **Step 3: Verify TypeScript compiles**
+- [ ] **第 3 步：验证 TypeScript 是否编译**
 
 ```bash
 cd /e/test/Docmost && npx tsc --noEmit --project apps/client/tsconfig.json 2>&1 | head -20
 ```
 
-Expected: No errors related to SmartBriefCard
+预期：没有与 SmartBriefCard 相关的错误
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/smart-brief/
@@ -1412,19 +1412,19 @@ git commit -m "feat(ui): add SmartBriefCard component for AI Creator brief confi
 
 ---
 
-## Chunk 6: Blueprint Generation
+## 分块 6：Blueprint 生成
 
-### Task 6: Blueprint generation tool
+### 任务 6：Blueprint generation tool
 
-LLM generates a `CreationBlueprint` from Brief + AssetMap. Each section has a title, word budget, key points, and asset references. Word budgets sum to `Brief.target_length` (±5%).
+LLM 从 Brief + AssetMap 生成 `CreationBlueprint`。每个部分都有标题、字数预算、要点和资源参考。文字预算总计为 `Brief.target_length` (±5%)。
 
-**Files:**
-- Create: `agent-service/app/orchestrator/tools/create_blueprint.py`
-- Test: `agent-service/tests/orchestrator/test_create_blueprint.py`
+**文件：**
+- 创建：`agent-service/app/orchestrator/tools/create_blueprint.py`
+- 测试： `agent-service/tests/orchestrator/test_create_blueprint.py`
 
-**Context:** `CreationBlueprint` (from `app/models/blueprint.py`) has fields: `title`, `summary`, `sections` (list of `SectionPlan`), `total_target_words`. Each `SectionPlan` has: `section_id`, `title`, `target_words`, `key_points`, `asset_ids`, `visuals`, `depends_on`.
+**上下文：** `CreationBlueprint`（来自 `app/models/blueprint.py`）具有字段：`title`、`summary`、`sections`（`SectionPlan` 列表）、`total_target_words`。每个 `SectionPlan` 具有：`section_id`、`title`、`target_words`、`key_points`、`asset_ids`、`visuals`、`depends_on`。
 
-- [ ] **Step 1: Write failing tests for create_blueprint**
+- [ ] **第 1 步：为 create_blueprint 编写失败测试**
 
 ```python
 # agent-service/tests/orchestrator/test_create_blueprint.py
@@ -1579,15 +1579,15 @@ class TestCreateBlueprint:
         assert abs(total - 2000) <= 10  # rounding tolerance
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_create_blueprint.py -v
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.orchestrator.tools.create_blueprint'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.orchestrator.tools.create_blueprint'`
 
-- [ ] **Step 3: Implement create_blueprint tool**
+- [ ] **第 3 步：实现create_blueprint工具**
 
 ```python
 # agent-service/app/orchestrator/tools/create_blueprint.py
@@ -1762,15 +1762,15 @@ async def generate_blueprint(
     return blueprint
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_create_blueprint.py -v
 ```
 
-Expected: ALL 4 PASS
+预期：全部 4 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/tools/create_blueprint.py agent-service/tests/orchestrator/test_create_blueprint.py
@@ -1779,19 +1779,19 @@ git commit -m "feat(orchestrator): add Blueprint generation tool with word budge
 
 ---
 
-## Chunk 7: VisualPlanner Worker
+## 分块 7：VisualPlanner Worker
 
-### Task 7: VisualPlanner Worker
+### 任务 7：VisualPlanner Worker
 
-Analyzes each section's description + available assets to plan visual elements (Mermaid diagrams, reused images, AI-generated images).
+分析每个部分的描述+可用资产来规划视觉元素（Mermaid 图、重复使用的图像、人工智能生成的图像）。
 
-**Files:**
-- Create: `agent-service/app/workers/visual_planner.py`
-- Test: `agent-service/tests/workers/test_visual_planner.py`
+**文件：**
+- 创建：`agent-service/app/workers/visual_planner.py`
+- 测试： `agent-service/tests/workers/test_visual_planner.py`
 
-**Context:** The `VisualPlan` model (from `app/models/blueprint.py`) has fields: `type` (image/table/mermaid/code/diagram), `description`, `placement`, `source_asset_id`. The `SectionPlan` has a `visuals` field (list of VisualPlan). The VisualPlanner runs AFTER blueprint generation and BEFORE writing.
+**上下文：** `VisualPlan` 模型（来自 `app/models/blueprint.py`）具有字段：`type`（图像/表格/Mermaid/代码/图表）、`description`、`placement`、`source_asset_id`。 `SectionPlan` 有一个 `visuals` 字段（VisualPlan 列表）。 VisualPlanner 在蓝图生成之后、写入之前运行。
 
-- [ ] **Step 1: Write failing tests for VisualPlanner**
+- [ ] **第 1 步：为 VisualPlanner 编写失败测试**
 
 ```python
 # agent-service/tests/workers/test_visual_planner.py
@@ -1924,15 +1924,15 @@ class TestVisualPlanner:
         assert len(s2.visuals) >= 1
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_visual_planner.py -v
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.workers.visual_planner'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.workers.visual_planner'`
 
-- [ ] **Step 3: Implement VisualPlanner Worker**
+- [ ] **第 3 步：实施 VisualPlanner Worker**
 
 ```python
 # agent-service/app/workers/visual_planner.py
@@ -2079,15 +2079,15 @@ def plan_all_visuals(
     return blueprint.model_copy(update={"sections": updated_sections})
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **第 4 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_visual_planner.py -v
 ```
 
-Expected: ALL 5 PASS
+预期：全部 5 项通过
 
-- [ ] **Step 5: Commit**
+- [ ] **第 5 步：提交**
 
 ```bash
 git add agent-service/app/workers/visual_planner.py agent-service/tests/workers/test_visual_planner.py
@@ -2096,29 +2096,29 @@ git commit -m "feat(worker): add VisualPlanner for section-level image/diagram p
 
 ---
 
-## Chunk 8: Blueprint Modal Frontend
+## 分块 8：Blueprint 模态框前端
 
-### Task 8: Blueprint Modal frontend
+### 任务 8：Blueprint Modal 前端
 
-A Mantine Modal with draggable sections (left panel) and a live Markdown outline preview (right panel).
+具有可拖动部分（左面板）和实时 Markdown 轮廓预览（右面板）的 Mantine Modal。
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/blueprint/BlueprintModal.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/blueprint/SectionCard.tsx`
-- Create: `apps/client/src/ee/ai/components/ai-creator/blueprint/use-blueprint-editor.ts`
-- Create: `apps/client/src/ee/ai/components/ai-creator/blueprint/index.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/blueprint/BlueprintModal.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/blueprint/SectionCard.tsx`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/blueprint/use-blueprint-editor.ts`
+- 创建：`apps/client/src/ee/ai/components/ai-creator/blueprint/index.ts`
 
-**Context:** The Blueprint modal opens when the Orchestrator sends a `blueprint_ready` SSE event. The user can reorder sections via drag-and-drop, adjust word budgets, and see a live Markdown outline preview. Uses `@dnd-kit/sortable` for drag-and-drop. The modal sends the final blueprint back via `/v2/agent/resume`.
+**上下文：** 当 Orchestrator 发送 `blueprint_ready` SSE 事件时，蓝图模式将打开。用户可以通过拖放对各个部分重新排序、调整字数预算以及查看实时 Markdown 大纲预览。使用 `@dnd-kit/sortable` 进行拖放。模态通过 `/v2/agent/resume` 发回最终蓝图。
 
-- [ ] **Step 1: Install @dnd-kit/sortable dependency**
+- [ ] **第 1 步：安装@dnd-kit/sortable依赖项**
 
 ```bash
 cd /e/test/Docmost && pnpm add @dnd-kit/sortable @dnd-kit/core @dnd-kit/utilities --filter @docmost/client
 ```
 
-Note: If already installed, this is a no-op.
+注意：如果已经安装，则此操作无效。
 
-- [ ] **Step 2: Create use-blueprint-editor hook**
+- [ ] **第 2 步：创建 use-blueprint-editor 挂钩**
 
 ```typescript
 // apps/client/src/ee/ai/components/ai-creator/blueprint/use-blueprint-editor.ts
@@ -2243,7 +2243,7 @@ export function useBlueprintEditor(initialBlueprint: BlueprintData) {
 }
 ```
 
-- [ ] **Step 3: Create SectionCard component**
+- [ ] **第 3 步：创建SectionCard组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/blueprint/SectionCard.tsx
@@ -2340,7 +2340,7 @@ export function SectionCard({ section, onUpdate, onRemove }: SectionCardProps) {
 }
 ```
 
-- [ ] **Step 4: Create BlueprintModal component**
+- [ ] **第 4 步：创建BlueprintModal组件**
 
 ```tsx
 // apps/client/src/ee/ai/components/ai-creator/blueprint/BlueprintModal.tsx
@@ -2528,7 +2528,7 @@ export function BlueprintModal({
 }
 ```
 
-- [ ] **Step 5: Create barrel export**
+- [ ] **第 5 步：创建桶导出**
 
 ```typescript
 // apps/client/src/ee/ai/components/ai-creator/blueprint/index.ts
@@ -2538,15 +2538,15 @@ export { useBlueprintEditor } from "./use-blueprint-editor";
 export type { BlueprintData, SectionPlanData } from "./use-blueprint-editor";
 ```
 
-- [ ] **Step 6: Verify TypeScript compiles**
+- [ ] **第 6 步：验证 TypeScript 是否编译**
 
 ```bash
 cd /e/test/Docmost && npx tsc --noEmit --project apps/client/tsconfig.json 2>&1 | head -20
 ```
 
-Expected: No errors related to Blueprint components
+预期：没有与蓝图组件相关的错误
 
-- [ ] **Step 7: Commit**
+- [ ] **第 7 步：提交**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/blueprint/
@@ -2555,20 +2555,20 @@ git commit -m "feat(ui): add BlueprintModal with draggable sections and live out
 
 ---
 
-## Chunk 9: Researcher Worker
+## 分块 9：Researcher Worker
 
-### Task 9: Researcher Worker
+### 任务 9：Researcher Worker
 
-Wraps existing search/scrape/RAG tools into a unified research interface for the Orchestrator.
+将现有的搜索/抓取/RAG 工具包装到 Orchestrator 的统一研究界面中。
 
-**Files:**
-- Create: `agent-service/app/workers/researcher.py`
-- Create: `agent-service/app/orchestrator/tools/research.py`
-- Test: `agent-service/tests/workers/test_researcher.py`
+**文件：**
+- 创建：`agent-service/app/workers/researcher.py`
+- 创建：`agent-service/app/orchestrator/tools/research.py`
+- 测试： `agent-service/tests/workers/test_researcher.py`
 
-**Context:** Existing tools: `tavily_search` (web search), `firecrawl_scrape` (web page scraping), `docmost_rag` (knowledge base search), `docmost_page_read` (read a Docmost page). The Researcher wraps these to provide structured research results with source citations.
+**上下文：** 现有工具：`tavily_search`（网络搜索）、`firecrawl_scrape`（网页抓取）、`docmost_rag`（知识库搜索）、`docmost_page_read`（阅读 Docmost 页面）。研究人员将这些内容包装起来，以提供带有源引文的结构化研究结果。
 
-- [ ] **Step 1: Write failing tests for Researcher Worker**
+- [ ] **第 1 步：为研究员工作者编写失败测试**
 
 ```python
 # agent-service/tests/workers/test_researcher.py
@@ -2638,15 +2638,15 @@ class TestResearcher:
         assert "knowledge_base" in sources
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **第 2 步：运行测试以验证它们是否失败**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_researcher.py -v
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.workers.researcher'`
+预期：失败 — `ModuleNotFoundError: No module named 'app.workers.researcher'`
 
-- [ ] **Step 3: Implement Researcher Worker**
+- [ ] **第 3 步：实施研究员工作人员**
 
 ```python
 # agent-service/app/workers/researcher.py
@@ -2783,7 +2783,7 @@ def research_all(
     return results
 ```
 
-- [ ] **Step 4: Implement research orchestrator tool**
+- [ ] **第 4 步：实施研究协调器工具**
 
 ```python
 # agent-service/app/orchestrator/tools/research.py
@@ -2836,15 +2836,15 @@ async def research_impl(
     return json.dumps(results, ensure_ascii=False)
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **第 5 步：运行测试以验证其通过**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/workers/test_researcher.py -v
 ```
 
-Expected: ALL 4 PASS
+预期：全部 4 项通过
 
-- [ ] **Step 6: Commit**
+- [ ] **第 6 步：提交**
 
 ```bash
 git add agent-service/app/workers/researcher.py agent-service/app/orchestrator/tools/research.py agent-service/tests/workers/test_researcher.py
@@ -2853,21 +2853,21 @@ git commit -m "feat(worker): add Researcher Worker with unified search/scrape/RA
 
 ---
 
-## Chunk 10: Register All Phase 2 Tools
+## 分块 10：注册第 2 阶段全部工具
 
-### Task 10: Register all Phase 2 tools with Orchestrator
+### 任务 10：Register all Phase 2 tools with Orchestrator
 
-Update the Orchestrator engine to register Phase 2 tools and update the system prompt for Level 2 path handling.
+更新 Orchestrator 引擎以注册第 2 阶段工具并更新第 2 级路径处理的系统提示。
 
-**Files:**
-- Modify: `agent-service/app/orchestrator/engine.py`
-- Modify: `agent-service/app/orchestrator/prompts.py`
+**文件：**
+- 修改：`agent-service/app/orchestrator/engine.py`
+- 修改：`agent-service/app/orchestrator/prompts.py`
 
-**Context:** The Orchestrator engine (`app/orchestrator/engine.py`) creates a PydanticAI Agent and registers tools. The system prompt (`app/orchestrator/prompts.py`) defines how the Orchestrator decides on task level and execution strategy.
+**上下文：** Orchestrator 引擎 (`app/orchestrator/engine.py`) 创建 PydanticAI 代理并注册工具。系统提示符 (`app/orchestrator/prompts.py`) 定义 Orchestrator 如何决定任务级别和执行策略。
 
-- [ ] **Step 1: Update prompts.py with Level 2 instructions**
+- [ ] **第 1 步：使用 2 级说明更新提示.py**
 
-Add the following to the `ORCHESTRATOR_SYSTEM_PROMPT` in `agent-service/app/orchestrator/prompts.py`:
+将以下内容添加到 `agent-service/app/orchestrator/prompts.py` 中的 `ORCHESTRATOR_SYSTEM_PROMPT`：
 
 ```python
 _LEVEL2_INSTRUCTIONS = """
@@ -2891,9 +2891,9 @@ Key rules for Level 2:
 """
 ```
 
-- [ ] **Step 2: Update engine.py to register Phase 2 tools**
+- [ ] **第 2 步：更新engine.py以注册第2阶段工具**
 
-Update the tool registration in `agent-service/app/orchestrator/engine.py`:
+更新 `agent-service/app/orchestrator/engine.py` 中的工具注册：
 
 ```python
 # Add imports at top of engine.py
@@ -2929,15 +2929,15 @@ async def research_tool(ctx, query: str, workspace_id: str, include_web: bool = 
     return await research_impl(query=query, workspace_id=workspace_id, include_web=include_web, include_kb=include_kb)
 ```
 
-- [ ] **Step 3: Verify engine starts without errors**
+- [ ] **第 3 步：验证引擎启动时没有错误**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -c "from app.orchestrator.engine import create_orchestrator_agent; print('OK')"
 ```
 
-Expected: prints "OK"
+预期：打印“OK”
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
 ```bash
 git add agent-service/app/orchestrator/engine.py agent-service/app/orchestrator/prompts.py
@@ -2946,16 +2946,16 @@ git commit -m "feat(orchestrator): register Phase 2 tools and add Level 2 system
 
 ---
 
-## Chunk 11: End-to-End Level 2 Test
+## 分块 11：Level 2 端到端测试
 
-### Task 11: Level 2 end-to-end test
+### 任务 11：Level 2 end-to-end test
 
-Test the full Level 2 path: upload file → parse_assets → ask_user(brief) → write → done.
+测试完整的2级路径：上传文件→parse_assets→ask_user(brief)→write→done。
 
-**Files:**
-- Create: `agent-service/tests/orchestrator/test_e2e_level2.py`
+**文件：**
+- 创建：`agent-service/tests/orchestrator/test_e2e_level2.py`
 
-- [ ] **Step 1: Write Level 2 integration test**
+- [ ] **第 1 步：编写 2 级集成测试**
 
 ```python
 # agent-service/tests/orchestrator/test_e2e_level2.py
@@ -3064,32 +3064,32 @@ class TestLevel2E2E:
         assert restored.items[0].id == "t1"
 ```
 
-- [ ] **Step 2: Run tests**
+- [ ] **第 2 步：运行测试**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/orchestrator/test_e2e_level2.py -v
 ```
 
-Expected: ALL 3 PASS
+预期：全部 3 项通过
 
-- [ ] **Step 3: Run full test suite to verify no regressions**
+- [ ] **第 3 步：运行完整的测试套件以验证没有回归**
 
 ```bash
 cd /e/test/Docmost/agent-service && python -m pytest tests/ -v --tb=short
 ```
 
-Expected: All tests pass
+预期：所有测试均通过
 
-- [ ] **Step 4: Commit**
+- [ ] **第 4 步：提交**
 
 ```bash
 git add agent-service/tests/orchestrator/test_e2e_level2.py
 git commit -m "test(orchestrator): add Level 2 end-to-end integration tests"
 ```
-## Implementation Status Update (2026-03-19)
+## 实施状态更新 (2026-03-19)
 
-- Parser-extracted source images are now preserved as `AssetItem(type="image")` instead of being dropped after document parsing.
-- Extracted images are deduplicated by content hash and rehosted to stable Docmost URLs for downstream reuse.
-- Asset metadata now carries provenance fields needed by planning: origin, caption, source file, source page, source heading, and mime type.
-- Blueprint planning now ranks `visual_candidates` per section and lets the user confirm which source figure to reuse before writing starts.
-- The workbench blueprint UI now renders source-image candidates and sends canonical image policy decisions back through the agent session.
+- 解析器提取的源图像现在保留为 `AssetItem(type="image")`，而不是在文档解析后删除。
+- 提取的图像通过内容哈希进行重复数据删除，并重新托管到稳定的 Docmost URL 以便下游重用。
+- 资产元数据现在包含规划所需的出处字段：来源、标题、源文件、源页面、源标题和 MIME 类型。
+- 蓝图规划现在对每个部分进行排名 `visual_candidates`，并让用户在编写开始之前确认要重用哪个源图。
+- 工作台蓝图 UI 现在呈现源图像候选并通过代理会话发送回规范图像策略决策。

@@ -1,21 +1,21 @@
-# AI Creator Bug 修复 Implementation Plan
+# AI Creator Bug修复实施计划
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **对于Claude：** 必须使用的子技能：使用超能力：executing-plans来逐个任务地实施该计划。
 
-**Goal:** Fix 10 identified bugs (P0-P3) in the AI Creator module covering selection safety, error recovery, code copy, streaming reliability, security hardening, and code quality.
+**目标：** 修复 AI Creator 模块中的 10 个已识别错误 (P0-P3)，涵盖选择安全性、错误恢复、代码复制、流可靠性、安全强化和代码质量。
 
-**Architecture:** Incremental fixes across 7 files. Foundation tasks first (shared utils, type helpers), then critical fixes, then polish. No new dependencies. All changes are backward-compatible.
+**架构：** 跨 7 个文件的增量修复。首先是基础任务（共享实用程序、类型帮助程序），然后是关键修复，然后是完善。没有新的依赖项。所有更改都是向后兼容的。
 
-**Tech Stack:** React 18 + TypeScript + Jotai + TipTap/ProseMirror + Mantine + NestJS/Fastify
+**技术栈：** React 18 + TypeScript + Jotai + TipTap/ProseMirror + Mantine + NestJS/Fastify
 
 ---
 
-### Task 1: Create shared utility functions (P3-1)
+### 任务 1：创建 shared utility functions (P3-1)
 
-**Files:**
-- Create: `apps/client/src/ee/ai/components/ai-creator/ai-creator-utils.ts`
+**文件：**
+- 创建：`apps/client/src/ee/ai/components/ai-creator/ai-creator-utils.ts`
 
-**Step 1: Create the utils file**
+**第 1 步：创建utils文件**
 
 ```typescript
 /** Extract first H1 from markdown, return [title, remainingMarkdown] */
@@ -48,7 +48,7 @@ export function isSelectionStillValid(
 }
 ```
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-utils.ts
@@ -57,15 +57,15 @@ git commit -m "refactor(ai): extract shared utils (extractTitle, stripTimestamp,
 
 ---
 
-### Task 2: Add SelectionSnapshot type + Jotai helper (P3-2)
+### 任务 2：添加 SelectionSnapshot type + Jotai helper (P3-2)
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts` (add SelectionSnapshot after line 8)
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts` (add useNullableAtom helper)
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts`（在第8行后添加SelectionSnapshot）
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts`（添加 useNullableAtom 助手）
 
-**Step 1: Add SelectionSnapshot to types**
+**第 1 步：将 SelectionSnapshot 添加到类型**
 
-In `ai-creator.types.ts`, after the `AiCreatorMessage` interface (line 8), add:
+在 `ai-creator.types.ts` 中的 `AiCreatorMessage` 接口（第 8 行）之后，添加：
 
 ```typescript
 export interface SelectionSnapshot {
@@ -75,16 +75,16 @@ export interface SelectionSnapshot {
 }
 ```
 
-**Step 2: Add useNullableAtom helper to atoms**
+**步骤 2：向atoms 添加 useNullableAtom 帮助器**
 
-In `ai-creator-atoms.ts`, add at the top after existing imports:
+在 `ai-creator-atoms.ts` 中，在现有导入后的顶部添加：
 
 ```typescript
 import { atom, useAtom } from 'jotai';
 import type { WritableAtom } from 'jotai';
 ```
 
-Then at the bottom of the file, add:
+然后在文件底部添加：
 
 ```typescript
 /**
@@ -99,7 +99,7 @@ export function useNullableAtom<T>(
 }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator.types.ts apps/client/src/ee/ai/components/ai-creator/ai-creator-atoms.ts
@@ -108,16 +108,16 @@ git commit -m "refactor(ai): add SelectionSnapshot type and useNullableAtom help
 
 ---
 
-### Task 3: Fix onComplete double-call in SSE streaming (P1-4)
+### 任务 3：Fix on完成 double-call in SSE streaming (P1-4)
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/services/ai-service.ts`
+**文件：**
+- 修改：`apps/client/src/ee/ai/services/ai-service.ts`
 
-**Step 1: Add idempotency guard to `generateAiContentStream`**
+**第 1 步：向 `generateAiContentStream` 添加幂等性防护**
 
-In `generateAiContentStream` (line 40), add `let completed = false;` after the `try {` on line 41.
+在 `generateAiContentStream`（第 40 行）中，在第 41 行的 `try {` 之后添加 `let completed = false;`。
 
-Then change the `[DONE]` handler (line 77-80):
+然后更改 `[DONE]` 处理程序（第 77-80 行）：
 ```typescript
 if (data === "[DONE]") {
   if (!completed) { completed = true; onComplete?.(); }
@@ -125,16 +125,16 @@ if (data === "[DONE]") {
 }
 ```
 
-And change the fallback onComplete after the while loop (line 94):
+并在 while 循环之后更改后备 onComplete（第 94 行）：
 ```typescript
 if (!completed) { completed = true; onComplete?.(); }
 ```
 
-**Step 2: Add same guard to `creatorGenerate`**
+**第 2 步：将相同的防护添加到`creatorGenerate`**
 
-In `creatorGenerate` (line 116), add `let completed = false;` after `try {` on line 117.
+在 `creatorGenerate`（第 116 行）中，在第 117 行的 `try {` 之后添加 `let completed = false;`。
 
-Change `[DONE]` handler (line 160-163):
+更改 `[DONE]` 处理程序（第 160-163 行）：
 ```typescript
 if (sseData === "[DONE]") {
   if (!completed) { completed = true; onComplete?.(); }
@@ -142,12 +142,12 @@ if (sseData === "[DONE]") {
 }
 ```
 
-Change fallback onComplete after while loop (line 177):
+在 while 循环后更改后备 onComplete（第 177 行）：
 ```typescript
 if (!completed) { completed = true; onComplete?.(); }
 ```
 
-**Step 3: Commit**
+**第 3 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/services/ai-service.ts
@@ -156,25 +156,25 @@ git commit -m "fix(ai): prevent onComplete double-call in SSE streaming"
 
 ---
 
-### Task 4: Fix code copy button + DOMPurify URI restriction (P1-1, P2-2)
+### 任务 4：Fix code copy button + DOMPurify URI restriction (P1-1, P2-2)
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx`
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator.module.css`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx`
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator.module.css`
 
-**Step 1: Update imports — use shared utils**
+**第 1 步：更新导入 — 使用共享实用程序**
 
-In `ai-creator-message-item.tsx`, replace the local `extractTitle` and `stripTimestamp` definitions (lines 76-88) with an import:
+在 `ai-creator-message-item.tsx` 中，将本地 `extractTitle` 和 `stripTimestamp` 定义（第 76-88 行）替换为导入：
 
 ```typescript
 import { extractTitle, stripTimestamp } from './ai-creator-utils';
 ```
 
-Delete lines 76-88 (the two function bodies).
+删除第 76-88 行（两个函数体）。
 
-**Step 2: Add copy button to bubbleMarked code renderer**
+**步骤 2：将复制按钮添加到 bubbleMarked 代码渲染器**
 
-Replace lines 26-39 (the code renderer) with:
+将第 26-39 行（代码渲染器）替换为：
 
 ```typescript
     code({ text, lang }: { text: string; lang?: string }) {
@@ -194,9 +194,9 @@ Replace lines 26-39 (the code renderer) with:
     },
 ```
 
-**Step 3: Update DOMPurify config**
+**步骤 3：更新 DOMPurify 配置**
 
-Replace lines 44-55 (PURIFY_CONFIG) with:
+将第 44-55 行 (PURIFY_CONFIG) 替换为：
 
 ```typescript
 const PURIFY_CONFIG = {
@@ -219,9 +219,9 @@ const PURIFY_CONFIG = {
 };
 ```
 
-**Step 4: Add code copy button CSS**
+**第 4 步：添加代码复制按钮CSS**
 
-In `ai-creator.module.css`, after the `.aiContent :global(pre.code-block-wrapper)` block (after line 244), add:
+在 `ai-creator.module.css` 中的 `.aiContent :global(pre.code-block-wrapper)` 块之后（第 244 行之后），添加：
 
 ```css
 .aiContent :global(pre.code-block-wrapper .code-copy-btn) {
@@ -252,7 +252,7 @@ In `ai-creator.module.css`, after the `.aiContent :global(pre.code-block-wrapper
 }
 ```
 
-**Step 5: Commit**
+**第 5 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-message-item.tsx apps/client/src/ee/ai/components/ai-creator/ai-creator.module.css
@@ -261,23 +261,23 @@ git commit -m "fix(ai): add code copy button, restrict DOMPurify URIs, use share
 
 ---
 
-### Task 5: Fix selection safety + error cleanup + history context + stop cleanup (P0-1, P0-2, P1-2, P1-3, P3-1, P3-2)
+### 任务 5：Fix selection safety + error cleanup + history context + stop cleanup (P0-1, P0-2, P1-2, P1-3, P3-1, P3-2)
 
-**Files:**
-- Modify: `apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
+**文件：**
+- 修改：`apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx`
 
-This is the largest change. All fixes are in one file so they're combined to avoid merge conflicts.
+这是最大的变化。所有修复都在一个文件中，因此将它们合并起来以避免合并冲突。
 
-**Step 1: Update imports**
+**第 1 步：更新导入**
 
-Replace lines 1-48 with updated imports. Key changes:
+将第 1-48 行替换为更新的导入。主要变化：
 - Add `import { extractTitle, stripTimestamp, isSelectionStillValid } from './ai-creator-utils';`
 - Add `import { SelectionSnapshot } from './ai-creator.types';`
-- Replace `useAtom` for nullable atoms with `useNullableAtom` from atoms file
-- Remove local `extractTitle` function (lines 54-60)
-- Remove local `renderMarkdownToEditorHtml` stays (line 62-64, keep as-is — it's a one-liner wrapper)
+- 将可空原子的 `useAtom` 替换为原子文件中的 `useNullableAtom`
+- 删除本地 `extractTitle` 函数（第 54-60 行）
+- 删除本地 `renderMarkdownToEditorHtml` 保留（第 62-64 行，保持原样 - 这是一个单行包装）
 
-Specifically, change line 15-16 imports:
+具体来说，更改第 15-16 行导入：
 ```typescript
 import {
   aiCreatorFilesAtom,
@@ -291,17 +291,17 @@ import {
 } from "./ai-creator-atoms";
 ```
 
-Add near the other imports:
+在其他进口附近添加：
 ```typescript
 import { extractTitle, isSelectionStillValid } from './ai-creator-utils';
 import type { SelectionSnapshot } from './ai-creator.types';
 ```
 
-Delete the local `extractTitle` function (lines 54-60).
+删除本地 `extractTitle` 函数（第 54-60 行）。
 
-**Step 2: Replace nullable atom type assertions with useNullableAtom**
+**步骤 2：用 useNullableAtom 替换可空原子类型断言**
 
-Replace lines 73-74:
+替换第 73-74 行：
 ```typescript
 // OLD:
 const [template, _setTemplate] = useAtom(aiCreatorTemplateAtom);
@@ -310,7 +310,7 @@ const setTemplate = _setTemplate as (v: string | null) => void;
 const [template, setTemplate] = useNullableAtom(aiCreatorTemplateAtom);
 ```
 
-Replace lines 79-80:
+替换第 79-80 行：
 ```typescript
 // OLD:
 const [autoInsert, _setAutoInsert] = useAtom(aiCreatorAutoInsertAtom);
@@ -319,11 +319,11 @@ const setAutoInsert = _setAutoInsert as (v: boolean) => void;
 const [autoInsert, setAutoInsert] = useAtom(aiCreatorAutoInsertAtom);
 ```
 
-Note: `aiCreatorAutoInsertAtom` is `atomWithWebStorage<boolean>` which is not nullable, so regular `useAtom` works. Only `aiCreatorTemplateAtom` (type `string | null`) needs the helper.
+注意：`aiCreatorAutoInsertAtom` 是不可为空的 `atomWithWebStorage<boolean>`，因此常规 `useAtom` 有效。只有 `aiCreatorTemplateAtom`（类型 `string | null`）需要帮助程序。
 
-**Step 3: Add removeLastEmptyAssistant helper**
+**第 3 步：添加removeLastEmptyAssistant助手**
 
-After `updateLastMessage` (after line 123), add:
+在 `updateLastMessage` 之后（第 123 行之后），添加：
 
 ```typescript
   /** Remove the last message if it's an empty assistant message (error/abort cleanup) */
@@ -342,9 +342,9 @@ After `updateLastMessage` (after line 123), add:
   }, [pageId, setAllMessages]);
 ```
 
-**Step 4: Fix handleStop to clean up empty messages**
+**第 4 步：修复handleStop以清理空消息**
 
-Replace lines 140-143:
+替换第 140-143 行：
 
 ```typescript
   const handleStop = () => {
@@ -354,9 +354,9 @@ Replace lines 140-143:
   };
 ```
 
-**Step 5: Add selection snapshot capture in handleSubmit**
+**第 5 步：在handleSubmit中添加选择快照捕获**
 
-After line 182 (`const startTime = Date.now();`), add:
+在第 182 行（`const startTime = Date.now();`）之后，添加：
 
 ```typescript
     // Capture selection snapshot for validation before insertion
@@ -369,9 +369,9 @@ After line 182 (`const startTime = Date.now();`), add:
       : null;
 ```
 
-**Step 6: Fix history building to include selection context**
+**第 6 步：修复历史记录构建以包括选择上下文**
 
-Replace lines 193-201 (the history building block):
+替换第 193-201 行（历史构建块）：
 
 ```typescript
       const history = existingMessages
@@ -392,9 +392,9 @@ Replace lines 193-201 (the history building block):
         .slice(-10);
 ```
 
-**Step 7: Fix onError to clean up empty messages**
+**第 7 步：修复onError以清理空消息**
 
-Replace lines 220-223:
+替换第 220-223 行：
 
 ```typescript
         (error) => {
@@ -404,9 +404,9 @@ Replace lines 220-223:
         },
 ```
 
-**Step 8: Fix auto-insert with selection snapshot validation**
+**步骤 8：通过选择快照验证修复自动插入**
 
-Replace lines 240-278 (the auto-insert block inside onComplete). The key change is using `selectionSnapshot` instead of `selectionRange` and validating before replacing:
+替换第 240-278 行（onComplete 内的自动插入块）。关键的更改是使用 `selectionSnapshot` 而不是 `selectionRange` 并在替换之前进行验证：
 
 ```typescript
             if (selectionSnapshot && isSelectionStillValid(editor, selectionSnapshot)) {
@@ -461,9 +461,9 @@ Replace lines 240-278 (the auto-insert block inside onComplete). The key change 
             }
 ```
 
-**Step 9: Fix catch block to clean up empty messages**
+**步骤 9：修复 catch 块以清理空消息**
 
-Replace lines 286-289:
+替换第 286-289 行：
 
 ```typescript
     } catch (error: any) {
@@ -473,7 +473,7 @@ Replace lines 286-289:
     }
 ```
 
-**Step 10: Commit**
+**第 10 步：承诺**
 
 ```bash
 git add apps/client/src/ee/ai/components/ai-creator/ai-creator-input.tsx
@@ -482,14 +482,14 @@ git commit -m "fix(ai): selection snapshot validation, error cleanup, history co
 
 ---
 
-### Task 6: Backend history message length limit (P2-1)
+### 任务 6：Backend history message length limit (P2-1)
 
-**Files:**
-- Modify: `apps/server/src/ee/ai/ai.controller.ts`
+**文件：**
+- 修改：`apps/server/src/ee/ai/ai.controller.ts`
 
-**Step 1: Add content length limit**
+**第 1 步：添加内容长度限制**
 
-Replace lines 172-184 (the history parsing block):
+替换第 172-184 行（历史解析块）：
 
 ```typescript
     let history: { role: 'user' | 'assistant'; content: string }[] = [];
@@ -511,12 +511,12 @@ Replace lines 172-184 (the history parsing block):
     }
 ```
 
-Key changes:
-- Added `typeof m.content === 'string'` type check
-- Added `.slice(0, 10000)` per-message content limit
-- Moved `.slice(-10)` after `.map()` for cleaner pipeline
+主要变化：
+- 添加了 `typeof m.content === 'string'` 类型检查
+- 添加了 `.slice(0, 10000)` 每条消息的内容限制
+- 将 `.slice(-10)` 移至 `.map()` 之后，以实现更清洁的管道
 
-**Step 2: Commit**
+**第 2 步：承诺**
 
 ```bash
 git add apps/server/src/ee/ai/ai.controller.ts
@@ -525,37 +525,37 @@ git commit -m "fix(ai): limit history message content length to prevent cost att
 
 ---
 
-### Task 7: Verify and final commit
+### 任务 7：验证并最终提交
 
-**Step 1: Run TypeScript compilation check**
+**第 1 步：运行 TypeScript 编译检查**
 
 ```bash
 cd /e/test/Docmost && npx tsc --noEmit --project apps/client/tsconfig.json 2>&1 | head -30
 ```
 
-Expected: No errors related to the modified files. Warnings from other files are OK.
+预期：没有与修改的文件相关的错误。来自其他文件的警告是可以的。
 
-**Step 2: Run backend TypeScript check**
+**第 2 步：运行后端 TypeScript 检查**
 
 ```bash
 cd /e/test/Docmost && npx tsc --noEmit --project apps/server/tsconfig.json 2>&1 | head -30
 ```
 
-Expected: No errors related to `ai.controller.ts`.
+预期：没有与 `ai.controller.ts` 相关的错误。
 
-**Step 3: Visual verification checklist**
+**第 3 步：目视验证清单**
 
-Start the dev server and manually verify:
-- [ ] Code copy button appears on hover over code blocks in AI messages
-- [ ] Clicking the copy button copies code to clipboard
-- [ ] Stopping a stream removes empty assistant message
-- [ ] Network error doesn't leave empty bubbles
-- [ ] "Selection changed" notification appears if editor content changes during streaming
-- [ ] Template selection with nullable atom works without type errors
+启动开发服务器并手动验证：
+- [ ] 将鼠标悬停在 AI 消息中的代码块上时出现代码复制按钮
+- [ ] 单击复制按钮将代码复制到剪贴板
+- [ ] 停止流会删除空的助手消息
+- [ ] 网络错误不会留下空气泡
+- [ ] 如果编辑器内容在流式传输期间发生更改，则会出现“选择已更改”通知
+- [ ] 具有可为空原子的模板选择可以正常工作，不会出现类型错误
 
-**Step 4: If no errors, create summary commit**
+**第 4 步：如果没有错误，则创建摘要提交**
 
-If there were any compilation issues fixed:
+如果修复了任何编译问题：
 ```bash
 git add -A
 git commit -m "fix(ai): resolve compilation issues from bugfix batch"

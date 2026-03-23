@@ -91,20 +91,20 @@ POST /api/ai/creator/generate  (SSE 流式，multipart/form-data)
 
 | 文件类型 | 处理方式 |
 |---------|---------|
-| PDF | base64 编码 → AI Provider 直接解析 |
+| PDF | base64编码→AI Provider直接解析 |
 | 图片 | base64 编码 → AI Provider 多模态 API |
-| Word (.docx) | mammoth 提取 HTML → 转 Markdown → text content |
+| 字 (.docx) | mammoth 提取 HTML → 转 Markdown → 文本内容 |
 
 ### 内置模版
 
 | Key | 名称 | 用途 |
 |-----|------|------|
-| technical-doc | 技术文档 | 概述、架构、实现、部署 |
-| meeting-notes | 会议纪要 | 概要、要点、决议、待办 |
-| requirements | 需求分析 | 背景、目标、功能/非功能需求、验收 |
-| report | 研究报告 | 摘要、背景、方法、结果、结论 |
+| 技术文档 | 技术文档 | 概述、架构、实现、部署 |
+| 会议记录 | 会议纪要 | 概要、要点、决议、待办 |
+| 要求 | 需求分析 | 背景、目标、功能/非功能需求、验收 |
+| 报告 | 研究报告 | 摘要、背景、方法、结果、结论 |
 | prd | 产品 PRD | 概述、用户故事、功能设计、技术要求 |
-| custom | 自定义 | 用户自由描述格式 |
+| 定制 | 自定义 | 用户自由描述格式 |
 
 ### 复用现有端点
 
@@ -143,10 +143,10 @@ ai-creator-atoms.ts:
 
 | 文件 | 改动 |
 |------|------|
-| aside.tsx | 新增 'ai-creator' tab 渲染 |
-| page-header-menu.tsx | 新增 AI 创作按钮 |
-| sidebar-atom.ts | tab 类型新增 'ai-creator' |
-| ai-service.ts | 新增 creatorGenerate() 方法 |
+| 一边.tsx | 添加“ai-creator”选项卡渲染 |
+| 页面标题菜单.tsx | 新增 AI 创作按钮 |
+| 侧边栏原子.ts | tab 类型新增 'ai-creator' |
+| ai-service.ts | 新增creatorGenerate()方法 |
 
 ## 增强功能
 
@@ -155,7 +155,7 @@ ai-creator-atoms.ts:
 - 编辑模式：替换前保存原始内容，撤销恢复原文
 
 ### 2. 生成中视觉反馈
-- 编辑器内：AI 写入区域淡蓝色背景高亮（ProseMirror Decoration），完成后 CSS transition 消退
+- 编辑器内：AI写入区域淡蓝色背景高亮（ProseMirror Decoration），后CSS过渡消退
 - 面板内：脉冲动画 + "AI 正在创作..."，完成显示 token 用量和耗时
 
 ### 3. 对话消息操作
@@ -170,7 +170,7 @@ ai-creator-atoms.ts:
 
 | 包 | 位置 | 用途 |
 |----|------|------|
-| mammoth ^1.8.0 | apps/server | Word 文档提取 HTML |
+| 猛犸象^1.8.0 | 应用程序/服务器 | Word文档提取HTML |
 
 ## 功能矩阵
 

@@ -1,4 +1,4 @@
-# AI Creator v2 — 智能文档创作引擎 Spec
+# AI Creator v2 — 智能文档创作引擎规范
 
 > **状态**: 待审批
 > **日期**: 2026-03-14
@@ -66,7 +66,7 @@
 
 ## 4. 架构概述
 
-采用 **Pattern B：一个强大脑（Orchestrator）+ 多个专业手（Workers）** 架构。
+采用**模式B：一个强大的大脑（Orchestrator）+多个专业手（Workers）**架构。
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -123,10 +123,10 @@
 
 | 决策项 | 选择 | 理由 |
 |--------|------|------|
-| 编排框架 | PydanticAI ReAct Loop | 动态决策能力，替代 LangGraph 固定图拓扑 |
-| 模型分配 | 每个 Worker 可配不同模型 | Orchestrator 用强推理模型，SectionWriter 用快速模型，降本增效 |
-| 状态存储 | Pydantic Models | 类型安全、可序列化、可验证，替代 TypedDict |
-| 用户中断 | 自定义 yield + 状态序列化 | 比 LangGraph interrupt() 更简单可控 |
+| 编排框架 | PydanticAI React 循环 | 动态决策能力，替代 LangGraph 固定图拓扑 |
+| 模型分配 | 每个 Worker 可配不同模型 | Orchestrator使用强推理模型，SectionWriter使用快速模型，降本增效 |
+| 状态存储 | 悬垂模型 | 类型安全、可序列化、可验证，替代 TypedDict |
+| 用户中断 | 自定义 yield + 状态序列化 | 比 LangGraph Interrupt() 更简单可控 |
 | 意图路由 | 移至 Python Orchestrator | 语义级理解，替代 NestJS 网关的关键词匹配 |
 
 ---
@@ -271,10 +271,10 @@ class ReviewReport(BaseModel):
   - 配图策略（下拉选择）
   - 素材清单预览（N 张图片、N 个表格、N 段代码、原文结构摘要）
 
-### 6.2 Creation Blueprint — 创作蓝图编辑
+### 6.2 创作蓝图 — 创作蓝图编辑
 
 - **触发条件**：Level 3 任务，Brief 确认后、蓝图生成完成时
-- **UI 形态**：弹出式 Modal（Mantine Modal, size="xl", 约 80vw）
+- **UI形态**：弹出式Modal（Mantine Modal, size="xl", 约80vw）
 - **数据契约**：
   - 输入：`CreationBlueprint`（AI 生成）
   - 输出：用户编辑后的 `CreationBlueprint`
@@ -304,10 +304,10 @@ class ReviewReport(BaseModel):
   - 被动观察（内容自动流式输出）
   - 不中断写作过程
 
-### 6.4 Review Card — 评审报告决策
+### 6.4 审查卡 — 评审报告决策
 
 - **触发条件**：所有章节写作完成、质量评审后（仅当存在需用户决定的问题时触发）
-- **UI 形态**：弹出式 Modal（Mantine Modal, size="xl"）
+- **UI形态**：弹出式Modal（Mantine Modal, size="xl"）
 - **数据契约**：
   - 输入：`ReviewReport`
   - 输出：用户勾选的待修复 issue IDs + 可选的补充意见文本
@@ -364,7 +364,7 @@ class ReviewReport(BaseModel):
 
 核心原则：**评估 ≠ 重写**。评价和修复必须完全分离。
 
-### Step 1: 确定性检查（Evaluator Worker — 代码逻辑，无 LLM）
+### 步骤1：确定性检查（Evaluator Worker — 代码逻辑，无LLM）
 
 | 检查项 | 规则 | 产出 Issue 类型 |
 |--------|------|-----------------|
@@ -375,28 +375,28 @@ class ReviewReport(BaseModel):
 | 图片 URL 有效性 | HTTP HEAD 检查 | `visual` |
 | 标题层级规范 | 禁止跳级（如 H1 直接到 H3） | `format` |
 
-### Step 2: LLM 质量评估（Evaluator Worker — 中等模型）
+### 步骤2：LLM质量评估（Evaluator Worker — 中等模型）
 
 - 输入：草稿 + Blueprint + Brief（不要求输出修改后内容）
 - 评估维度：准确性、完整性、风格一致性、可读性、论据充分性
-- 输出：`ReviewIssue[]`（每个 Issue 附带 severity + category + section_id + description）
+- 输出：`ReviewIssue[]`（每个问题附带严重性+类别+section_id+描述）
 - 合并到 Step 1 的 Issue 列表
 
-### Step 3: 自动修复（Fixer Worker — 快速模型）
+### 步骤3：自动修复（Fixer Worker — 快速模型）
 
 - 遍历 `auto_fixable=true` 的 Issues（仅格式类问题）
 - 每个 Issue 单独修复：传入目标章节 + Issue 描述 + 修复指令
 - 修复后标记 `fixed=true`
 - 不触碰非 `auto_fixable` 的内容
 
-### Step 4: 用户决策（Review Card）
+### 步骤4：用户决策（复习卡）
 
 - 展示 `ReviewReport`：总分 + 各维度得分 + Issue 卡片列表
 - 用户勾选需要修复的 Issue
 - 用户可添加自定义修改意见
 - 操作：修复选中项 / 跳过直接使用
 
-### Step 5: 定向修复（Fixer Worker）
+### 步骤5：定向修复（Fixer Worker）
 
 - 只修复用户勾选的 Issue
 - 每个 Issue 独立修复：传入目标章节 + Issue + 修复指令
@@ -407,7 +407,7 @@ class ReviewReport(BaseModel):
 
 ## 9. 多模态素材处理
 
-### 9.1 AssetParser 管线 — 素材提取
+### 9.1 AssetParser 基础 — 素材提取
 
 ```
 用户上传文件/提供 URL
@@ -437,7 +437,7 @@ class ReviewReport(BaseModel):
     └─ 章节结构树
 ```
 
-### 9.2 VisualPlanner 管线 — 配图规划
+### 9.2 VisualPlanner 线路 — 配图规划
 
 ```
 Blueprint 阶段，对每个章节分析配图需求：
@@ -457,7 +457,7 @@ Blueprint 阶段，对每个章节分析配图需求：
 | 类型 | 执行方式 |
 |------|----------|
 | `reuse_image` | 直接使用 AssetItem 中的 URL；如需标注，调用 `image_annotate` 工具 |
-| `mermaid` | SectionWriter 在章节内容中直接生成 Mermaid 代码块；Evaluator 做语法检查 |
+| `mermaid` | SectionWriter在章节内容中直接生成Mermaid代码块；Evaluator做语法检查 |
 | `ai_image` | 调用配置的图片生成 API → 上传到 Docmost 获取 URL → 插入章节指定位置 |
 | `table` | 复用素材表格直接插入 Markdown；新建由 SectionWriter 在章节中生成 |
 
@@ -471,10 +471,10 @@ Blueprint 阶段，对每个章节分析配图需求：
 
 | 区域 | 承载内容 | 组件技术 |
 |------|----------|----------|
-| **侧边栏** | Chat UI、Smart Brief 卡片、Live Draft 进度条/章节导航 | 现有侧边栏增强 |
-| **Blueprint Modal** | 章节列表（可拖拽排序）+ 字数预算 + 配图编辑 + 实时大纲预览 | Mantine Modal(size="xl") + @dnd-kit/sortable |
-| **Review Modal** | 评分仪表盘 + Issue 卡片列表（可勾选） + 修复操作 | Mantine Modal(size="xl") |
-| **编辑器主区域** | Live Draft 内容流式写入（或独立草稿区预览） | TipTap 编辑器 |
+| **侧边栏** | 聊天 UI、Smart Brief 场景、Live Draft 细节条/章节导航 | 现有侧边栏增强 |
+| **蓝图模态** | 章节列表（可拖拽排序）+ 字数预算 + 配图编辑 + 实时大纲预览 | Mantine 莫代尔(size="xl") + @dnd-kit/sortable |
+| **审查模态** | 评分仪表盘 + Issue 卡片列表（可勾选） + 修复操作 | 曼汀莫代尔(尺寸=“xl”) |
+| **编辑器主区域** | Live Draft 内容流式写入（或独立草稿区预览） | TipTap编辑器 |
 
 ### 10.2 草稿管理
 
@@ -486,7 +486,7 @@ Blueprint 阶段，对每个章节分析配图需求：
 ### 10.3 状态管理
 
 - 会话状态：Jotai 原子化状态管理
-- 中间态数据：与后端 Pydantic Models 镜像的 TypeScript 类型
+- 中间状态数据：与远端 Pydantic Models 镜像的 TypeScript 类型
 - 前端新增类型文件：`brief.types.ts`、`blueprint.types.ts`、`review.types.ts`、`draft.types.ts`
 
 ---
@@ -540,16 +540,16 @@ Blueprint 阶段，对每个章节分析配图需求：
 
 | 组件 | 当前 | 变更后 | 理由 |
 |------|------|--------|------|
-| Agent 编排 | LangGraph StateGraph | PydanticAI ReAct Loop | 动态编排，替代固定图拓扑 |
-| 状态管理 | TypedDict (45+ 字段) | Pydantic Models (5 个独立模型) | 类型安全、可验证、职责清晰 |
-| 图拓扑 | 编译时固定，3 条路径 | Orchestrator 动态决策 | 自适应工作流 |
-| 中断恢复 | LangGraph interrupt() | 自定义 yield + 状态序列化 | 更简单可控 |
+| Agent 编排 | LangGraph 状态图 | PydanticAI React 循环 | 动态编排，替代固定图拓扑 |
+| 状态管理 | TypedDict（45+ 字段） | Pydantic Models (5个独立模型) | 类型安全、可验证、职责清晰 |
+| 图拓扑 | 编译时固定，3 条路径 | 协调器动态决策 | 自适应工作流 |
+| 中断恢复 | LangGraph 中断() | 自定义 yield + 状态序列化 | 更简单可控 |
 | 中文字数 | `split()`（对中文完全错误） | `len(re.findall(r'[\u4e00-\u9fff]', text)) + len(text.split())` | 准确计数 |
 | 写作模式 | 一次性全文生成 | 逐章节 + 滑动窗口 | 篇幅保障，注意力集中 |
 | 审核模式 | LLM 全文重写 | 确定性检查 + LLM 评估 + 定点修复 | 消除内容漂移 |
 | 意图路由 | NestJS 关键词匹配 | Python Orchestrator 语义分析 | 准确率提升 |
-| 前端弹出面板 | 无 | Mantine Modal (size="xl") | Blueprint/Review 需要大面积展示 |
-| 前端拖拽 | 无 | @dnd-kit/sortable | Blueprint 章节排序 |
+| 前端弹出面板 | 无 | Mantine 莫代尔 (尺寸=“xl”) | 蓝图/回顾需要大面积展示 |
+| 前端拖拽 | 无 | @dnd-kit/可排序 | 蓝图章节排序 |
 | 草稿存储 | 直接写页面 | Redis 临时 + DB 持久化 | 独立草稿，预览后再合并 |
 
 ---
@@ -570,22 +570,22 @@ Blueprint 阶段，对每个章节分析配图需求：
 
 ## 14. 分阶段交付
 
-### Phase 0: 基础设施准备（1-2 周）
+### 阶段 0: 基础设施准备（1-2 周）
 
 | 交付物 | 说明 |
 |--------|------|
-| Pydantic Models | 5 个核心中间态模型定义（`models/` 目录） |
+| 悬垂模型 | 5 个核心中间态模型定义（`models/` 目录） |
 | SSE 事件协议 | 事件类型定义 + Python 事件发射器 + TypeScript 类型镜像 |
-| PydanticAI 骨架 | 基础项目结构、配置、依赖 |
+| PydanticAI 工件 | 基础项目结构、配置、依赖 |
 | 前端组件骨架 | 新组件目录结构、空组件文件、路由注册 |
 
 **里程碑**：模型定义和事件协议可供后续 Phase 使用。
 
-### Phase 1: 核心编排层（2-3 周）
+### 阶段 1: 核心编排层（2-3 周）
 
 | 交付物 | 说明 |
 |--------|------|
-| Orchestrator ReAct Loop | 核心编排引擎，接收输入、决策、调度 Worker |
+| Orchestrator 反应循环 | 核心编排引擎，接收输入、决策、调度 Worker |
 | `analyze_complexity` 工具 | Level 1/2/3 复杂度分级 |
 | `ask_user` 工具 + 中断恢复 | 通过 SSE 推送结构化交互数据，等待用户响应 |
 | Level 1 端到端 | 简单任务（翻译、改错）可正常完成 |
@@ -593,44 +593,44 @@ Blueprint 阶段，对每个章节分析配图需求：
 
 **里程碑**：Level 1 任务可端到端运行。
 
-### Phase 2: 素材与规划能力（2-3 周）
+### 阶段 2: 素材与规划能力（2-3 周）
 
 | 交付物 | 说明 |
 |--------|------|
-| AssetParser Worker | Docling 结构化提取 + VLM 图片理解 + 元数据计算 |
-| Smart Brief 前端卡片 | 侧边栏内嵌，字段选择 + 素材摘要 |
-| `create_blueprint` 工具 | 基于 Brief + AssetMap 生成创作蓝图 |
-| Blueprint Modal 前端 | 弹出面板，拖拽排序 + 字数预算 + 配图编辑 |
-| VisualPlanner Worker | 逐章节配图需求分析 + 素材匹配 |
+| AssetParser 工作者 | Docling 结构化提取 + VLM 图片理解 + 元数据计算 |
+| 智能简报前端补充 | 侧边栏内嵌，字段选择 + 素材摘要 |
+| `create_blueprint` 工具 | 基于Brief + AssetMap生成创作蓝图 |
+| 蓝图模态前端 | 弹出面板，拖拽排序 + 字数预算 + 配图编辑 |
+| 视觉规划师 | 逐章节配图需求分析 + 素材匹配 |
 | Level 2 端到端 | 轻量确认任务可正常完成 |
 
 **里程碑**：素材提取和创作规划能力可用。
 
-### Phase 3: 分块写作引擎（2-3 周）
+### 阶段 3: 分块写作引擎（2-3 周）
 
 | 交付物 | 说明 |
 |--------|------|
-| SectionWriter Worker | 逐章生成 + 滑动窗口上下文 + 字数预算执行 |
+| 部门作家工人 | 逐章生成 + 滑动窗口上下文 + 字数预算执行 |
 | 并行写作 | 独立章节可并行生成 |
 | 中文字数精确计算 | 替换 `split()` 为正则字符计数 |
-| Live Draft 进度前端 | 进度条 + 章节导航 + 实时字数统计 |
+| Live Draft 简介 | 进度条 + 章节导航 + 实时字数统计 |
 | 草稿管理系统 | 独立草稿存储 + 预览 + 与原文对比 + 合并 |
-| Level 3 端到端 | 完整流程（Brief → Blueprint → Write → Review）可运行 |
+| Level 3 端到端 | 完整流程（简要→蓝图→编写→评审）可运行 |
 
 **里程碑**：核心创作流程完整可用。
 
-### Phase 4: 审核与修复（1-2 周）
+### 阶段 4: 审核与修复（1-2 周）
 
 | 交付物 | 说明 |
 |--------|------|
-| Evaluator Worker（确定性检查） | 字数、素材覆盖、Mermaid 语法、标题层级等 |
-| Evaluator Worker（LLM 评估） | 内容质量多维评分 |
-| Fixer Worker | 章节级定点修复，格式问题自动修 |
-| Review Modal 前端 | 评分仪表盘 + Issue 卡片 + 勾选修复 |
+| 评估员（确定性检查） | 字数、素材覆盖、Mermaid 语法、标题层级等 |
+| 评估员（LLM评估） | 内容质量多维评分 |
+| 修理工 | 章节级定点修复，格式问题自动修 |
+| 回顾模态前端 | 评分仪表盘 + Issue 卡片 + 勾选修复 |
 
 **里程碑**：质量保障闭环完成。
 
-### Phase 5: 打磨与优化（2-3 周）
+### 阶段 5: 打磨与优化（2-3 周）
 
 | 交付物 | 说明 |
 |--------|------|
@@ -657,11 +657,11 @@ Week 1-2   Week 3-5       Week 5-7      Week 7-9      Week 9-10     Week 11-14
 ```
 
 **预计总工期：12-15 周**（一人 + AI 辅助开发）
-## Implementation Update (2026-03-19)
+## 实施更新 (2026-03-19)
 
-- Uploaded-source images now survive ingestion as first-class assets with provenance, source page/heading metadata, content hash, and stable rehosted Docmost URLs.
-- Blueprint review now surfaces ranked source-image candidates per section and canonical image policies: `reuse_source_only`, `prefer_source_then_generate`, `generate_new_only`, `none`.
-- Section writing now follows one initial draft plus at most one targeted revision of the same draft. Repeated full-section rewrites are no longer part of the default Level 3 path.
-- Generated images are materialized only after section text stabilizes. Section snapshots expose `write_attempts`, image lifecycle status, source asset id, and degraded reason.
-- Review gating is now severity-based. Error-level issues remain blocking; warning/info issues can be accepted explicitly with `Continue with current draft`.
-- Browser acceptance coverage now includes blank-page smoke, outline/review/insert, source-image reuse with generated fallback, and persisted markdown verification for tables, mermaid, and images.
+- 上传的源图像现在可以作为一流资产保留下来，具有出处、源页面/标题元数据、内容哈希和稳定的重新托管 Docmost URL。
+- 蓝图审查现在显示每个部分排名的源图像候选者和规范图像策略：`reuse_source_only`、`prefer_source_then_generate`、`generate_new_only`、`none`。
+- 现在，章节写作遵循一份初稿以及同一草案的最多一项有针对性的修订。重复的全节重写不再是默认的 3 级路径的一部分。
+- 生成的图像仅在部分文本稳定后才会具体化。部分快照公开 `write_attempts`、图像生命周期状态、源资产 ID 和降级原因。
+- 审查门控现在基于严重性。错误级别的问题仍然受阻；警告/信息问题可以通过 `Continue with current draft` 明确接受。
+- 浏览器接受范围现在包括空白页烟雾、大纲/审查/插入、带有生成后备的源图像重用以及表格、Mermaid和图像的持续 Markdown 验证。
