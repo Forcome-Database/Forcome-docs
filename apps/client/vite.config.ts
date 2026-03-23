@@ -8,12 +8,13 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, envPath, "");
 
   // Auto-derive URLs from port variables when not explicitly set
+  const APP_URL = env.APP_URL || `http://localhost:${env.PORT || "3000"}`;
   const VITE_WIKI_URL = env.VITE_WIKI_URL || `http://localhost:${env.WIKI_PORT || "5175"}`;
 
   return {
     define: {
       "process.env": {
-        APP_URL: env.APP_URL,
+        APP_URL,
         FILE_UPLOAD_SIZE_LIMIT: env.FILE_UPLOAD_SIZE_LIMIT,
         FILE_IMPORT_SIZE_LIMIT: env.FILE_IMPORT_SIZE_LIMIT,
         DRAWIO_URL: env.DRAWIO_URL,

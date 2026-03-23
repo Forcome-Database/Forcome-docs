@@ -10,9 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
+# Install deps first (cached unless pyproject.toml changes)
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+RUN mkdir -p app && touch app/__init__.py && pip install .
 
+# Copy source after deps are installed
 COPY app/ ./app/
 
 ENV AGENT_PORT=8100
