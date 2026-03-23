@@ -1,14 +1,11 @@
 <script setup lang="ts">
-/**
- * AI 来源引用卡片组件
- * 可折叠展示 AI 回答引用的文档来源
- */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vitepress'
-import type { AiSource } from '../types'
+import type { AiCitation, AiSource } from '../types'
 
 const props = defineProps<{
-  sources: AiSource[]
+  sources?: AiSource[]
+  citations?: AiCitation[]
 }>()
 
 const route = useRoute()
@@ -19,32 +16,80 @@ const getCurrentLang = (): string => {
   return match ? match[1] : 'zh'
 }
 
-const getSourceUrl = (source: AiSource): string => {
+const getPageUrl = (source: { spaceSlug?: string; pageSlugId?: string; slugId?: string }): string => {
   const lang = getCurrentLang()
-  return `/${lang}/docs/${source.spaceSlug}/${source.slugId}`
+  const slugId = source.pageSlugId || source.slugId
+  if (!source.spaceSlug || !slugId) return '#'
+  return `/${lang}/docs/${source.spaceSlug}/${slugId}`
 }
+
+const normalizedItems = computed(() => {
+  if (props.citations && props.citations.length > 0) {
+    const pageCitations = props.citations.filter((citation) => citation.sourceType === 'page')
+    if (pageCitations.length > 0) {
+      return pageCitations.map((citation, index) => {
+        return {
+          key: `${citation.sourceType}-${citation.attachmentId || citation.pageSlugId || citation.slugId || index}`,
+          title: citation.title || 'Untitled',
+          href: getPageUrl(citation),
+          icon: '馃搫',
+        }
+      })
+    }
+
+    return props.citations.map((citation, index) => {
+      const href =
+        citation.sourceType === 'page'
+          ? getPageUrl(citation)
+          : citation.publicAssetUrl || getPageUrl(citation)
+
+      const icon =
+        citation.sourceType === 'attachment'
+          ? '📎'
+          : citation.sourceType === 'image'
+            ? '🖼️'
+            : citation.sourceType === 'diagram'
+              ? '📐'
+              : '📄'
+
+      return {
+        key: `${citation.sourceType}-${citation.attachmentId || citation.pageSlugId || citation.slugId || index}`,
+        title: citation.title || 'Untitled',
+        href,
+        icon,
+      }
+    })
+  }
+
+  return (props.sources || []).map((source) => ({
+    key: `${source.spaceSlug}-${source.slugId}`,
+    title: source.title || 'Untitled',
+    href: getPageUrl(source),
+    icon: '📄',
+  }))
+})
 </script>
 
 <template>
-  <div v-if="sources.length > 0" class="ai-chat-sources">
+  <div v-if="normalizedItems.length > 0" class="ai-chat-sources">
     <button
       class="ai-chat-sources-toggle"
       @click="expanded = !expanded"
     >
-      <span class="arrow" :class="{ expanded }">▶</span>
-      <span>{{ sources.length }} 个相关来源</span>
+      <span class="arrow" :class="{ expanded }">▸</span>
+      <span>{{ normalizedItems.length }} 个相关来源</span>
     </button>
     <div v-if="expanded" class="ai-chat-sources-list">
       <a
-        v-for="source in sources"
-        :key="source.slugId"
-        :href="getSourceUrl(source)"
+        v-for="item in normalizedItems"
+        :key="item.key"
+        :href="item.href"
         target="_blank"
         rel="noopener noreferrer"
         class="ai-chat-source-card"
       >
-        <span class="source-icon">📄</span>
-        <span class="source-title">{{ source.title || 'Untitled' }}</span>
+        <span class="source-icon">{{ item.icon }}</span>
+        <span class="source-title">{{ item.title }}</span>
       </a>
     </div>
   </div>

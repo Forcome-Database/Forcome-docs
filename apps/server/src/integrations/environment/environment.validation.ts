@@ -159,6 +159,10 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  AI_RERANK_API_KEY: string;
+
+  @IsOptional()
+  @IsString()
   AI_LITE_MODEL: string;
 
   @IsOptional()
@@ -170,6 +174,39 @@ export class EnvironmentVariables {
   @IsIn(['openai', 'openai-compatible', 'gemini', 'ollama'])
   @IsString()
   AI_VLM_DRIVER: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  @IsString()
+  PUBLIC_WIKI_AI_ENABLED: string;
+
+  @IsOptional()
+  @IsString()
+  PUBLIC_WIKI_AI_RATE_LIMIT_WINDOW_MS: string;
+
+  @IsOptional()
+  @IsString()
+  PUBLIC_WIKI_AI_RATE_LIMIT_MAX_REQUESTS: string;
+
+  @IsOptional()
+  @IsString()
+  PUBLIC_WIKI_AI_MAX_QUERY_CHARS: string;
+
+  @IsOptional()
+  @IsString()
+  PUBLIC_WIKI_AI_MAX_HISTORY_MESSAGES: string;
+
+  @IsOptional()
+  @IsString()
+  PUBLIC_WIKI_AI_MAX_HISTORY_CHARS: string;
+
+  @IsOptional()
+  @IsString()
+  PUBLIC_WIKI_AI_MAX_IMAGES: string;
+
+  @IsOptional()
+  @IsString()
+  PUBLIC_WIKI_AI_MAX_IMAGE_BYTES: string;
 }
 
 export function validate(config: Record<string, any>) {

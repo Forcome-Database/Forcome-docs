@@ -146,10 +146,10 @@ export class AiController {
     });
 
     try {
-      for await (const chunk of this.aiSearchService.answerWithContext(
-        dto.query,
-        workspace.id,
-      )) {
+      for await (const chunk of this.aiSearchService.answerWithContext({
+        query: dto.query,
+        workspaceId: workspace.id,
+      })) {
         res.raw.write(`data: ${chunk}\n\n`);
       }
       res.raw.write('data: [DONE]\n\n');

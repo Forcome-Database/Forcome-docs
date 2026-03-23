@@ -36,8 +36,9 @@ import {
   addUniqueIdsToDoc,
   htmlToMarkdown,
 } from '@docmost/editor-ext';
-import { generateText, getSchema, JSONContent } from '@tiptap/core';
+import { getSchema, JSONContent } from '@tiptap/core';
 import { generateHTML, generateJSON } from '../common/helpers/prosemirror/html';
+import { projectProsemirrorToSearchText } from '../common/helpers/prosemirror/content-projection';
 // @tiptap/html library works best for generating prosemirror json state but not HTML
 // see: https://github.com/ueberdosis/tiptap/issues/5352
 // see:https://github.com/ueberdosis/tiptap/issues/4089
@@ -109,7 +110,7 @@ export function htmlToJson(html: string) {
 }
 
 export function jsonToText(tiptapJson: JSONContent) {
-  return generateText(tiptapJson, tiptapExtensions);
+  return projectProsemirrorToSearchText(tiptapJson);
 }
 
 export function jsonToNode(tiptapJson: JSONContent) {

@@ -34,3 +34,5 @@ pnpm-debug.log*
 
 # Test coverage
 coverage/
+*.tmp_*
+*.temp

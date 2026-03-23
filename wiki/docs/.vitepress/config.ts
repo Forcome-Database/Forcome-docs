@@ -20,7 +20,7 @@ export default withMermaid(defineConfig({
     define: { __APP_VERSION__: JSON.stringify(pkg.version) },
     envDir: process.cwd(),
     optimizeDeps: { include: ['mermaid', 'dayjs'] },
-    ssr: { noExternal: ['mermaid'] },
+    ssr: { noExternal: ['mermaid', 'ant-design-vue', 'ant-design-x-vue', '@ant-design/icons-vue'] },
     server: { port: 5175 }
   },
 

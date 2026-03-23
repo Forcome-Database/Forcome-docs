@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useAuth } from '../composables/useAuth'
 
-const { loginWithDingTalkCode, isLoading } = useAuth()
+const { loginWithDingTalkCode } = useAuth()
 const error = ref('')
 const processing = ref(true)
 
@@ -23,7 +23,7 @@ onMounted(async () => {
   }
 
   if (savedState && state !== savedState) {
-    error.value = '安全验证失败，请重新登录'
+    error.value = '安全校验失败，请重新登录'
     processing.value = false
     return
   }

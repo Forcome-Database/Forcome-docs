@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as bcrypt from 'bcrypt';
 import { sanitize } from 'sanitize-filename-ts';
 import { FastifyRequest } from 'fastify';
+import * as net from 'node:net';
 import { Readable, Transform } from 'stream';
 
 export const envPath = path.resolve(process.cwd(), '..', '..', '.env');
@@ -133,4 +134,30 @@ export function createByteCountingStream(source: Readable) {
   source.on('error', (err) => stream.emit('error', err));
 
   return { stream, getBytesRead: () => bytesRead };
+}
+
+export async function ensurePortAvailable(port: number, host: string) {
+  await new Promise<void>((resolve, reject) => {
+    const server = net.createServer();
+
+    server.once('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EADDRINUSE') {
+        reject(new Error(`Port ${port} is already in use`));
+        return;
+      }
+      reject(error);
+    });
+
+    server.once('listening', () => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    server.listen(port, host);
+  });
 }

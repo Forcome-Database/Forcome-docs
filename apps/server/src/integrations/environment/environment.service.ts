@@ -290,6 +290,10 @@ export class EnvironmentService {
     return this.configService.get<string>('AI_RERANK_API_URL');
   }
 
+  getAiRerankApiKey(): string {
+    return this.configService.get<string>('AI_RERANK_API_KEY');
+  }
+
   getGeminiApiKey(): string {
     return this.configService.get<string>('GEMINI_API_KEY');
   }
@@ -304,6 +308,80 @@ export class EnvironmentService {
   getWikiPublicSpaceSlugs(): string[] {
     const slugs = this.configService.get<string>('WIKI_PUBLIC_SPACE_SLUGS');
     return slugs ? slugs.split(',').map((s) => s.trim()) : [];
+  }
+
+  isPublicWikiAiEnabled(): boolean {
+    const enabled = this.configService
+      .get<string>('PUBLIC_WIKI_AI_ENABLED', 'true')
+      .toLowerCase();
+    return enabled === 'true';
+  }
+
+  getPublicWikiAiRateLimitWindowMs(): number {
+    return parseInt(
+      this.configService.get<string>(
+        'PUBLIC_WIKI_AI_RATE_LIMIT_WINDOW_MS',
+        '60000',
+      ),
+      10,
+    );
+  }
+
+  getPublicWikiAiRateLimitMaxRequests(): number {
+    return parseInt(
+      this.configService.get<string>(
+        'PUBLIC_WIKI_AI_RATE_LIMIT_MAX_REQUESTS',
+        '10',
+      ),
+      10,
+    );
+  }
+
+  getPublicWikiAiMaxQueryChars(): number {
+    return parseInt(
+      this.configService.get<string>(
+        'PUBLIC_WIKI_AI_MAX_QUERY_CHARS',
+        '2000',
+      ),
+      10,
+    );
+  }
+
+  getPublicWikiAiMaxHistoryMessages(): number {
+    return parseInt(
+      this.configService.get<string>(
+        'PUBLIC_WIKI_AI_MAX_HISTORY_MESSAGES',
+        '10',
+      ),
+      10,
+    );
+  }
+
+  getPublicWikiAiMaxHistoryChars(): number {
+    return parseInt(
+      this.configService.get<string>(
+        'PUBLIC_WIKI_AI_MAX_HISTORY_CHARS',
+        '12000',
+      ),
+      10,
+    );
+  }
+
+  getPublicWikiAiMaxImages(): number {
+    return parseInt(
+      this.configService.get<string>('PUBLIC_WIKI_AI_MAX_IMAGES', '3'),
+      10,
+    );
+  }
+
+  getPublicWikiAiMaxImageBytes(): number {
+    return parseInt(
+      this.configService.get<string>(
+        'PUBLIC_WIKI_AI_MAX_IMAGE_BYTES',
+        String(5 * 1024 * 1024),
+      ),
+      10,
+    );
   }
 
   getCookieDomain(): string | undefined {

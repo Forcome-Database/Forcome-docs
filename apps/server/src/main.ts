@@ -12,8 +12,14 @@ import fastifyMultipart from '@fastify/multipart';
 import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
 import { InternalLogFilter } from './common/logger/internal-log-filter';
+import { ensurePortAvailable } from './common/helpers/utils';
 
 async function bootstrap() {
+  const port = Number(process.env.PORT || 3000);
+  const host = process.env.HOST || '0.0.0.0';
+
+  await ensurePortAvailable(port, host);
+
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter({
@@ -115,8 +121,6 @@ async function bootstrap() {
     logger.error('UncaughtException:', error);
   });
 
-  const port = process.env.PORT || 3000;
-  const host = process.env.HOST || '0.0.0.0';
   await app.listen(port, host, () => {
     logger.log(
       `Listening on http://127.0.0.1:${port} / ${process.env.APP_URL}`,
@@ -124,4 +128,11 @@ async function bootstrap() {
   });
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  const logger = new Logger('NestApplication');
+  logger.error(
+    error instanceof Error ? error.message : String(error),
+    error instanceof Error ? error.stack : undefined,
+  );
+  process.exit(1);
+});
