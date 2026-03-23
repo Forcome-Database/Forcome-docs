@@ -1,7 +1,5 @@
 FROM python:3.12-slim
 
-WORKDIR /app
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     libtesseract-dev \
@@ -10,11 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
+WORKDIR /app
+
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
-
 COPY app/ ./app/
-
-ENV AGENT_PORT=8100
-EXPOSE ${AGENT_PORT}
-CMD sh -c "uvicorn app.main:app --host 0.0.0.0 --port ${AGENT_PORT} --workers 1"
+RUN pip install --no-cache-dir .

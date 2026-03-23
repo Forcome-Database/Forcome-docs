@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -13,6 +14,10 @@ class Settings(BaseSettings):
     agent_llm_api_key: str = ""
     agent_llm_api_url: str = ""
 
+    # Port variables
+    port: int = 3000
+    agent_port: int = 8100
+
     # Tool API Keys
     tavily_api_key: str = ""
     firecrawl_api_key: str = ""
@@ -22,9 +27,9 @@ class Settings(BaseSettings):
     agent_image_api_url: str = "https://api.forcome.com/v1"
     agent_image_model: str = "gemini-3-pro-image-preview"
 
-    # Internal communication
+    # Internal communication (auto-derived from PORT if not set)
     agent_internal_secret: str = ""
-    docmost_internal_url: str = "http://docmost:3000"
+    docmost_internal_url: str = ""
 
     # Runtime config
     agent_max_iterations: int = 3
@@ -48,6 +53,11 @@ class Settings(BaseSettings):
     database_url: str = ""
     redis_url: str = ""
     session_backend: str = "postgres_redis"
+
+    @property
+    def effective_docmost_url(self) -> str:
+        """Auto-derive from PORT when DOCMOST_INTERNAL_URL is not set."""
+        return self.docmost_internal_url or f"http://localhost:{self.port}"
 
     @property
     def llm_provider(self) -> str:

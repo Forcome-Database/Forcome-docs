@@ -1,0 +1,68 @@
+# =============================================================================
+# Docmost Docker Compose - 开发环境覆盖层
+# Volume mount + 热重载，数据库和 MinIO 使用外部资源
+# =============================================================================
+
+services:
+  docmost:
+    build:
+      context: .
+      dockerfile: docker/dev.node.Dockerfile
+    volumes:
+      - .:/app
+      - docmost_node_modules:/app/node_modules
+    command: sh -c "pnpm install && pnpm dev"
+    environment:
+      # Docker 内部服务间地址（覆盖 .env.dev 中的 localhost 默认值）
+      AGENT_SERVICE_URL: http://agent-service:${AGENT_PORT:-8100}
+      DOCMOST_INTERNAL_URL: http://docmost:${PORT:-3000}
+      REDIS_URL: redis://redis:6379
+    env_file: .env.dev
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+      - "${VITE_PORT:-5173}:${VITE_PORT:-5173}"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - docmost-network
+
+  agent-service:
+    build:
+      context: ./agent-service
+      dockerfile: ../docker/dev.python.Dockerfile
+    volumes:
+      - ./agent-service/app:/app/app
+    command: sh -c "uvicorn app.main:app --host 0.0.0.0 --port ${AGENT_PORT:-8100} --reload"
+    environment:
+      DOCMOST_INTERNAL_URL: http://docmost:${PORT:-3000}
+      REDIS_URL: redis://redis:6379
+    env_file: .env.dev
+    ports:
+      - "${AGENT_PORT:-8100}:${AGENT_PORT:-8100}"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - docmost-network
+
+  wiki:
+    build:
+      context: ./wiki
+      dockerfile: ../docker/dev.node.Dockerfile
+    volumes:
+      - ./wiki:/app
+      - wiki_node_modules:/app/node_modules
+    command: sh -c "pnpm install && pnpm docs:dev"
+    env_file: .env.dev
+    ports:
+      - "${WIKI_PORT:-5175}:${WIKI_PORT:-5175}"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - docmost-network
+
+volumes:
+  docmost_node_modules:
+  wiki_node_modules:

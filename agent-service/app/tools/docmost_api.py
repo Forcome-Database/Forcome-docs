@@ -6,7 +6,7 @@ from app.tools.registry import register_tool
 
 
 def _docmost_post(path: str, json_body: dict) -> dict:
-    url = f"{settings.docmost_internal_url}/api{path}"
+    url = f"{settings.effective_docmost_url}/api{path}"
     headers = {"X-Internal-Secret": settings.agent_internal_secret}
     response = httpx.post(url, json=json_body, headers=headers, timeout=30.0)
     response.raise_for_status()

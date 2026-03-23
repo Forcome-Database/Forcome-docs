@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitepress'
+import { defineConfig, loadEnv } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 import tailwindcss from '@tailwindcss/vite'
 import { zhSidebar, enSidebar, viSidebar } from './sidebar'
@@ -6,6 +6,15 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8'))
+const rootDir = resolve(__dirname, '../../..')
+const env = loadEnv('', rootDir, '')
+
+// Auto-derive URLs from port variables when not explicitly set
+const PORT = env.PORT || '3000'
+const VITE_PORT = env.VITE_PORT || '5173'
+const WIKI_PORT = env.WIKI_PORT || '5175'
+const VITE_DOCMOST_API_URL = env.VITE_DOCMOST_API_URL || `http://localhost:${PORT}/api/public-wiki`
+const VITE_ADMIN_URL = env.VITE_ADMIN_URL || (env.APP_URL || `http://localhost:${VITE_PORT}`)
 
 /**
  * VitePress 配置文件
@@ -17,11 +26,15 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'u
 export default withMermaid(defineConfig({
   vite: {
     plugins: [tailwindcss() as any],
-    define: { __APP_VERSION__: JSON.stringify(pkg.version) },
-    envDir: process.cwd(),
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+      'import.meta.env.VITE_DOCMOST_API_URL': JSON.stringify(VITE_DOCMOST_API_URL),
+      'import.meta.env.VITE_ADMIN_URL': JSON.stringify(VITE_ADMIN_URL),
+    },
+    envDir: rootDir,
     optimizeDeps: { include: ['mermaid', 'dayjs'] },
     ssr: { noExternal: ['mermaid', 'ant-design-vue', 'ant-design-x-vue', '@ant-design/icons-vue'] },
-    server: { port: 5175 }
+    server: { port: parseInt(WIKI_PORT) }
   },
 
   title: 'FORCOME 知识库',

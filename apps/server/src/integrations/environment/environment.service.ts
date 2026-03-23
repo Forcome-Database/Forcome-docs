@@ -389,7 +389,10 @@ export class EnvironmentService {
   }
 
   getWikiUrl(): string {
-    return this.configService.get<string>('WIKI_URL', '');
+    return (
+      this.configService.get<string>('WIKI_URL') ||
+      `http://localhost:${this.configService.get<string>('WIKI_PORT', '5175')}`
+    );
   }
 
   getDingtalkCorpId(): string {
@@ -409,7 +412,10 @@ export class EnvironmentService {
   }
 
   getAgentServiceUrl(): string {
-    return this.configService.get<string>('AGENT_SERVICE_URL') || 'http://agent-service:8100';
+    return (
+      this.configService.get<string>('AGENT_SERVICE_URL') ||
+      `http://localhost:${this.configService.get<string>('AGENT_PORT', '8100')}`
+    );
   }
 
   getAgentInternalSecret(): string {
