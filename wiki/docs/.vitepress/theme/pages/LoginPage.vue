@@ -81,6 +81,7 @@ async function handleH5SilentLogin() {
 }
 
 onMounted(async () => {
+  document.title = '登录 | FORCOME 知识库'
   requestAnimationFrame(() => {
     mounted.value = true
   })

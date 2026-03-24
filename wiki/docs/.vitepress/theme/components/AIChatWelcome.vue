@@ -24,7 +24,7 @@ const suggestions = [
 <template>
   <div class="ai-chat-welcome">
     <img src="/images/logo/logo.png" alt="Logo" class="welcome-logo" />
-    <h3 class="welcome-title">你好！我是 IT智能助手</h3>
+    <h3 class="welcome-title">你好！我是AI助手康康</h3>
     <p class="welcome-text">我可以回答关于文档的问题，帮助你快速找到所需信息。</p>
     <p v-if="!isConfigured" class="welcome-hint">⚠️ AI 服务未配置，请检查环境变量</p>
     <div class="welcome-shortcuts">

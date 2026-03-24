@@ -266,7 +266,7 @@ const isDropdownActive = (item: any) => {
         <button
           class="ai-button"
           type="button"
-          aria-label="IT智能助手 (⌘I)"
+          aria-label="AI助手康康 (⌘I)"
           @click="emit('toggle-ai-chat')"
         >
           <svg 
@@ -331,6 +331,7 @@ const isDropdownActive = (item: any) => {
   display: flex;
   align-items: center;
   gap: var(--spacing-4);
+  min-width: 0;
 }
 
 /* 移动端菜单按钮 */
@@ -373,6 +374,7 @@ const isDropdownActive = (item: any) => {
   width: 24px;
   height: 24px;
   object-fit: contain;
+  flex-shrink: 0;
 }
 
 .logo-text {
@@ -380,6 +382,7 @@ const isDropdownActive = (item: any) => {
   font-size: 16px;
   color: rgba(38, 37, 30, 1);
   letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 
 :root.dark .logo-text {
@@ -521,6 +524,7 @@ const isDropdownActive = (item: any) => {
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
+  flex-shrink: 0;
 }
 
 /* 搜索按钮 */

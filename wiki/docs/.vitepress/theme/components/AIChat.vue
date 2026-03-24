@@ -654,7 +654,7 @@ onUnmounted(() => {
       <header class="ai-chat-header">
         <div class="ai-chat-title-wrapper">
           <img src="/images/logo/logo.png" alt="Logo" class="ai-chat-logo" />
-          <h2 class="ai-chat-title" id="ai-chat-title">智能助手康康</h2>
+          <h2 class="ai-chat-title" id="ai-chat-title">AI助手康康</h2>
         </div>
         <div class="ai-chat-actions">
           <button
@@ -679,7 +679,7 @@ onUnmounted(() => {
           <button
             class="ai-chat-action-btn"
             type="button"
-            aria-label="关闭 IT智能助手 (ESC)"
+            aria-label="关闭 AI助手康康 (ESC)"
             @click="handleClose"
           >
             <CloseIcon :size="16" />

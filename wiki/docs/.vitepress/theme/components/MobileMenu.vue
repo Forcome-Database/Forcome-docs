@@ -9,6 +9,7 @@ import { computed, watch, onMounted, onUnmounted } from 'vue'
 import { useData, useRoute } from 'vitepress'
 import SideBarItem from './SideBarItem.vue'
 import CloseIcon from './icons/CloseIcon.vue'
+import { useDocmostSidebar } from '../composables/useDocmostSidebar'
 import type { SidebarItem } from '../types'
 
 const props = defineProps<{
@@ -24,6 +25,38 @@ const emit = defineEmits<{
 // 获取 VitePress 数据
 const { theme } = useData()
 const route = useRoute()
+const {
+  spaces: docmostSpaces,
+  directories: docmostDirectories,
+  selectedDirectoryId,
+  selectDirectory,
+} = useDocmostSidebar()
+
+// 从路由路径中提取当前语言
+const currentLang = computed(() => {
+  const match = route.path.match(/^\/(zh|en|vi)\//)
+  return match ? match[1] : 'zh'
+})
+
+// 从静态导航中提取已覆盖的空间 slug 集合
+function extractStaticSlugs(items: any[]): Set<string> {
+  const slugs = new Set<string>()
+  for (const item of items) {
+    if (item.link) {
+      const match = item.link.match(/\/(?:zh|en|vi)\/docs\/([^/]+)/)
+      if (match) slugs.add(match[1])
+    }
+    if (item.items) {
+      for (const child of item.items) {
+        if (child.link) {
+          const match = child.link.match(/\/(?:zh|en|vi)\/docs\/([^/]+)/)
+          if (match) slugs.add(match[1])
+        }
+      }
+    }
+  }
+  return slugs
+}
 
 /**
  * 获取当前页面的侧边栏配置
@@ -57,16 +90,56 @@ const sidebarGroups = computed(() => {
 })
 
 /**
- * 导航项
+ * 导航项：静态配置 + 动态发现的 Docmost 空间（与 NavBar 一致）
  */
 const navItems = computed(() => {
-  return theme.value.nav || []
+  const staticNav = theme.value.nav || []
+  const coveredSlugs = extractStaticSlugs(staticNav)
+  const lang = currentLang.value
+
+  const dynamicItems = docmostSpaces.value
+    .filter((space) => !coveredSlugs.has(space.slug))
+    .map((space) => {
+      const dirs = docmostDirectories.value[space.slug]
+
+      if (space.hasDirectories && dirs && dirs.length > 0) {
+        return {
+          text: space.name,
+          link: `/${lang}/docs/${space.slug}/`,
+          items: dirs.map((dir) => ({
+            text: dir.icon ? `${dir.icon} ${dir.name}` : dir.name,
+            directoryId: dir.id,
+            spaceSlug: space.slug,
+            link: `/${lang}/docs/${space.slug}/`,
+          })),
+        }
+      }
+
+      return {
+        text: space.name,
+        link: `/${lang}/docs/${space.slug}/`,
+      }
+    })
+
+  if (dynamicItems.length === 0) return staticNav
+  return [...staticNav, ...dynamicItems]
 })
 
 /**
  * 处理导航点击（关闭菜单）
  */
 const handleNavigate = () => {
+  emit('close')
+}
+
+/**
+ * 处理目录项点击
+ */
+const handleDirectoryClick = (event: Event, child: any) => {
+  if (child.directoryId && child.spaceSlug) {
+    event.preventDefault()
+    selectDirectory(child.spaceSlug, child.directoryId)
+  }
   emit('close')
 }
 
@@ -147,8 +220,9 @@ onUnmounted(() => {
       >
         <!-- 菜单头部 -->
         <header class="mobile-menu-header">
-          <a href="/" class="mobile-menu-logo" aria-label="Cursor 首页" @click="handleNavigate">
-            <span class="logo-text" aria-hidden="true">Cursor</span>
+          <a href="/" class="mobile-menu-logo" aria-label="FORCOME 知识库首页" @click="handleNavigate">
+            <img src="/images/logo/logo.png" alt="Logo" class="mobile-menu-logo-img" />
+            <span class="logo-text" aria-hidden="true">{{ theme.siteTitle || 'FORCOME 知识库' }}</span>
           </a>
           <button
             class="mobile-menu-close"
@@ -162,15 +236,39 @@ onUnmounted(() => {
 
         <!-- 主导航链接 -->
         <nav class="mobile-menu-nav" aria-label="主导航">
-          <a
-            v-for="item in navItems"
-            :key="item.text"
-            :href="item.link"
-            class="mobile-nav-link"
-            @click="handleNavigate"
-          >
-            {{ item.text }}
-          </a>
+          <template v-for="item in navItems" :key="item.text">
+            <!-- 带子菜单的导航项 -->
+            <div v-if="item.items && item.items.length" class="mobile-nav-group">
+              <a
+                :href="item.link"
+                class="mobile-nav-link"
+                @click="handleNavigate"
+              >
+                {{ item.text }}
+              </a>
+              <div class="mobile-nav-sub">
+                <a
+                  v-for="child in item.items"
+                  :key="child.directoryId || child.text"
+                  :href="child.link"
+                  class="mobile-nav-sub-link"
+                  :class="{ 'is-active': child.directoryId && selectedDirectoryId[child.spaceSlug] === child.directoryId }"
+                  @click="handleDirectoryClick($event, child)"
+                >
+                  {{ child.text }}
+                </a>
+              </div>
+            </div>
+            <!-- 普通导航项 -->
+            <a
+              v-else
+              :href="item.link"
+              class="mobile-nav-link"
+              @click="handleNavigate"
+            >
+              {{ item.text }}
+            </a>
+          </template>
         </nav>
 
         <!-- 分隔线 -->
@@ -283,7 +381,15 @@ onUnmounted(() => {
 .mobile-menu-logo {
   display: flex;
   align-items: center;
+  gap: var(--spacing-2);
   text-decoration: none;
+}
+
+.mobile-menu-logo-img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .mobile-menu-logo .logo-text {
@@ -352,6 +458,40 @@ onUnmounted(() => {
   outline-offset: -2px;
 }
 
+/* 导航子菜单 */
+.mobile-nav-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-nav-sub {
+  display: flex;
+  flex-direction: column;
+  padding-left: var(--spacing-4);
+}
+
+.mobile-nav-sub-link {
+  display: flex;
+  align-items: center;
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--c-text-2);
+  text-decoration: none;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.mobile-nav-sub-link:hover {
+  background-color: var(--c-hover);
+  color: var(--c-text-1);
+}
+
+.mobile-nav-sub-link.is-active {
+  color: rgba(235, 86, 0, 1);
+}
+
 /* ===== 分隔线 ===== */
 
 .mobile-menu-divider {
@@ -395,6 +535,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
+  padding-left: var(--spacing-3);
 }
 
 /* ===== 分组样式 ===== */
@@ -410,7 +551,7 @@ onUnmounted(() => {
 }
 
 .mobile-sidebar-group-title {
-  padding: var(--spacing-2) var(--spacing-3);
+  padding: var(--spacing-2) 0;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--c-text-3);

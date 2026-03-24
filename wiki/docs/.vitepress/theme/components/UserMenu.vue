@@ -72,6 +72,7 @@ async function handleLogout() {
   height: 32px;
   border-radius: 50%;
   object-fit: cover;
+  flex-shrink: 0;
 }
 
 .user-avatar-fallback {
@@ -85,6 +86,7 @@ async function handleLogout() {
   color: #fff;
   font-size: 14px;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .user-dropdown {

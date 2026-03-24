@@ -11,9 +11,9 @@ import ChevronIcon from './icons/ChevronIcon.vue'
 
 // 支持的语言列表
 const languages = [
-  { code: 'zh', name: '简体中文', path: '/zh/' },
-  { code: 'en', name: 'English', path: '/en/' },
-  { code: 'vi', name: 'Tiếng Việt', path: '/vi/' }
+  { code: 'zh', name: '简体中文', path: '/zh/', enabled: true },
+  { code: 'en', name: 'English', path: '/en/', enabled: false },
+  { code: 'vi', name: 'Tiếng Việt', path: '/vi/', enabled: false }
 ]
 
 // 下拉菜单状态
@@ -128,7 +128,11 @@ onUnmounted(() => {
         >
           <button
             class="lang-option"
-            :class="{ 'is-active': langItem.code === currentLang.code }"
+            :class="{
+              'is-active': langItem.code === currentLang.code,
+              'is-disabled': !langItem.enabled && langItem.code !== currentLang.code
+            }"
+            :disabled="!langItem.enabled && langItem.code !== currentLang.code"
             role="option"
             :aria-selected="langItem.code === currentLang.code"
             @click="switchLang(langItem)"
@@ -236,6 +240,18 @@ onUnmounted(() => {
   color: var(--c-accent);
   font-weight: var(--font-weight-medium);
 }
+
+.lang-option.is-disabled {
+  color: var(--c-text-4);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.lang-option.is-disabled:hover {
+  background-color: transparent;
+  color: var(--c-text-4);
+}
+
 
 /* 下拉动画 */
 .dropdown-enter-active,

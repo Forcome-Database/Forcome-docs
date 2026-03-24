@@ -7,6 +7,7 @@ const error = ref('')
 const processing = ref(true)
 
 onMounted(async () => {
+  document.title = '登录中... | FORCOME 知识库'
   const params = new URLSearchParams(window.location.search)
   const authCode = params.get('authCode')
   const state = params.get('state')
