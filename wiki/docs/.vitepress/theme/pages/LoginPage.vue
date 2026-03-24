@@ -208,11 +208,11 @@ onMounted(async () => {
   opacity: 0.05;
 }
 
-:global(.dark) .is-mounted .login-bg-glow--1 {
+.dark .login-page.is-mounted .login-bg-glow--1 {
   opacity: 0.08;
 }
 
-:global(.dark) .is-mounted .login-bg-glow--2 {
+.dark .login-page.is-mounted .login-bg-glow--2 {
   opacity: 0.06;
 }
 
@@ -240,7 +240,7 @@ onMounted(async () => {
   transform: translateY(0);
 }
 
-:global(.dark) .login-card {
+.dark .login-card {
   background: var(--c-bg-soft);
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.2),
@@ -452,7 +452,7 @@ onMounted(async () => {
   border: 1px solid rgba(239, 68, 68, 0.12);
 }
 
-:global(.dark) .login-error {
+.dark .login-error {
   background: rgba(239, 68, 68, 0.1);
   border-color: rgba(239, 68, 68, 0.2);
 }
