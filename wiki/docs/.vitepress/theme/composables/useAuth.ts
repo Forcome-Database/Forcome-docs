@@ -26,6 +26,23 @@ function clearAuthMarker() {
   document.cookie = 'authMarker=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
 }
 
+const USER_STORAGE_KEY = 'wiki_auth_user'
+
+function saveUserToStorage(user: AuthUser) {
+  try { localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user)) } catch {}
+}
+
+function loadUserFromStorage(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+function clearUserStorage() {
+  try { localStorage.removeItem(USER_STORAGE_KEY) } catch {}
+}
+
 function isInDingTalk(): boolean {
   if (typeof navigator === 'undefined') return false
   return /DingTalk/i.test(navigator.userAgent)
@@ -66,12 +83,21 @@ export function useAuth() {
     if (isInitialized.value) return
     isLoading.value = true
     try {
-      // authToken is httpOnly (invisible to JS), check authMarker instead
       if (hasCookie('authMarker')) {
+        // Restore from localStorage first (instant, no cross-origin issues)
+        const cached = loadUserFromStorage()
+        if (cached) {
+          currentUser.value = cached
+        }
+        // Try API refresh in background; don't clear auth on failure
+        // (cross-origin HTTPS→HTTP may block httpOnly cookies)
         const ok = await fetchUserInfo()
-        if (!ok) {
-          // authMarker exists but session expired — clear stale marker
+        if (ok && currentUser.value) {
+          saveUserToStorage(currentUser.value)
+        } else if (!cached) {
+          // No cached data AND API failed — session truly invalid
           clearAuthMarker()
+          clearUserStorage()
         }
       }
     } finally {
@@ -87,7 +113,8 @@ export function useAuth() {
       isLoading.value = true
       const result = await authService.dingtalkCallback(authCode)
       currentUser.value = result.user
-      setAuthMarker() // non-httpOnly marker so JS can detect login
+      setAuthMarker()
+      saveUserToStorage(result.user)
       return true
     } catch (err) {
       console.error('[Auth] DingTalk callback failed:', err)
@@ -105,6 +132,7 @@ export function useAuth() {
       const result = await authService.dingtalkH5Login(code)
       currentUser.value = result.user
       setAuthMarker()
+      saveUserToStorage(result.user)
       return true
     } catch (err) {
       console.error('[Auth] H5 login failed:', err)
@@ -125,6 +153,7 @@ export function useAuth() {
     }
     currentUser.value = null
     clearAuthMarker()
+    clearUserStorage()
   }
 
   return {

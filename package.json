@@ -6,6 +6,7 @@
   "scripts": {
     "build": "nx run-many -t build",
     "start": "pnpm --filter ./apps/server run start:prod",
+    "db:schema:prod": "pnpm --filter ./apps/server exec tsx src/database/schema-only-migration.ts",
     "collab": "pnpm --filter ./apps/server run collab:prod",
     "collab:dev": "pnpm --filter ./apps/server run collab:dev",
     "server:build": "nx run server:build",

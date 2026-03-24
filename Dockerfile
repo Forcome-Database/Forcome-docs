@@ -9,6 +9,10 @@ WORKDIR /app
 
 COPY . .
 
+# VITE_* vars must be available at build time (baked into static client bundle)
+ARG VITE_WIKI_URL
+ENV VITE_WIKI_URL=$VITE_WIKI_URL
+
 RUN pnpm install --frozen-lockfile
 RUN pnpm build
 

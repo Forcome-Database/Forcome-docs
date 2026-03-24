@@ -1188,8 +1188,8 @@ export class AiSearchService {
     });
 
     try {
-      for await (const chunk of result.textStream) {
-        yield JSON.stringify({ content: chunk });
+      for await (const text of this.stripThinkBlocks(result.textStream)) {
+        yield JSON.stringify({ content: text });
       }
     } catch (streamError: any) {
       const message = streamError?.message || '';
@@ -1207,6 +1207,65 @@ export class AiSearchService {
         return;
       }
       throw streamError;
+    }
+  }
+
+  /**
+   * Strip <think>...</think> blocks from a streaming text generator.
+   * Some models (DeepSeek, Gemini via proxy, etc.) emit reasoning tokens
+   * wrapped in <think> tags that should not be shown to the user.
+   * Handles tags split across multiple chunks.
+   */
+  private async *stripThinkBlocks(
+    textStream: AsyncIterable<string>,
+  ): AsyncGenerator<string> {
+    let inside = false;
+    let buffer = '';
+
+    for await (const chunk of textStream) {
+      buffer += chunk;
+      let out = '';
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        if (inside) {
+          const idx = buffer.indexOf('</think>');
+          if (idx === -1) {
+            // Still inside think block; keep only potential partial close tag
+            buffer = buffer.length > 8 ? buffer.slice(-8) : buffer;
+            break;
+          }
+          buffer = buffer.slice(idx + 8);
+          inside = false;
+        } else {
+          const idx = buffer.indexOf('<think>');
+          if (idx !== -1) {
+            out += buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 7);
+            inside = true;
+          } else {
+            // Keep potential partial '<think>' at tail
+            let keep = 0;
+            for (let k = 1; k <= Math.min(7, buffer.length); k++) {
+              if ('<think>'.startsWith(buffer.slice(-k))) {
+                keep = k;
+              }
+            }
+            out += buffer.slice(0, buffer.length - keep);
+            buffer = keep ? buffer.slice(-keep) : '';
+            break;
+          }
+        }
+      }
+
+      if (out) {
+        yield out;
+      }
+    }
+
+    // Flush remaining buffer if not inside a think block
+    if (buffer && !inside) {
+      yield buffer;
     }
   }
 }

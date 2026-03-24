@@ -92,7 +92,7 @@
 .ai-chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: var(--spacing-4);
+  padding: var(--spacing-5) var(--spacing-4);
 }
 
 /* ===== Bubble.List 样式覆盖（限定在 .ai-chat-messages 内） ===== */
@@ -100,26 +100,45 @@
   height: 100%;
 }
 
+/* 气泡间距：拉大消息之间的垂直呼吸感 */
+.ai-chat-messages .ant-bubble-list {
+  gap: var(--spacing-5) !important;
+}
+
 .ai-chat-messages .ant-bubble-content {
   font-size: var(--font-size-sm);
   line-height: var(--line-height-relaxed);
 }
 
-/* 用户气泡：filled 橙色 */
-.ai-chat-messages .ant-bubble[class*="end"] {
-  max-width: 85%;
+/* 用户气泡：精炼的对话气泡形态 */
+.ai-chat-messages .ant-bubble-end {
+  align-items: flex-end;
+}
+
+.ai-chat-messages .ant-bubble-end .ant-bubble-content {
+  max-width: 80%;
+  padding: var(--spacing-2) var(--spacing-3) !important;
+  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-sm) var(--radius-xl) !important;
+  line-height: var(--line-height-normal);
 }
 
 /* 助手气泡：borderless，全宽，无背景 */
-.ai-chat-messages .ant-bubble[class*="start"] {
+.ai-chat-messages .ant-bubble-start {
   max-width: 100%;
+  align-items: flex-start;
 }
 
-.ai-chat-messages .ant-bubble[class*="start"] .ant-bubble-content {
+.ai-chat-messages .ant-bubble-start .ant-bubble-avatar {
+  margin-top: 2px;
+}
+
+.ai-chat-messages .ant-bubble-start .ant-bubble-content {
   background: none !important;
   border: none !important;
   padding: 0 !important;
   box-shadow: none !important;
+  flex: 1;
+  min-width: 0;
 }
 
 /* ===== AI Markdown 渲染样式 ===== */
@@ -141,30 +160,30 @@
 
 /* 段落 */
 .ai-chat-markdown p {
-  margin: 0.5em 0;
+  margin: 0.6em 0;
 }
 
 /* 标题（缩小比例适配 400px 面板） */
 .ai-chat-markdown h1 {
-  font-size: 1.4em;
+  font-size: 1.3em;
   font-weight: var(--font-weight-bold);
-  margin: 1em 0 0.5em;
+  margin: 1.2em 0 0.5em;
   color: var(--c-text-1);
   border-bottom: 1px solid var(--c-border);
   padding-bottom: 0.3em;
 }
 
 .ai-chat-markdown h2 {
-  font-size: 1.25em;
+  font-size: 1.15em;
   font-weight: var(--font-weight-semibold);
-  margin: 0.8em 0 0.4em;
+  margin: 1em 0 0.4em;
   color: var(--c-text-1);
 }
 
 .ai-chat-markdown h3 {
-  font-size: 1.1em;
+  font-size: 1.05em;
   font-weight: var(--font-weight-semibold);
-  margin: 0.7em 0 0.3em;
+  margin: 0.8em 0 0.3em;
   color: var(--c-text-1);
 }
 

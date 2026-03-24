@@ -8,6 +8,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VITE_WIKI_URL: ${VITE_WIKI_URL}
     environment:
       AGENT_SERVICE_URL: http://agent-service:${AGENT_PORT:-8100}
       DOCMOST_INTERNAL_URL: http://docmost:${PORT:-3000}
