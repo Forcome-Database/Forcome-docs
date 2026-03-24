@@ -47,3 +47,4 @@ lerna-debug.log*
 __pycache__/
 *.py[cod]
 output/
+.pnpm-store/
