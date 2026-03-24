@@ -35,6 +35,7 @@
         "ant-design-x-vue": "^1.5.0",
         "dayjs": "^1.11.0",
         "dingtalk-jsapi": "^3.2.8",
+        "dompurify": "^3.3.3",
         "highlight.js": "^11.9.0",
         "katex": "0.16.27",
         "markdown-it": "^14.1.0",

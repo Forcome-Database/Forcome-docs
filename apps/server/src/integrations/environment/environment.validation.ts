@@ -207,6 +207,10 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PUBLIC_WIKI_AI_MAX_IMAGE_BYTES: string;
+
+  @IsOptional()
+  @IsString()
+  PUBLIC_WIKI_AI_ALLOWED_ORIGINS: string;
 }
 
 export function validate(config: Record<string, any>) {

@@ -384,6 +384,15 @@ export class EnvironmentService {
     );
   }
 
+  getPublicWikiAiAllowedOrigins(): string[] {
+    const origins = this.configService.get<string>(
+      'PUBLIC_WIKI_AI_ALLOWED_ORIGINS',
+    );
+    return origins
+      ? origins.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+  }
+
   getCookieDomain(): string | undefined {
     return this.configService.get<string>('COOKIE_DOMAIN');
   }

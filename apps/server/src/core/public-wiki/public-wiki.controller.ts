@@ -100,12 +100,22 @@ export class PublicWikiController {
     @Req() req: FastifyRequest,
     @Res() res: FastifyReply,
   ) {
-    const origin = (res.request?.headers as any)?.origin || '*';
+    const origin = req.headers.origin as string | undefined;
+
+    // Origin whitelist check (before any processing)
+    try {
+      this.publicWikiService.enforceOrigin(origin);
+    } catch (err: any) {
+      res.status(err.status || 403).send({ error: err.message });
+      return;
+    }
+
+    const allowedOrigin = origin || '*';
     res.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
-      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Origin': allowedOrigin,
       'Access-Control-Allow-Credentials': 'true',
     });
 

@@ -5,6 +5,7 @@
 import MarkdownIt from 'markdown-it'
 import container from 'markdown-it-container'
 import taskLists from 'markdown-it-task-lists'
+import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/core'
 
 // 注册常用语言
@@ -60,7 +61,7 @@ md.renderer.rules.fence = function (tokens, idx) {
   }
 
   const escaped = md.utils.escapeHtml(str)
-  const dataCode = str.replace(/"/g, '&quot;').replace(/\n$/, '')
+  const dataCode = md.utils.escapeHtml(str.replace(/\n$/, ''))
   const langLabel = lang || 'text'
 
   let highlighted: string
@@ -131,5 +132,8 @@ md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
 
 export function renderMarkdownToHtml(content: string): string {
   if (!content) return ''
-  return md.render(content)
+  const raw = md.render(content)
+  return DOMPurify.sanitize(raw, {
+    ADD_ATTR: ['data-code'],
+  })
 }

@@ -17,6 +17,8 @@ import { updateAttachmentAttr } from '../share/share.util';
 import { Node } from '@tiptap/pm/model';
 import { Page } from '@docmost/db/types/entity.types';
 import { ModuleRef } from '@nestjs/core';
+import { RedisService } from '@nestjs-labs/nestjs-ioredis';
+import type { Redis } from 'ioredis';
 import type {
   AiChatMessage,
   AiImagePayload,
@@ -47,7 +49,7 @@ interface PublicPageScopeEntry {
 @Injectable()
 export class PublicWikiService {
   private readonly logger = new Logger(PublicWikiService.name);
-  private readonly publicAiRateLimitBuckets = new Map<string, number[]>();
+  private readonly redis: Redis;
 
   constructor(
     @InjectKysely() private readonly db: KyselyDB,
@@ -57,7 +59,10 @@ export class PublicWikiService {
     private readonly environmentService: EnvironmentService,
     private readonly searchService: SearchService,
     private readonly moduleRef: ModuleRef,
-  ) {}
+    private readonly redisService: RedisService,
+  ) {
+    this.redis = this.redisService.getOrThrow();
+  }
 
   async getSettings(workspaceId: string) {
     const workspace = await this.db
@@ -213,30 +218,47 @@ export class PublicWikiService {
     }
   }
 
-  private enforcePublicAiRateLimit(
+  private async enforcePublicAiRateLimit(
     workspaceId: string,
     requesterKey?: string,
-  ): void {
-    const key = `${workspaceId}:${requesterKey || 'anonymous'}`;
+  ): Promise<void> {
+    const bucketKey = `ratelimit:public-wiki-ai:${workspaceId}:${requesterKey || 'anonymous'}`;
     const now = Date.now();
     const windowMs = this.environmentService.getPublicWikiAiRateLimitWindowMs();
     const maxRequests =
       this.environmentService.getPublicWikiAiRateLimitMaxRequests();
+    const windowStart = now - windowMs;
 
-    const bucket = (
-      this.publicAiRateLimitBuckets.get(key) || []
-    ).filter((timestamp) => now - timestamp < windowMs);
+    // Atomic pipeline: clean expired + count + add new entry + set TTL
+    const results = await this.redis
+      .multi()
+      .zremrangebyscore(bucketKey, 0, windowStart)
+      .zcard(bucketKey)
+      .zadd(bucketKey, now, `${now}:${Math.random().toString(36).slice(2, 8)}`)
+      .pexpire(bucketKey, windowMs)
+      .exec();
 
-    if (bucket.length >= maxRequests) {
-      this.logger.warn(`Public wiki AI rate limited: ${key}`);
+    // results[1] = [err, count] from zcard
+    const count = results?.[1]?.[1] as number;
+    if (count >= maxRequests) {
+      // Remove the entry we just added since request is denied
+      await this.redis.zremrangebyscore(bucketKey, now, now);
+      this.logger.warn(`Public wiki AI rate limited: ${bucketKey}`);
       throw new HttpException(
         'Too many requests',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
+  }
 
-    bucket.push(now);
-    this.publicAiRateLimitBuckets.set(key, bucket);
+  enforceOrigin(origin: string | undefined): void {
+    const allowed = this.environmentService.getPublicWikiAiAllowedOrigins();
+    // Empty whitelist = allow all (backward compatible)
+    if (allowed.length === 0) return;
+
+    if (!origin || !allowed.includes(origin)) {
+      throw new HttpException('Origin not allowed', HttpStatus.FORBIDDEN);
+    }
   }
 
   async getPublicSpaces(workspaceId: string) {
@@ -646,7 +668,7 @@ export class PublicWikiService {
 
   async *aiAnswers(input: PublicWikiAiAnswerInput): AsyncGenerator<string> {
     this.enforcePublicAiLimits(input);
-    this.enforcePublicAiRateLimit(input.workspaceId, input.requesterKey);
+    await this.enforcePublicAiRateLimit(input.workspaceId, input.requesterKey);
 
     const { page, scope } = await this.resolvePublicPageScope(
       input.workspaceId,
