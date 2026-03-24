@@ -1,7 +1,13 @@
-# AI Agent 智能体重构 — 开发记录
+# AI Agent 智能体重构 — 历史开发记录（LangGraph 方案）
 
+> 状态：历史记录。本文记录的是 2026-03-04 基于 LangGraph 的方案与当时的踩坑过程，已不代表当前 `agent-service/` 实现。
+>
+> 当前权威入口：
+> - [当前架构说明](../agent-service/ARCHITECTURE.md)
+> - [仓库级开发指南](../CLAUDE.md)
+>
 > 创建日期：2026-03-04
-> 基于设计文档：`docs/plans/2026-03-03-ai-agent-architecture-design.md`
+> 基于设计文档：[`./plans/2026-03-03-ai-agent-architecture-design.md`](./plans/2026-03-03-ai-agent-architecture-design.md)
 
 ## 概述
 
@@ -245,8 +251,8 @@ await emit(tid, {"type": "step_start", "step": "parse", "description": "正在�
 
 ## 设计文档
 
-- **[架构设计](docs/plans/2026-03-03-ai-agent-architecture-design.md)** — 完整架构、9 工具、SSE 协议、部署方案
-- **[实施计划](docs/plans/2026-03-03-ai-agent-impl-plan.md)** — 6 Phase, 21 Tasks, ~50 文件
+- **[架构设计](./plans/2026-03-03-ai-agent-architecture-design.md)** — 完整架构、9 工具、SSE 协议、部署方案
+- **[实施计划](./plans/2026-03-03-ai-agent-impl-plan.md)** — 6 Phase, 21 Tasks, ~50 文件
 
 ## 提交历史（22 commits）
 

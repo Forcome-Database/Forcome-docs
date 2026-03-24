@@ -2,7 +2,7 @@
 
 > **状态**: 待审批
 > **日期**: 2026-03-14
-> **关联分析**: [docs/plans/2026-03-14-ai-creator-deep-analysis-and-refactor.md](../plans/2026-03-14-ai-creator-deep-analysis-and-refactor.md)
+> **关联分析**: [../../plans/2026-03-14-ai-creator-deep-analysis-and-refactor.md](../../plans/2026-03-14-ai-creator-deep-analysis-and-refactor.md)
 
 ---
 

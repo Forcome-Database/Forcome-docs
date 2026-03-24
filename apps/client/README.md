@@ -1,27 +1,30 @@
-# React + TypeScript + Vite
+# Client 前端应用
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+`apps/client/` 是 Docmost 主前端，基于 React 18 + TypeScript + Vite，负责后台管理、编辑器、工作区和 AI 交互界面。
 
-Currently, two official plugins are available:
+## 主要职责
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 页面与路由层
+- 工作区、空间、页面等业务界面
+- 编辑器集成与 AI 创作面板
+- 权限、会话、通知和前端状态管理
 
-## Expanding the ESLint configuration
+## 目录概览
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+- `src/pages/`：页面级入口
+- `src/features/`：按业务聚合的功能模块
+- `src/components/`：通用组件
+- `src/hooks/`：通用 Hook
+- `src/lib/`：工具函数与前端基础设施
+- `src/ee/`：企业版与增强功能前端实现
 
-- Configure the top-level `parserOptions` property like this:
+## 常用命令
 
-```js
-   parserOptions: {
-    ecmaVersion: 'latest',
-    sourceType: 'module',
-    project: ['./tsconfig.json', './tsconfig.node.json'],
-    tsconfigRootDir: __dirname,
-   },
+```bash
+# 在仓库根目录运行
+pnpm client:dev
+pnpm --filter ./apps/client run build
+pnpm --filter ./apps/client run lint
 ```
 
-- Replace `plugin:@typescript-eslint/recommended` to `plugin:@typescript-eslint/recommended-type-checked` or `plugin:@typescript-eslint/strict-type-checked`
-- Optionally add `plugin:@typescript-eslint/stylistic-type-checked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and add `plugin:react/recommended` & `plugin:react/jsx-runtime` to the `extends` list
+如需查看仓库级开发入口与相关文档，请回到 [README.md](../../README.md) 和 [CLAUDE.md](../../CLAUDE.md)。

@@ -95,7 +95,7 @@ AI_RERANK_API_URL=http://74.211.105.94:3008/v1
 - 用 `prosemirrorToTextWithImages()` 将 ProseMirror JSON 转成带内联图片 markdown
 - 图片使用绝对路径 `${APP_URL}/api/files/{attachmentId}/{fileName}`
 - 图片描述从 `page_embeddings.metadata` 获取，附在图片 markdown 之后
-- 系统提示词：引导模型保留 `![描述](链接)` 格式，使图片在回答中直接渲染
+- 系统提示词：引导模型保留 `![描述](https://example.invalid/image.png)` 格式，使图片在回答中直接渲染
 - 来源引用优化：单来源时不标 `[N]`，多来源时才要求标注
 
 **用户上传图片格式修复：**
