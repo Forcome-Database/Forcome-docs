@@ -6,11 +6,10 @@
  * 职责：管理整体页面结构和全局状态
  * 需求: 1.1-1.6, 8.1-8.7, 14.5
  */
-import { ref, computed, provide, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, provide, onMounted, onUnmounted } from 'vue'
 import { useData, Content, useRoute } from 'vitepress'
 import { useTheme } from './composables/useTheme'
 import { useSidebar } from './composables/useSidebar'
-import { useLazyImages } from './composables/useLazyImages'
 import NavBar from './components/NavBar.vue'
 import SideBar from './components/SideBar.vue'
 import RightPanel from './components/RightPanel.vue'

@@ -130,6 +130,7 @@ export interface ChatMessage {
   images?: ChatMessageImage[]
   /** AI 来源引用（仅 assistant 消息） */
   sources?: AiSource[]
+  citations?: AiCitation[]
 }
 
 /** AI 来源引用 */
@@ -137,6 +138,20 @@ export interface AiSource {
   title: string
   slugId: string
   spaceSlug: string
+}
+
+export type AiSourceType = 'page' | 'attachment' | 'image' | 'diagram'
+
+export interface AiCitation {
+  sourceType: AiSourceType
+  title: string
+  pageSlugId?: string
+  slugId?: string
+  spaceSlug?: string
+  attachmentId?: string
+  pageUrl?: string
+  publicAssetUrl?: string
+  snippet?: string
 }
 
 /** 发送给后端的历史消息 */
@@ -369,6 +384,7 @@ export interface DocmostSearchResult {
 /** Docmost AI 流式事件 */
 export interface DocmostAiStreamEvent {
   sources?: { title: string; slugId: string; spaceSlug: string }[]
+  citations?: AiCitation[]
   content?: string
   error?: string
 }

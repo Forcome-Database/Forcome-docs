@@ -1,0 +1,58 @@
+# =============================================================================
+# Docmost Docker Compose - 生产环境覆盖层
+# 构建优化镜像，数据库和 MinIO 使用外部资源
+# =============================================================================
+
+services:
+  docmost:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      AGENT_SERVICE_URL: http://agent-service:${AGENT_PORT:-8100}
+      DOCMOST_INTERNAL_URL: http://docmost:${PORT:-3000}
+      REDIS_URL: redis://redis:6379
+    env_file: .env.prod
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    volumes:
+      - docmost_storage:/app/data/storage
+    networks:
+      - docmost-network
+
+  agent-service:
+    build:
+      context: ./agent-service
+      dockerfile: Dockerfile
+    environment:
+      AGENT_PORT: ${AGENT_PORT:-8100}
+      DOCMOST_INTERNAL_URL: http://docmost:${PORT:-3000}
+      REDIS_URL: redis://redis:6379
+    env_file: .env.prod
+    restart: unless-stopped
+    volumes:
+      - docmost_storage:/app/data/storage
+    depends_on:
+      - redis
+    networks:
+      - docmost-network
+
+  wiki:
+    build:
+      context: .
+      dockerfile: docker/wiki.Dockerfile
+      args:
+        VITE_DOCMOST_API_URL: ${VITE_DOCMOST_API_URL}
+        VITE_ADMIN_URL: ${VITE_ADMIN_URL}
+        VITE_DIFY_MODE: ${VITE_DIFY_MODE:-api}
+        VITE_DIFY_API_BASE: ${VITE_DIFY_API_BASE}
+        VITE_DIFY_API_KEY: ${VITE_DIFY_API_KEY}
+        VITE_DIFY_EMBED_URL: ${VITE_DIFY_EMBED_URL}
+    ports:
+      - "${WIKI_PORT:-5175}:80"
+    restart: unless-stopped
+    networks:
+      - docmost-network

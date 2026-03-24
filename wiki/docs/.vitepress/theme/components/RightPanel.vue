@@ -3,14 +3,11 @@
  * 右侧面板组件
  * 仿 Cursor 官网右侧区域：AI 入口 + 目录 + 工具栏
  */
-import { ref, computed, onMounted, onUnmounted, watch, nextTick, inject } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useData } from 'vitepress'
 
 // 获取页面数据
 const { page } = useData()
-
-// 注入 layout 提供的方法
-const layout = inject<{ toggleAIChat: () => void }>('layout')
 
 // 目录项接口
 interface OutlineItem {
@@ -36,13 +33,6 @@ const pageUrl = computed(() => {
   if (typeof window === 'undefined') return ''
   return window.location.href
 })
-
-/**
- * 打开 AI 对话
- */
-const openAIChat = () => {
-  layout?.toggleAIChat()
-}
 
 /**
  * 从页面提取标题生成目录

@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,21 +13,41 @@ import { SpaceRepo } from '@docmost/db/repos/space/space.repo';
 import { TokenService } from '../auth/services/token.service';
 import { EnvironmentService } from '../../integrations/environment/environment.service';
 import { SearchService } from '../search/search.service';
-import { jsonToHtml, jsonToNode } from '../../collaboration/collaboration.util';
-import {
-  getAttachmentIds,
-  getProsemirrorContent,
-  isAttachmentNode,
-  removeMarkTypeFromDoc,
-} from '../../common/helpers/prosemirror/utils';
 import { updateAttachmentAttr } from '../share/share.util';
 import { Node } from '@tiptap/pm/model';
 import { Page } from '@docmost/db/types/entity.types';
 import { ModuleRef } from '@nestjs/core';
+import type {
+  AiChatMessage,
+  AiImagePayload,
+  RetrievalScope,
+} from '../../ee/ai/services/ai-search.service';
+
+interface PublicWikiAiAnswerInput {
+  query: string;
+  workspaceId: string;
+  pageSlugId?: string;
+  images?: AiImagePayload[];
+  history?: AiChatMessage[];
+  requesterKey?: string;
+}
+
+interface PublicSpaceScopeEntry {
+  id: string;
+  slug: string;
+}
+
+interface PublicPageScopeEntry {
+  id: string;
+  slugId: string;
+  spaceId: string;
+  spaceSlug: string;
+}
 
 @Injectable()
 export class PublicWikiService {
   private readonly logger = new Logger(PublicWikiService.name);
+  private readonly publicAiRateLimitBuckets = new Map<string, number[]>();
 
   constructor(
     @InjectKysely() private readonly db: KyselyDB,
@@ -61,6 +83,160 @@ export class PublicWikiService {
     // 空列表 = 所有空间公开
     if (slugs.length === 0) return true;
     return slugs.map((s) => s.toLowerCase()).includes(slug.toLowerCase());
+  }
+
+  private async resolvePublicSpaces(
+    workspaceId: string,
+    requestedSpaceSlug?: string,
+  ): Promise<PublicSpaceScopeEntry[]> {
+    const requestedSlugs = requestedSpaceSlug
+      ? [requestedSpaceSlug]
+      : this.getPublicSpaceSlugs();
+
+    let query = this.db
+      .selectFrom('spaces')
+      .select(['id', 'slug'])
+      .where('workspaceId', '=', workspaceId);
+
+    if (requestedSlugs.length > 0) {
+      query = query.where((eb) =>
+        eb.or(
+          requestedSlugs.map((slug) =>
+            eb(eb.fn('LOWER', ['slug']), '=', slug.toLowerCase()),
+          ),
+        ),
+      );
+    }
+
+    return (await query.execute()) as PublicSpaceScopeEntry[];
+  }
+
+  private async resolvePublicPageScope(
+    workspaceId: string,
+    pageSlugId?: string,
+  ): Promise<{
+    spaces: PublicSpaceScopeEntry[];
+    page: PublicPageScopeEntry | null;
+    scope: RetrievalScope;
+  }> {
+    const spaces = await this.resolvePublicSpaces(workspaceId);
+    const allowedSpaceIds = spaces.map((space) => space.id);
+
+    if (allowedSpaceIds.length === 0) {
+      throw new NotFoundException('No public spaces found');
+    }
+
+    let page: PublicPageScopeEntry | null = null;
+    if (pageSlugId) {
+      page = (await this.db
+        .selectFrom('pages')
+        .innerJoin('spaces', 'spaces.id', 'pages.spaceId')
+        .select([
+          'pages.id as id',
+          'pages.slugId as slugId',
+          'pages.spaceId as spaceId',
+          'spaces.slug as spaceSlug',
+        ])
+        .where('pages.workspaceId', '=', workspaceId)
+        .where('pages.slugId', '=', pageSlugId)
+        .where('pages.deletedAt', 'is', null)
+        .where('pages.spaceId', 'in', allowedSpaceIds)
+        .executeTakeFirst()) as PublicPageScopeEntry | null;
+
+      if (!page) {
+        throw new NotFoundException('Page not found');
+      }
+    }
+
+    return {
+      spaces,
+      page,
+      scope: {
+        isPublicWiki: true,
+        allowedSpaceIds,
+        currentPageId: page?.id,
+      },
+    };
+  }
+
+  private enforcePublicAiLimits(input: PublicWikiAiAnswerInput): void {
+    if (!this.environmentService.isPublicWikiAiEnabled()) {
+      throw new HttpException(
+        'Public wiki AI is disabled',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    const query = input.query?.trim() || '';
+    if (!query) {
+      throw new BadRequestException('Query is required');
+    }
+
+    if (query.length > this.environmentService.getPublicWikiAiMaxQueryChars()) {
+      throw new BadRequestException('Query is too long');
+    }
+
+    const history = input.history || [];
+    if (
+      history.length >
+      this.environmentService.getPublicWikiAiMaxHistoryMessages()
+    ) {
+      throw new BadRequestException('History is too long');
+    }
+
+    const historyChars = history.reduce(
+      (total, message) => total + (message.content?.length || 0),
+      0,
+    );
+    if (
+      historyChars >
+      this.environmentService.getPublicWikiAiMaxHistoryChars()
+    ) {
+      throw new BadRequestException('History payload is too large');
+    }
+
+    const images = input.images || [];
+    if (images.length > this.environmentService.getPublicWikiAiMaxImages()) {
+      throw new BadRequestException('Too many images');
+    }
+
+    const imageBytes = images.reduce((total, image) => {
+      try {
+        return total + Buffer.from(image.data, 'base64').byteLength;
+      } catch {
+        throw new BadRequestException('Invalid image payload');
+      }
+    }, 0);
+
+    if (imageBytes > this.environmentService.getPublicWikiAiMaxImageBytes()) {
+      throw new BadRequestException('Images are too large');
+    }
+  }
+
+  private enforcePublicAiRateLimit(
+    workspaceId: string,
+    requesterKey?: string,
+  ): void {
+    const key = `${workspaceId}:${requesterKey || 'anonymous'}`;
+    const now = Date.now();
+    const windowMs = this.environmentService.getPublicWikiAiRateLimitWindowMs();
+    const maxRequests =
+      this.environmentService.getPublicWikiAiRateLimitMaxRequests();
+
+    const bucket = (
+      this.publicAiRateLimitBuckets.get(key) || []
+    ).filter((timestamp) => now - timestamp < windowMs);
+
+    if (bucket.length >= maxRequests) {
+      this.logger.warn(`Public wiki AI rate limited: ${key}`);
+      throw new HttpException(
+        'Too many requests',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    bucket.push(now);
+    this.publicAiRateLimitBuckets.set(key, bucket);
   }
 
   async getPublicSpaces(workspaceId: string) {
@@ -369,6 +545,7 @@ export class PublicWikiService {
       );
       content = jsonToMarkdown(processedContent);
     } else {
+      const { jsonToHtml } = await import('../../collaboration/collaboration.util');
       content = jsonToHtml(processedContent);
     }
 
@@ -441,25 +618,7 @@ export class PublicWikiService {
       return { items: [] };
     }
 
-    // Get public space IDs
-    const slugs = spaceSlug ? [spaceSlug] : this.getPublicSpaceSlugs();
-
-    let spaceQuery = this.db
-      .selectFrom('spaces')
-      .select(['id', 'slug'])
-      .where('workspaceId', '=', workspaceId);
-
-    if (slugs.length > 0) {
-      spaceQuery = spaceQuery.where((eb) =>
-        eb.or(
-          slugs.map((slug) =>
-            eb(eb.fn('LOWER', ['slug']), '=', slug.toLowerCase()),
-          ),
-        ),
-      );
-    }
-
-    const spaces = await spaceQuery.execute();
+    const spaces = await this.resolvePublicSpaces(workspaceId, spaceSlug);
 
     if (spaces.length === 0) {
       return { items: [] };
@@ -485,13 +644,15 @@ export class PublicWikiService {
     return { items: allResults.slice(0, limit || 25) };
   }
 
-  async *aiAnswers(
-    query: string,
-    workspaceId: string,
-    pageSlugId?: string,
-    images?: { data: string; mimeType: string }[],
-    history?: { role: string; content: string }[],
-  ): AsyncGenerator<string> {
+  async *aiAnswers(input: PublicWikiAiAnswerInput): AsyncGenerator<string> {
+    this.enforcePublicAiLimits(input);
+    this.enforcePublicAiRateLimit(input.workspaceId, input.requesterKey);
+
+    const { page, scope } = await this.resolvePublicPageScope(
+      input.workspaceId,
+      input.pageSlugId,
+    );
+
     let AiSearchService: any;
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -505,18 +666,29 @@ export class PublicWikiService {
       return;
     }
 
-    for await (const chunk of AiSearchService.answerWithContext(
-      query,
-      workspaceId,
-      pageSlugId,
-      images,
-      history,
-    )) {
+    this.logger.log(
+      `Public wiki AI request workspace=${input.workspaceId} page=${page?.slugId || '-'} requester=${input.requesterKey || 'anonymous'}`,
+    );
+
+    for await (const chunk of AiSearchService.answerWithContext({
+      query: input.query,
+      workspaceId: input.workspaceId,
+      pageSlugId: page?.slugId,
+      images: input.images,
+      history: input.history,
+      scope,
+    })) {
       yield chunk;
     }
   }
 
   private async updatePublicAttachments(page: Page): Promise<any> {
+    const {
+      getAttachmentIds,
+      getProsemirrorContent,
+      isAttachmentNode,
+      removeMarkTypeFromDoc,
+    } = await import('../../common/helpers/prosemirror/utils');
     const prosemirrorJson = getProsemirrorContent(page.content);
     const attachmentIds = getAttachmentIds(prosemirrorJson);
     const attachmentMap = new Map<string, string>();
@@ -532,6 +704,7 @@ export class PublicWikiService {
       }),
     );
 
+    const { jsonToNode } = await import('../../collaboration/collaboration.util');
     const doc = jsonToNode(prosemirrorJson);
 
     doc?.descendants((node: Node) => {

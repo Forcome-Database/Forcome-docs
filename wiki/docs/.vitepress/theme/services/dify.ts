@@ -215,5 +215,10 @@ export function createDifyService(): DifyService | null {
     return null
   }
 
-  return new DifyService({ apiBase, apiKey })
+  return new DifyService({
+    mode: 'api',
+    apiBase,
+    apiKey,
+    embedUrl: ''
+  })
 }

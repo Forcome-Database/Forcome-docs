@@ -11,11 +11,11 @@ export function updateAttachmentAttr(
     (attrVal.startsWith('/files') || attrVal.startsWith('/api/files'))
   ) {
     // @ts-ignore
-    node.attrs[attr] = updateAttachmentUrl(attrVal, token);
+    node.attrs[attr] = buildPublicAttachmentUrl(attrVal, token);
   }
 }
 
-function updateAttachmentUrl(src: string, jwtToken: string) {
+export function buildPublicAttachmentUrl(src: string, jwtToken: string) {
   const updatedSrc = src.replace('/files/', '/files/public/');
   const separator = updatedSrc.includes('?') ? '&' : '?';
   return `${updatedSrc}${separator}jwt=${jwtToken}`;

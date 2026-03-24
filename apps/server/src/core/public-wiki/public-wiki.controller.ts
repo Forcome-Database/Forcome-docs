@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Logger,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -20,7 +21,7 @@ import {
   PublicSearchDto,
   PublicAiAnswerDto,
 } from './dto/public-wiki.dto';
-import { FastifyReply } from 'fastify';
+import { FastifyReply, FastifyRequest } from 'fastify';
 
 @UseGuards(JwtAuthGuard)
 @Controller('public-wiki')
@@ -96,6 +97,7 @@ export class PublicWikiController {
   async aiAnswers(
     @Body() dto: PublicAiAnswerDto,
     @AuthWorkspace() workspace: Workspace,
+    @Req() req: FastifyRequest,
     @Res() res: FastifyReply,
   ) {
     const origin = (res.request?.headers as any)?.origin || '*';
@@ -108,13 +110,19 @@ export class PublicWikiController {
     });
 
     try {
-      for await (const chunk of this.publicWikiService.aiAnswers(
-        dto.query,
-        workspace.id,
-        dto.pageSlugId,
-        dto.images,
-        dto.history,
-      )) {
+      const forwardedFor = req.headers['x-forwarded-for'];
+      const requesterKey = Array.isArray(forwardedFor)
+        ? forwardedFor[0]
+        : forwardedFor || req.ip;
+
+      for await (const chunk of this.publicWikiService.aiAnswers({
+        query: dto.query,
+        workspaceId: workspace.id,
+        pageSlugId: dto.pageSlugId,
+        images: dto.images,
+        history: dto.history,
+        requesterKey,
+      })) {
         res.raw.write(`data: ${chunk}\n\n`);
       }
       res.raw.write('data: [DONE]\n\n');

@@ -36,7 +36,7 @@ const { theme } = useData()
 const route = useRoute()
 
 // Docmost 动态侧边栏
-const { isAvailable: hasDocmost, loadSpaces, sidebarData, spaces: docmostSpaces, buildSidebarForRoute, isDocmostRoute, isLoaded: docmostLoaded } = useDocmostSidebar()
+const { isAvailable: hasDocmost, loadSpaces, sidebarData, buildSidebarForRoute, isDocmostRoute, isLoaded: docmostLoaded } = useDocmostSidebar()
 
 // 初始化时加载 Docmost 数据
 onMounted(() => {

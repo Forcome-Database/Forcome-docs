@@ -1,3 +1,5 @@
+import { projectProsemirrorToContextText } from '../../../common/helpers/prosemirror/content-projection';
+
 export interface ImageNodeInfo {
   attachmentId: string;
   src: string;
@@ -65,64 +67,26 @@ export function extractDiagramNodes(prosemirrorJson: any): DiagramNodeInfo[] {
   return results;
 }
 
-/**
- * 将 ProseMirror JSON 转成带内联图片 markdown 的文本。
- * 图片保留在原始位置，使用 ![alt](absoluteUrl) 格式。
- */
 export function prosemirrorToTextWithImages(
   node: any,
   appUrl: string,
   imageDescriptions?: Map<string, string>,
 ): string {
-  if (!node || typeof node !== 'object') return '';
-
-  const parts: string[] = [];
-
-  if (node.type === 'text') {
-    return node.text || '';
-  }
-
-  if (node.type === 'image' && node.attrs?.attachmentId) {
-    const src = node.attrs.src || `/api/files/${node.attrs.attachmentId}/${fileNameFromSrc(node.attrs.src) || 'image'}`;
-    const absoluteUrl = `${appUrl}${src}`;
-    const alt = node.attrs.alt || fileNameFromSrc(node.attrs.src) || '图片';
-    const desc = imageDescriptions?.get(node.attrs.attachmentId);
-    if (desc) {
-      return `\n![${alt}](${absoluteUrl})\n（${desc}）\n`;
-    }
-    return `\n![${alt}](${absoluteUrl})\n`;
-  }
-
-  if (Array.isArray(node.content)) {
-    for (const child of node.content) {
-      parts.push(prosemirrorToTextWithImages(child, appUrl, imageDescriptions));
-    }
-  }
-
-  const text = parts.join('');
-
-  switch (node.type) {
-    case 'heading': {
-      const level = node.attrs?.level || 1;
-      const prefix = '#'.repeat(level);
-      return `\n${prefix} ${text.trim()}\n`;
-    }
-    case 'paragraph':
-      return `${text.trim()}\n`;
-    case 'bulletList':
-    case 'orderedList':
-      return `\n${text}`;
-    case 'listItem':
-      return `- ${text.trim()}\n`;
-    case 'blockquote':
-      return `> ${text.trim()}\n`;
-    case 'codeBlock':
-      return `\n\`\`\`\n${text}\n\`\`\`\n`;
-    case 'hardBreak':
-      return '\n';
-    default:
-      return text;
-  }
+  return projectProsemirrorToContextText(node, {
+    imageDescriptions,
+    resolveAssetUrl: (asset) => {
+      if (!asset.rawUrl) {
+        return `${appUrl}/api/files/${asset.attachmentId}/${asset.title}`;
+      }
+      if (
+        asset.rawUrl.startsWith('http://') ||
+        asset.rawUrl.startsWith('https://')
+      ) {
+        return asset.rawUrl;
+      }
+      return `${appUrl}${asset.rawUrl}`;
+    },
+  });
 }
 
 function stripHtmlTags(html: string): string {

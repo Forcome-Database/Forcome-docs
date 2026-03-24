@@ -262,7 +262,7 @@ function flattenTree(nodes: DocmostSidebarNode[]): { slugId: string; title: stri
   for (const node of nodes) {
     // 只收集页面节点（topic 节点没有 slugId，跳过）
     if (node.slugId) {
-      result.push({ slugId: node.slugId, title: node.title, icon: node.icon })
+      result.push({ slugId: node.slugId, title: node.title || node.name || node.slugId, icon: node.icon })
     }
     if (node.children && node.children.length > 0) {
       result.push(...flattenTree(node.children))

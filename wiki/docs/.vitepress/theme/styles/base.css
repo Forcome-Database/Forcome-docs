@@ -118,6 +118,12 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/* 覆盖 VitePress base.css 的 html.dark color-scheme，
+   并显式设置 html 背景色，防止浏览器 UA 深黑 Canvas 透出 */
+html.dark {
+  background-color: var(--c-bg);
+}
+
 body {
   min-height: 100vh;
   background-color: var(--c-bg);

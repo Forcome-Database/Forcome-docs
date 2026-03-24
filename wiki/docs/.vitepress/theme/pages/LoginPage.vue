@@ -43,15 +43,20 @@ async function handleH5SilentLogin() {
     const config = await loadDingTalkConfig()
     if (!config?.enabled || !config.corpId) {
       error.value = '钉钉免登配置缺失'
+      h5Loading.value = false
       return
     }
+    const corpId = config.corpId
 
     const dd = await import('dingtalk-jsapi')
 
-    dd.default.ready(() => {
-      dd.default.runtime.permission.requestAuthCode({
-        corpId: config.corpId!,
-        onSuccess: async (result: { code: string }) => {
+    await new Promise<void>((resolve) => {
+      dd.default.ready(async () => {
+        try {
+          const result = await dd.default.runtime.permission.requestAuthCode({
+            corpId,
+          })
+
           const success = await loginWithH5Code(result.code)
           if (success) {
             window.location.href = getRedirectUrl()
@@ -59,12 +64,13 @@ async function handleH5SilentLogin() {
             error.value = '免登失败，请重试'
             h5Loading.value = false
           }
-        },
-        onFail: (err: any) => {
+        } catch (err) {
           console.error('[DingTalk H5] requestAuthCode failed:', err)
           error.value = '获取免登授权码失败'
           h5Loading.value = false
-        },
+        } finally {
+          resolve()
+        }
       })
     })
   } catch (err) {
@@ -75,7 +81,6 @@ async function handleH5SilentLogin() {
 }
 
 onMounted(async () => {
-  // Trigger entrance animations
   requestAnimationFrame(() => {
     mounted.value = true
   })
@@ -88,16 +93,13 @@ onMounted(async () => {
 
 <template>
   <div class="login-page" :class="{ 'is-mounted': mounted }">
-    <!-- Background decoration -->
     <div class="login-bg">
       <div class="login-bg-grain"></div>
       <div class="login-bg-glow login-bg-glow--1"></div>
       <div class="login-bg-glow login-bg-glow--2"></div>
     </div>
 
-    <!-- Login card -->
     <div class="login-card">
-      <!-- Brand section -->
       <div class="login-brand">
         <div class="login-logo-wrap">
           <img src="/images/logo/logo.png" alt="Logo" class="login-logo" />
@@ -106,12 +108,10 @@ onMounted(async () => {
         <p class="login-desc">企业协作知识管理平台</p>
       </div>
 
-      <!-- Divider -->
       <div class="login-divider">
         <span class="login-divider-text">登录以继续</span>
       </div>
 
-      <!-- H5 auto-login loading state -->
       <div v-if="h5Loading" class="login-loading">
         <div class="login-spinner">
           <div class="login-spinner-ring"></div>
@@ -119,7 +119,6 @@ onMounted(async () => {
         <p class="login-loading-text">正在自动登录...</p>
       </div>
 
-      <!-- Login actions -->
       <div v-else class="login-actions">
         <button
           class="login-btn"
@@ -143,27 +142,23 @@ onMounted(async () => {
         </p>
       </div>
 
-      <!-- Footer -->
       <p class="login-footer">使用企业钉钉账号安全登录</p>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* ===== Page container ===== */
 .login-page {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Flex-fill inside layout-main, full width */
   flex: 1;
   min-width: 0;
   height: calc(100vh - var(--navbar-height));
   overflow: hidden;
 }
 
-/* ===== Background ===== */
 .login-bg {
   position: absolute;
   inset: 0;
@@ -213,15 +208,14 @@ onMounted(async () => {
   opacity: 0.05;
 }
 
-:global(.dark) .is-mounted .login-bg-glow--1 {
+.dark .login-page.is-mounted .login-bg-glow--1 {
   opacity: 0.08;
 }
 
-:global(.dark) .is-mounted .login-bg-glow--2 {
+.dark .login-page.is-mounted .login-bg-glow--2 {
   opacity: 0.06;
 }
 
-/* ===== Card ===== */
 .login-card {
   position: relative;
   z-index: 1;
@@ -234,8 +228,6 @@ onMounted(async () => {
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.04),
     0 6px 24px rgba(0, 0, 0, 0.06);
-
-  /* Entrance animation */
   opacity: 0;
   transform: translateY(12px);
   transition:
@@ -248,14 +240,13 @@ onMounted(async () => {
   transform: translateY(0);
 }
 
-:global(.dark) .login-card {
+.dark .login-card {
   background: var(--c-bg-soft);
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.2),
     0 6px 24px rgba(0, 0, 0, 0.25);
 }
 
-/* ===== Brand section ===== */
 .login-brand {
   text-align: center;
   margin-bottom: 24px;
@@ -271,8 +262,6 @@ onMounted(async () => {
   border-radius: 14px;
   background: var(--c-bg-mute);
   border: 1px solid var(--c-border);
-
-  /* Stagger entrance */
   opacity: 0;
   transform: scale(0.8);
   transition:
@@ -298,8 +287,6 @@ onMounted(async () => {
   color: var(--c-text-1);
   margin: 0;
   line-height: 1.2;
-
-  /* Stagger entrance */
   opacity: 0;
   transform: translateY(6px);
   transition:
@@ -317,8 +304,6 @@ onMounted(async () => {
   color: var(--c-text-3);
   margin: 6px 0 0;
   letter-spacing: 0.02em;
-
-  /* Stagger entrance */
   opacity: 0;
   transition: opacity 0.4s ease 0.3s;
 }
@@ -327,7 +312,6 @@ onMounted(async () => {
   opacity: 1;
 }
 
-/* ===== Divider ===== */
 .login-divider {
   position: relative;
   display: flex;
@@ -351,7 +335,6 @@ onMounted(async () => {
   letter-spacing: 0.04em;
 }
 
-/* ===== Loading state ===== */
 .login-loading {
   display: flex;
   flex-direction: column;
@@ -383,9 +366,7 @@ onMounted(async () => {
   color: var(--c-text-3);
 }
 
-/* ===== Login button ===== */
 .login-actions {
-  /* Stagger entrance */
   opacity: 0;
   transform: translateY(6px);
   transition:
@@ -457,7 +438,6 @@ onMounted(async () => {
   opacity: 1;
 }
 
-/* ===== Error message ===== */
 .login-error {
   display: flex;
   align-items: center;
@@ -472,12 +452,11 @@ onMounted(async () => {
   border: 1px solid rgba(239, 68, 68, 0.12);
 }
 
-:global(.dark) .login-error {
+.dark .login-error {
   background: rgba(239, 68, 68, 0.1);
   border-color: rgba(239, 68, 68, 0.2);
 }
 
-/* ===== Footer ===== */
 .login-footer {
   text-align: center;
   font-size: 11px;
@@ -486,7 +465,6 @@ onMounted(async () => {
   letter-spacing: 0.02em;
 }
 
-/* ===== Mobile responsive ===== */
 @media (max-width: 639px) {
   .login-page {
     padding: 0 16px;
@@ -499,7 +477,6 @@ onMounted(async () => {
   }
 }
 
-/* Small height screens - prevent card from being cut off */
 @media (max-height: 560px) {
   .login-page {
     align-items: flex-start;

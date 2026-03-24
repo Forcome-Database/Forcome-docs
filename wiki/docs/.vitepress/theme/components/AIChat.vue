@@ -16,7 +16,7 @@ import { createDocmostService } from '../services/docmost'
 import { storage } from '../services/storage'
 import { renderMarkdownToHtml } from '../utils/markdown'
 import { useDocmostSidebar } from '../composables/useDocmostSidebar'
-import type { ChatMessage, ChatMessageImage, StoredChatHistory, DocmostSidebarNode, AiSource, AiHistoryMessage } from '../types'
+import type { ChatMessage, ChatMessageImage, StoredChatHistory, DocmostSidebarNode, AiSource, AiCitation, AiHistoryMessage } from '../types'
 import { StorageKey } from '../types'
 import AIChatSources from './AIChatSources.vue'
 import AIChatWelcome from './AIChatWelcome.vue'
@@ -81,10 +81,6 @@ const pendingImages = ref<PendingImage[]>([])
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const MAX_IMAGE_SIZE = 4 * 1024 * 1024 // 4MB
 const MAX_IMAGES = 3
-
-const canSend = computed(() =>
-  (inputText.value.trim().length > 0 || pendingImages.value.length > 0) && !isLoading.value
-)
 
 // 文件转 base64
 function fileToBase64(file: File): Promise<string> {
@@ -205,15 +201,15 @@ const getCurrentPageSlugId = (): string | undefined => {
 }
 
 // ===== Markdown 渲染（含来源卡片） =====
-const renderAssistantMessage = (content: string, sources?: AiSource[]) => {
+const renderAssistantMessage = (content: string, sources?: AiSource[], citations?: AiCitation[]) => {
   const nodes: any[] = [
     h('div', {
       class: 'ai-chat-markdown',
       innerHTML: renderMarkdownToHtml(content)
     })
   ]
-  if (sources && sources.length > 0) {
-    nodes.push(h(AIChatSources, { sources }))
+  if ((citations && citations.length > 0) || (sources && sources.length > 0)) {
+    nodes.push(h(AIChatSources, { sources, citations }))
   }
   return h('div', nodes)
 }
@@ -245,7 +241,7 @@ const bubbleItems = computed(() => {
       loading: msg.isStreaming && !msg.content,
       typing: msg.isStreaming ? { step: 2, interval: 50 } : undefined,
       messageRender: msg.role === 'assistant'
-        ? (content: string) => renderAssistantMessage(content, msg.sources)
+        ? (content: string) => renderAssistantMessage(content, msg.sources, msg.citations)
         : hasImages
           ? renderUserMessage(msg.images!)
           : undefined,
@@ -394,6 +390,10 @@ const sendMessage = async (content: string) => {
           const currentMsg = messages.value[assistantIndex]
           messages.value[assistantIndex] = { ...currentMsg, sources: event.sources }
         }
+        if (event.citations) {
+          const currentMsg = messages.value[assistantIndex]
+          messages.value[assistantIndex] = { ...currentMsg, citations: event.citations }
+        }
         if (event.content) {
           const currentMsg = messages.value[assistantIndex]
           messages.value[assistantIndex] = {
@@ -517,7 +517,7 @@ const historyEntries = ref<HistoryEntry[]>([])
 // 从 sidebar 数据中根据 slugId 递归查找页面标题
 function findNodeBySlugId(nodes: DocmostSidebarNode[], slugId: string): string | null {
   for (const node of nodes) {
-    if (node.slugId === slugId) return node.title
+    if (node.slugId === slugId) return node.title || null
     if (node.children?.length) {
       const found = findNodeBySlugId(node.children, slugId)
       if (found) return found

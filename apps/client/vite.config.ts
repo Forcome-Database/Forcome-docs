@@ -5,33 +5,27 @@ import * as path from "path";
 export const envPath = path.resolve(process.cwd(), "..", "..");
 
 export default defineConfig(({ mode }) => {
-  const {
-    APP_URL,
-    FILE_UPLOAD_SIZE_LIMIT,
-    FILE_IMPORT_SIZE_LIMIT,
-    DRAWIO_URL,
-    CLOUD,
-    SUBDOMAIN_HOST,
-    COLLAB_URL,
-    BILLING_TRIAL_DAYS,
-    POSTHOG_HOST,
-    POSTHOG_KEY,
-  } = loadEnv(mode, envPath, "");
+  const env = loadEnv(mode, envPath, "");
+
+  // Auto-derive URLs from port variables when not explicitly set
+  const APP_URL = env.APP_URL || `http://localhost:${env.PORT || "3000"}`;
+  const VITE_WIKI_URL = env.VITE_WIKI_URL || `http://localhost:${env.WIKI_PORT || "5175"}`;
 
   return {
     define: {
       "process.env": {
         APP_URL,
-        FILE_UPLOAD_SIZE_LIMIT,
-        FILE_IMPORT_SIZE_LIMIT,
-        DRAWIO_URL,
-        CLOUD,
-        SUBDOMAIN_HOST,
-        COLLAB_URL,
-        BILLING_TRIAL_DAYS,
-        POSTHOG_HOST,
-        POSTHOG_KEY,
+        FILE_UPLOAD_SIZE_LIMIT: env.FILE_UPLOAD_SIZE_LIMIT,
+        FILE_IMPORT_SIZE_LIMIT: env.FILE_IMPORT_SIZE_LIMIT,
+        DRAWIO_URL: env.DRAWIO_URL,
+        CLOUD: env.CLOUD,
+        SUBDOMAIN_HOST: env.SUBDOMAIN_HOST,
+        COLLAB_URL: env.COLLAB_URL,
+        BILLING_TRIAL_DAYS: env.BILLING_TRIAL_DAYS,
+        POSTHOG_HOST: env.POSTHOG_HOST,
+        POSTHOG_KEY: env.POSTHOG_KEY,
       },
+      "import.meta.env.VITE_WIKI_URL": JSON.stringify(VITE_WIKI_URL),
       APP_VERSION: JSON.stringify(process.env.npm_package_version),
     },
     plugins: [react()],

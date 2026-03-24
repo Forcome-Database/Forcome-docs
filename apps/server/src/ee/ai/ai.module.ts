@@ -14,9 +14,10 @@ import { InlineRewriteController } from './inline/inline-rewrite.controller';
 import { InlineRewriteService } from './inline/inline-rewrite.service';
 import { PageModule } from '../../core/page/page.module';
 import { AttachmentModule } from '../../core/attachment/attachment.module';
+import { TokenModule } from '../../core/auth/token.module';
 
 @Module({
-  imports: [PageModule, AttachmentModule],
+  imports: [PageModule, AttachmentModule, TokenModule],
   controllers: [
     AiController,
     AiInternalController,
