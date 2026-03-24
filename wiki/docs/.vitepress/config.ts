@@ -14,7 +14,7 @@ const PORT = env.PORT || '3000'
 const VITE_PORT = env.VITE_PORT || '5173'
 const WIKI_PORT = env.WIKI_PORT || '5175'
 const VITE_DOCMOST_API_URL = env.VITE_DOCMOST_API_URL || `http://localhost:${PORT}/api/public-wiki`
-const VITE_ADMIN_URL = env.VITE_ADMIN_URL || (env.APP_URL || `http://localhost:${VITE_PORT}`)
+const VITE_ADMIN_URL = env.VITE_ADMIN_URL || (env.APP_URL || `http://localhost:${PORT}`)
 
 /**
  * VitePress 配置文件
