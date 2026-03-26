@@ -31,7 +31,7 @@ export function InputBar({ onSubmit, onCancel, isStreaming }: InputBarProps) {
       const newFiles = Array.from(e.target.files ?? []);
       const valid = newFiles.filter((f) => {
         if (f.size > MAX_FILE_SIZE) {
-          notifications.show({ message: `${f.name} exceeds 20MB`, color: "red" });
+          notifications.show({ message: t("{{name}} exceeds 20MB", { name: f.name }), color: "red" });
           return false;
         }
         return true;
