@@ -110,14 +110,33 @@ def _extract_document_title(structure: list[dict], blocks: list[dict]) -> str:
 
 def parse_mineru_zip(zip_bytes: bytes, filename: str) -> DocumentParseResult:
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        # Debug: show ZIP contents
+        zip_members = zf.namelist()
+        print(f"\n[DEBUG parse_mineru_zip] filename={filename}")
+        print(f"[DEBUG] ZIP members ({len(zip_members)}):")
+        for m in zip_members:
+            info = zf.getinfo(m)
+            print(f"[DEBUG]   {m} ({info.file_size} bytes)")
+
         markdown_name = _find_member(zf, ("full.md",))
         content_list_name = _find_member(zf, ("_content_list.json", "content_list.json"))
 
         text = ""
         if markdown_name:
-            text = zf.read(markdown_name).decode("utf-8")
+            raw_bytes = zf.read(markdown_name)
+            text = raw_bytes.decode("utf-8")
+            print(f"[DEBUG] full.md: {len(raw_bytes)} bytes, {len(text)} chars, {len(text.splitlines())} lines")
+            print(f"[DEBUG] full.md first 500 chars:\n{text[:500]}")
+            print(f"[DEBUG] full.md last 500 chars:\n{text[-500:]}")
+        else:
+            print(f"[DEBUG] full.md NOT FOUND in ZIP!")
 
         content_list = _normalize_content_list(_read_json(zf, content_list_name)) if content_list_name else []
+        print(f"[DEBUG] content_list: {len(content_list)} items")
+        for i, item in enumerate(content_list):
+            itype = item.get("type", "?")
+            itext = str(item.get("text", ""))[:60]
+            print(f"[DEBUG]   [{i}] type={itype} text='{itext}'")
 
         structure: list[dict] = []
         blocks: list[dict] = []
