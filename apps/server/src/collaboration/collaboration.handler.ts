@@ -132,10 +132,16 @@ export class CollaborationHandler {
       context,
     );
     let result: TResult | undefined;
+    let callbackError: unknown;
     try {
       await connection.transact(async (doc) => {
-        result = await fn(doc);
+        try {
+          result = await fn(doc);
+        } catch (err) {
+          callbackError = err;
+        }
       });
+      if (callbackError !== undefined) throw callbackError;
       return result as TResult;
     } finally {
       await connection.disconnect();

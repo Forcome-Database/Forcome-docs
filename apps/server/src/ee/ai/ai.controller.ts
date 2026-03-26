@@ -116,7 +116,7 @@ export class AiController {
       let chunkCount = 0;
       for await (const chunk of this.aiService.generateStream(dto)) {
         chunkCount++;
-        res.raw.write(`data: ${chunk}\n\n`);
+        res.raw.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
       }
       this.logger.log(`AI stream completed: ${chunkCount} chunks sent`);
       res.raw.write('data: [DONE]\n\n');

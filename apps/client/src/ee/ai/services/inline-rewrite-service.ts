@@ -40,5 +40,6 @@ export async function rewriteInlineSelection(
     throw new Error(`Inline rewrite request failed: ${response.status}`);
   }
 
-  return (await response.json()) as InlineRewriteResponse;
+  const json = await response.json();
+  return (json.data ?? json) as InlineRewriteResponse;
 }

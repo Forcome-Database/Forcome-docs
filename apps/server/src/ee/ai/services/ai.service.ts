@@ -228,17 +228,18 @@ export class AiService {
     content: string,
     customPrompt?: string,
   ): string {
+    const langInstruction = `IMPORTANT: Respond in the same language as the input text. Output ONLY the resulting text with no preamble, explanation, or meta-commentary.\n\n`;
     const prompts: Record<string, string> = {
-      [AiAction.IMPROVE_WRITING]: `Improve the following text. Keep the same meaning but make it clearer and more professional:\n\n${content}`,
-      [AiAction.FIX_SPELLING_GRAMMAR]: `Fix all spelling and grammar errors in the following text. Only fix errors, do not change the meaning:\n\n${content}`,
-      [AiAction.MAKE_SHORTER]: `Make the following text shorter while keeping the key points:\n\n${content}`,
-      [AiAction.MAKE_LONGER]: `Expand the following text with more details and examples:\n\n${content}`,
-      [AiAction.SIMPLIFY]: `Simplify the following text to make it easier to understand:\n\n${content}`,
-      [AiAction.SUMMARIZE]: `Summarize the following text concisely:\n\n${content}`,
-      [AiAction.EXPLAIN]: `Explain the following text in simple terms:\n\n${content}`,
-      [AiAction.CONTINUE_WRITING]: `Continue writing from where the following text left off, maintaining the same style and tone:\n\n${content}`,
-      [AiAction.TRANSLATE]: `Translate the following text to ${customPrompt || 'English'}:\n\n${content}`,
-      [AiAction.CHANGE_TONE]: `Rewrite the following text in a ${customPrompt || 'professional'} tone:\n\n${content}`,
+      [AiAction.IMPROVE_WRITING]: `${langInstruction}Improve the following text. Keep the same meaning but make it clearer and more professional:\n\n${content}`,
+      [AiAction.FIX_SPELLING_GRAMMAR]: `${langInstruction}Fix all spelling and grammar errors in the following text. Only fix errors, do not change the meaning:\n\n${content}`,
+      [AiAction.MAKE_SHORTER]: `${langInstruction}Make the following text shorter while keeping the key points:\n\n${content}`,
+      [AiAction.MAKE_LONGER]: `${langInstruction}Expand the following text with more details and examples:\n\n${content}`,
+      [AiAction.SIMPLIFY]: `${langInstruction}Simplify the following text to make it easier to understand:\n\n${content}`,
+      [AiAction.SUMMARIZE]: `${langInstruction}Summarize the following text concisely:\n\n${content}`,
+      [AiAction.EXPLAIN]: `${langInstruction}Explain the following text in simple terms:\n\n${content}`,
+      [AiAction.CONTINUE_WRITING]: `${langInstruction}Continue writing from where the following text left off, maintaining the same style and tone:\n\n${content}`,
+      [AiAction.TRANSLATE]: `Output ONLY the translated text with no preamble or explanation. Translate the following text to ${customPrompt || 'English'}:\n\n${content}`,
+      [AiAction.CHANGE_TONE]: `${langInstruction}Rewrite the following text in a ${customPrompt || 'professional'} tone:\n\n${content}`,
       [AiAction.CUSTOM]: `${customPrompt || ''}\n\n${content}`,
     };
 

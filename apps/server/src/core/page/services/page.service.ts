@@ -298,17 +298,24 @@ export class PageService {
         throw new NotFoundException('Page not found');
       }
 
+      // If a selectionSnapshot is provided, the intent is always to replace only
+      // the selection — even if the client sent a wrong insertMode.
+      const insertMode =
+        params.selectionSnapshot && params.insertMode !== 'replace'
+          ? 'replace'
+          : params.insertMode;
+
       const pageVersionChanged =
         currentPage.updatedAt &&
         currentPage.updatedAt.getTime() !== expectedUpdatedAt.getTime();
 
-      if (pageVersionChanged && params.insertMode !== 'replace') {
+      if (pageVersionChanged && insertMode !== 'replace') {
         throw new ConflictException(
           'Page changed during generation. Review the draft and retry.',
         );
       }
 
-      if (params.insertMode === 'replace' && !params.selectionSnapshot) {
+      if (insertMode === 'replace' && !params.selectionSnapshot) {
         throw new BadRequestException(
           'selectionSnapshot is required for replace commits',
         );
@@ -338,7 +345,7 @@ export class PageService {
           documentName,
           {
             prosemirrorJson,
-            insertMode: params.insertMode,
+            insertMode,
             selectionSnapshot: params.selectionSnapshot,
             user,
           },

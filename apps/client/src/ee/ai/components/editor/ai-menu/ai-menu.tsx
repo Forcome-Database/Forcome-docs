@@ -1,12 +1,12 @@
 import { Editor } from "@tiptap/react";
-import { ActionIcon, TextInput, Tooltip } from "@mantine/core";
+import { ActionIcon, TextInput } from "@mantine/core";
 import { useDebouncedCallback, useMediaQuery } from "@mantine/hooks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAtom } from "jotai";
 import { IconArrowUp } from "@tabler/icons-react";
 import { showAiMenuAtom } from "@/features/editor/atoms/editor-atoms.ts";
-import { useInlineRewrite } from "@/ee/ai/hooks/use-inline-rewrite";
+import { useAiGenerateStreamMutation } from "@/ee/ai/queries/ai-query.ts";
 import { AiAction } from "@/ee/ai/types/ai.types.ts";
 import { CommandItem, commandItems, CommandSet } from "./command-items.ts";
 import { CommandSelector } from "./command-selector.tsx";
@@ -14,7 +14,7 @@ import { ResultPreview } from "./result-preview.tsx";
 import classes from "./ai-menu.module.css";
 import { marked } from "marked";
 import { DOMSerializer } from "@tiptap/pm/model";
-import { htmlToMarkdown } from "@docmost/editor-ext";
+import { copyToClipboard, htmlToMarkdown } from "@docmost/editor-ext";
 import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
@@ -24,7 +24,7 @@ interface EditorAiMenuProps {
 
 const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
   const { t } = useTranslation();
-  const inlineRewrite = useInlineRewrite();
+  const aiGenerateStreamMutation = useAiGenerateStreamMutation();
   const location = useLocation();
   const isSmBreakpoint = useMediaQuery("(max-width: 48em)");
   const [showAiMenu, setShowAiMenu] = useAtom(showAiMenuAtom);
@@ -33,6 +33,7 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
   const [prompt, setPrompt] = useState("");
   const [output, setOutput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const isLoadingRef = useRef(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [activeCommandSet, setActiveCommandSet] = useState<CommandSet>("main");
   const [lastAction, setLastAction] = useState<CommandItem | null>(null);
@@ -45,38 +46,65 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
     left: 0,
     width: 0,
   });
+
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
   const currentItems = useMemo(() => {
     return commandItems[activeCommandSet].filter((item) => {
       return t(item.name).toLowerCase().includes(prompt.toLowerCase());
     });
   }, [prompt, output, activeCommandSet, t]);
+
   const updateMenuPlacement = useCallback(() => {
     if (!editor || !showAiMenu) return;
 
     const { view } = editor;
-    const { to } = editor.state.selection;
+    const { from, to } = editor.state.selection;
     const editorRect = view.dom.getBoundingClientRect();
-    const cursorCoords = view.coordsAtPos(to);
+    const fromCoords = view.coordsAtPos(from);
+    const toCoords = view.coordsAtPos(to);
     const topOffset = 8;
     const editorPadding = isSmBreakpoint ? 16 : 48;
 
+    const anchorBottom =
+      toCoords.bottom > 0 && toCoords.bottom < window.innerHeight
+        ? toCoords.bottom
+        : fromCoords.bottom;
+
+    const menuMaxWidth = 600;
+    const editorLeft = editorRect.left + editorPadding;
+    const editorRight = editorRect.right - editorPadding;
+    const availableWidth = editorRight - editorLeft;
+    const menuWidth = Math.min(menuMaxWidth, availableWidth);
+
+    let menuLeft = Math.max(editorLeft, fromCoords.left);
+    if (menuLeft + menuWidth > editorRight) {
+      menuLeft = editorRight - menuWidth;
+    }
+    menuLeft = Math.max(editorLeft, menuLeft);
+
     setMenuPlacement({
-      top: cursorCoords.bottom + topOffset + window.scrollY,
-      left: editorRect.left + editorPadding + window.scrollX,
-      width: editorRect.width - editorPadding * 2,
+      top: anchorBottom + topOffset + window.scrollY,
+      left: menuLeft + window.scrollX,
+      width: menuWidth,
     });
   }, [editor, showAiMenu, isSmBreakpoint]);
+
   const resetMenu = useCallback(() => {
     setPrompt("");
     setOutput("");
     setActiveCommandSet("main");
     setLastAction(null);
-    inlineRewrite.reset();
-  }, [inlineRewrite]);
+    aiGenerateStreamMutation.reset();
+  }, [aiGenerateStreamMutation.reset]);
+
   const debouncedUpdateMenuPlacement = useDebouncedCallback(
     updateMenuPlacement,
     60,
   );
+
   const handleGenerate = useCallback(
     (item?: CommandItem) => {
       if (!editor || isLoading) return;
@@ -85,7 +113,6 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
 
       if (!command) {
         if (!prompt) return;
-
         command = {
           id: "custom",
           name: "Custom",
@@ -101,42 +128,31 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
       const wrapper = document.createElement("div");
       wrapper.appendChild(fragment);
       const content = htmlToMarkdown(wrapper.innerHTML);
-      const localContext = editor.state.doc.textBetween(
-        0,
-        Math.min(4000, editor.state.doc.content.size),
-      );
 
       setOutput("");
       setIsLoading(true);
-      inlineRewrite
-        .rewriteSelection({
-          selectionSnapshot: content,
-          localContext,
-          action: command.action || AiAction.CUSTOM,
-          taskSummaryRef: {
-            summary: "Use the local document context only and preserve surrounding structure.",
-            includeRawHistory: false,
-          },
-        })
-        .then((result) => {
-          setOutput(result.candidate);
+      aiGenerateStreamMutation.mutate({
+        action: command.action,
+        prompt: command.prompt,
+        content,
+        onChunk: (chunk) => {
+          setOutput((prev) => prev + chunk.content);
+        },
+        onComplete: () => {
+          setPrompt("");
           setIsLoading(false);
           setActiveCommandSet("result");
-        })
-        .catch(() => {
+        },
+        onError: () => {
           setIsLoading(false);
           resetMenu();
-        });
+        },
+      });
       setLastAction(command);
     },
-    [
-      editor,
-      prompt,
-      isLoading,
-      inlineRewrite,
-      resetMenu,
-    ],
+    [editor, prompt, isLoading, aiGenerateStreamMutation.mutateAsync, resetMenu],
   );
+
   const handleCommand = useCallback(
     (item?: CommandItem) => {
       setPrompt("");
@@ -155,16 +171,17 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
         }
 
         const html = (marked.parse(output) as string).trim();
-        // Strip <p> wrapper for single-paragraph output to preserve inline context
-        const content =
+        const isSingleParagraph =
           html.startsWith("<p>") &&
           html.endsWith("</p>") &&
-          html.lastIndexOf("<p>") === 0
-            ? html.slice(3, -4)
-            : html;
+          html.lastIndexOf("<p>") === 0;
+
+        const content = isSingleParagraph
+          ? new DOMParser().parseFromString(html.slice(3, -4), "text/html")
+              .body.innerHTML
+          : html;
 
         chain.insertContent(content).run();
-
         return setShowAiMenu(false);
       }
       if (item.id === "result-insert-below") {
@@ -174,17 +191,14 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
           .setTextSelection(editor.state.selection.to)
           .insertContent(marked.parse(output))
           .run();
-
         return setShowAiMenu(false);
       }
       if (item.id === "result-copy") {
-        navigator.clipboard.writeText(output);
-
+        copyToClipboard(output);
         return setShowAiMenu(false);
       }
       if (item.id === "result-discard") {
         setOutput("");
-
         return resetMenu();
       }
       if (item.id === "result-try-again" && lastAction) {
@@ -198,6 +212,7 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
     },
     [editor, output, lastAction, handleGenerate, resetMenu],
   );
+
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       const totalItems = currentItems.length;
@@ -223,7 +238,6 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
 
       if (event.key === "Enter") {
         event.preventDefault();
-
         return handleCommand(currentItems[selectedIndex]);
       }
     },
@@ -233,7 +247,9 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
   useEffect(() => {
     if (!editor) return;
 
-    const handleClose = () => setShowAiMenu(false);
+    const handleClose = () => {
+      if (!isLoadingRef.current) setShowAiMenu(false);
+    };
     const observer = new ResizeObserver(() => {
       debouncedUpdateMenuPlacement();
     });
@@ -257,17 +273,19 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
   useEffect(() => {
     setShowAiMenu(false);
   }, [location]);
+
   useEffect(() => {
     if (showAiMenu) {
       resetMenu();
     }
   }, [showAiMenu, resetMenu]);
+
   useEffect(() => {
-    // Focus input when menu opens or command set changes
     requestAnimationFrame(() => {
       inputRef.current?.focus({ preventScroll: true });
     });
   }, [showAiMenu, isLoading, currentItems]);
+
   useEffect(() => {
     if (!currentItems.length) {
       setSelectedIndex(-1);
@@ -280,7 +298,7 @@ const EditorAiMenu = ({ editor }: EditorAiMenuProps): JSX.Element | null => {
   return createPortal(
     <div
       style={{
-        zIndex: 200,
+        zIndex: 199,
         position: "absolute",
         top: menuPlacement.top,
         left: menuPlacement.left,
