@@ -151,7 +151,7 @@ export class AgentGatewayController {
     res.hijack();
 
     return new Promise<void>((resolve) => {
-      const proxyReq = http.request(options, (proxyRes) => {
+      const proxyReq = http.request({ ...options, timeout: 660000 }, (proxyRes) => {
         const taskIdHeader = Array.isArray(proxyRes.headers['x-task-id'])
           ? proxyRes.headers['x-task-id'][0]
           : proxyRes.headers['x-task-id'];
@@ -180,6 +180,11 @@ export class AgentGatewayController {
           }
           resolve();
         });
+      });
+
+      proxyReq.on('timeout', () => {
+        this.logger.warn(`${logContext}: proxy request timed out after 660s`);
+        proxyReq.destroy();
       });
 
       proxyReq.on('error', (err) => {
