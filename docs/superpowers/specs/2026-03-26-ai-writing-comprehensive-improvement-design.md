@@ -1,7 +1,7 @@
 # AI 写作系统综合改进设计
 
 **日期：** 2026-03-26
-**状态：** Draft
+**状态：** Reviewed
 **范围：** 内容管道 + 网页清洗 + UI/UX + Agent 工作流 + 安全修复
 
 ---
@@ -98,6 +98,28 @@
 - MinerU 公式自动转 LaTeX，CDM 0.968（Docling 仅纯文本提取）
 - MinerU 中文支持（PaddleOCR）是核心强项
 - 许可证兼容：MinerU AGPL-3.0，Docmost 也是 AGPL-3.0
+
+**格式支持矩阵（Docling vs MinerU）：**
+
+| 格式 | Docling | MinerU 本地 | MinerU 云端 | 迁移方案 |
+|------|---------|------------|------------|---------|
+| PDF | 支持 | 支持（最强） | 支持 | MinerU 接管 |
+| 图片 (PNG/JPG) | 支持 | 支持（OCR） | 支持 | MinerU 接管 |
+| Word (.docx) | 支持 | 不支持 | 支持 | 走云端 API |
+| PPT (.pptx) | 支持 | 不支持 | 支持 | 走云端 API |
+| Excel (.xlsx) | 支持 | 不支持 | 轻量 API 支持 | 走云端轻量 API |
+| HTML | 支持 | 不支持 | 支持 | 走云端 API |
+
+**已知回归风险：**
+- MinerU 本地部署仅支持 PDF + 图片，Word/PPT/Excel/HTML 必须走云端 API
+- 云端 API 处于 Beta 阶段，有日配额限制（每日 10000 文件 / 2000 页优先）
+- Excel (.xlsx) 仅在云端轻量 Agent API 中支持，精度可能不如 Docling 原生解析
+
+**MinerU 不可用时的回退策略：**
+- 断路器（3 次失败后 5 分钟内跳过）+ SSE 发送明确错误事件
+- 错误消息："文档解析服务暂时不可用，请稍后重试或使用其他格式"
+- 这是有意的设计取舍：去掉 Docling 后无本地降级，换取更高的解析质量
+- 如果实际部署中 MinerU 可用性不达标，可在后续迭代中引入 PyMuPDF 作为轻量本地降级
 
 **影响范围：**
 - 移除 `agent-service/app/tools/docling_parser.py`
@@ -204,11 +226,31 @@ async def extract_content(html: str, url: str) -> str | None:
     )
 ```
 
-**使用策略（方案 B — 回退模式）：**
-1. 默认使用 Firecrawl 的 markdown 输出
-2. 同时获取 rawHtml
-3. 用 Trafilatura 提取 rawHtml → 如果结果 > 100 字，优先使用
+**使用策略（方案 B — 质量感知回退模式）：**
+1. Firecrawl 请求 `formats=["markdown", "rawHtml"]`
+2. 同时用 Trafilatura 对 rawHtml 做二次提取
+3. 质量启发式选择最优结果：
+   - 如果 Firecrawl markdown 中检测到导航模式（连续短行 < 5 字、重复 Logo 模式），优先使用 Trafilatura 结果
+   - 如果 Trafilatura 结果长度 < Firecrawl 结果的 30%，认为 Trafilatura 过度裁剪，使用 Firecrawl 结果
+   - 否则使用 Trafilatura 结果（精度更高）
 4. Firecrawl 不可用时，Trafilatura `fetch_url()` 作为最后降级（无 JS 渲染）
+
+**质量启发式伪代码：**
+```python
+def select_best_result(fc_md: str, traf_md: str | None) -> str:
+    if not traf_md or len(traf_md.strip()) < 50:
+        return fc_md
+    # 检测 Firecrawl 输出中的导航噪音
+    fc_lines = fc_md.split('\n')
+    short_lines = sum(1 for l in fc_lines if 0 < len(l.strip()) < 5)
+    noise_ratio = short_lines / max(len(fc_lines), 1)
+    if noise_ratio > 0.3:  # 超过30%短行 = 可能含导航噪音
+        return traf_md
+    # 检测 Trafilatura 是否过度裁剪
+    if len(traf_md) < len(fc_md) * 0.3:
+        return fc_md
+    return traf_md  # 默认偏好 Trafilatura（precision 更高）
+```
 
 ### 2.6 跨文档合并改进
 
@@ -464,7 +506,7 @@ async def analyze_multi_source(asset_map, user_message):
 
 | Bug | 修复 |
 |-----|------|
-| L3 研究分支 `has_sufficient_evidence=True` 硬编码 | 改为 `bool(asset_map and asset_map.items)` |
+| L3 研究分支 `has_text_assets=True` 和 `has_sufficient_evidence=True` 双重硬编码 | 两行都改为 `bool(asset_map and asset_map.items)` |
 | researcher.py 同步 `tool.invoke()` 阻塞 event loop | 包装 `asyncio.get_event_loop().run_in_executor()` |
 | engine.py 中文乱码字符串 | 替换为英文 |
 | asset_cache 内存泄漏 | 替换为 `cachetools.TTLCache(maxsize=50, ttl=3600)` |
@@ -479,18 +521,36 @@ async def analyze_multi_source(asset_map, user_message):
 
 问题：`AgentGatewayController` 的 `GET /session/:id`、`POST /resume`、`POST /stop` 未验证会话所有权。
 
-修复：
-1. `SessionStore` 增加 `user_id` 和 `workspace_id` 字段
-2. `OrchestratorRequest` 增加 `user_id` 字段
-3. NestJS 每个会话相关端点验证 `session.user_id === currentUser.id`
+修复（NestJS 侧验证，双层存储）：
+
+```
+数据流：
+1. POST /api/agent/run 时，NestJS 将 user_id 存入 Redis:
+   key: "agent_session:{session_id}" → value: { user_id, workspace_id, created_at }
+   同时在 Agent Service 的 OrchestratorRequest 中传递 user_id
+
+2. GET /session/:id, POST /resume, POST /stop 时，NestJS 先查 Redis:
+   - 验证 session 存在
+   - 验证 session.user_id === @AuthUser().id
+   - 验证通过后才代理到 Agent Service
+
+3. Agent Service 的 SessionStore 也存储 user_id（纵深防御）
+```
+
+实现要点：
+- NestJS `AgentGatewayService` 新增 `validateSessionOwnership(sessionId, userId)` 方法
+- 使用 Redis（已有依赖）存储 session → user 映射，TTL 24 小时
+- `task_id` 从自增计数器 (`_task_counter`) 改为 `uuid4()`
 
 **5.1.2 `@Public()` + 空 Secret = 未认证数据访问**
 
-问题：`AiInternalController` 的三个端点标记 `@Public()`，仅依赖 `X-Internal-Secret`。若 secret 未配置，任何人可读取任意页面。
+问题分析（经审查修正）：
+- **NestJS 侧已安全**：`assertInternalSecret()` 中 `!secret` 检查在 header 缺失时会拒绝
+- **漏洞在 Python 侧**：`auth.py` 的 `request.headers.get("X-Internal-Secret", "")` 当 header 缺失时返回 `""`，若 `settings.agent_internal_secret` 也是 `""`（默认值），则 `"" != ""` 为 False，认证通过
 
 修复：
-1. 修复 `auth.py` 空 secret 绕过（`request.headers.get("X-Internal-Secret")` 去掉默认值 `""`）
-2. 应用启动时 `AGENT_INTERNAL_SECRET` 为空则禁用 `AiInternalController`
+1. **Python `auth.py`**：移除 `get()` 的默认值 `""`，改为 `get("X-Internal-Secret")`（无 header 时返回 None）；增加 "若 `settings.agent_internal_secret` 为空则拒绝所有请求" 的前置检查
+2. **NestJS 启动时**：`AGENT_INTERNAL_SECRET` 为空则跳过 `AiInternalController` 注册或输出 WARN 日志
 3. `task_id` 从自增计数器改为 `uuid4()`
 
 ### 5.2 P1 — High
@@ -501,9 +561,13 @@ async def analyze_multi_source(asset_map, user_message):
 - 可疑注入模式检测 + 日志告警
 
 **5.2.2 并发 Agent 任务限制**
-- NestJS 网关：每用户最多 3 个同时运行的 Agent 任务
-- Agent Service：全局最大并发任务数限制
-- 每用户每小时 LLM 调用次数上限
+
+实现机制：
+- NestJS 网关使用 Redis 计数器追踪每用户并发数：`agent_concurrent:{user_id}` → INCR on run / DECR on done+error+timeout
+- 每用户最多 3 个同时运行的 Agent 任务（`INCR` 结果 > 3 时返回 429）
+- 清理策略：SSE 流关闭时 DECR；Redis key 设 TTL 30 分钟作为安全网（防止泄漏）
+- Agent Service：全局最大并发任务数 20（`asyncio.Semaphore(20)`）
+- token 成本追踪：Agent Service 通过新增 `token_usage` SSE 事件报告消耗，NestJS 侧累加到 Redis `agent_tokens:{user_id}:{date}`，超过每日上限时拒绝新任务
 
 **5.2.3 SSE 连接安全**
 - `http.request` 添加 660s 超时
@@ -534,32 +598,50 @@ async def analyze_multi_source(asset_map, user_message):
 
 ---
 
-## 7. 验收标准
+## 7. 并行线协调协议
 
-### 7.1 内容管道
+**合并顺序：** 安全修复 → 内容管道 → Agent 工作流 → UI 重设计
+
+**协调要点：**
+- 安全修复独立性最高，先合并，为后续工作建立安全基线
+- 内容管道（`parse_assets.py`, `firecrawl_scrape.py`）和 Agent 工作流（`engine.py` 拆分）有共享文件 `parse_assets_tool`，约定：内容管道只改工具内部实现，Agent 工作流只改调用方式
+- UI 重设计最后合并，因为它依赖 Agent 工作流新增的 SSE 事件类型
+- `engine.py` 乱码字符串修复作为独立 P0 补丁先行合并，不等待拆分完成
+
+---
+
+## 8. 验收标准
+
+### 8.1 内容管道
 - [ ] 上传 10 页 PDF（含图片、表格、公式），图片位置与原文一致
 - [ ] 上传 Word/PPT 文件，内容完整提取
 - [ ] 上传两份含相同 Logo 的文档，Logo 只出现一次
 
-### 7.2 网页清洗
+### 8.2 网页清洗
 - [ ] 爬取 MinerU 官网（mineru.net），输出不含导航栏/页头页脚
 - [ ] 爬取 5 个代表性中文网站，正文提取准确
 - [ ] SPA 网站（React/Vue）正文可提取
 
-### 7.3 UI/UX
+### 8.3 UI/UX
 - [ ] 面板打开后一次只显示一个阶段卡片
 - [ ] Brief 5 秒自动确认，可手动 Modify
 - [ ] Review 无 blocking issue 时自动通过
 - [ ] Agent 步骤显示人类可读名称 + 经过时间
 
-### 7.4 Agent 工作流
+### 8.4 Agent 工作流
 - [ ] 路由决策事件在前端可见
 - [ ] engine.py 拆分后所有现有测试通过
 - [ ] Brief 验证失败时自动重试一次
 - [ ] L3 研究分支恢复功能
 
-### 7.5 安全
+### 8.5 安全
 - [ ] 用户 A 无法通过 API 访问用户 B 的 Agent 会话
 - [ ] `AGENT_INTERNAL_SECRET` 为空时 AiInternalController 不可用
 - [ ] 单用户最多 3 个并发 Agent 任务
 - [ ] SSE 连接 660s 超时
+
+### 8.6 性能基准
+- [ ] MinerU 解析 10 页 PDF < 60 秒
+- [ ] Firecrawl + Trafilatura 提取单页 < 15 秒
+- [ ] SSE 事件延迟 < 2 秒（从 Agent 发出到前端接收）
+- [ ] 内存峰值：单个 Agent 任务 < 500MB
