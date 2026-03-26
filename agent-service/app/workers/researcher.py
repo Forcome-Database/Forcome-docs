@@ -8,6 +8,8 @@ Provides a unified interface for research across multiple source types:
 """
 from __future__ import annotations
 
+import asyncio
+
 from app.agent.events import emit  # imported at module level so tests can patch it
 
 
@@ -42,28 +44,32 @@ docmost_rag = None         # resolved lazily via _get_docmost_rag()
 docmost_page_read = None   # resolved lazily via _get_docmost_page_read()
 
 
-def _tavily_invoke(query: str, max_results: int = 5) -> str:
+async def _tavily_invoke(query: str, max_results: int = 5) -> str:
     global tavily_search  # noqa: PLW0603
     tool = tavily_search if tavily_search is not None else _get_tavily_search()
-    return tool.invoke({"query": query, "max_results": max_results})
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: tool.invoke({"query": query, "max_results": max_results}))
 
 
-def _firecrawl_invoke(url: str) -> str:
+async def _firecrawl_invoke(url: str) -> str:
     global firecrawl_scrape  # noqa: PLW0603
     tool = firecrawl_scrape if firecrawl_scrape is not None else _get_firecrawl_scrape()
-    return tool.invoke({"url": url})
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: tool.invoke({"url": url}))
 
 
-def _rag_invoke(query: str, workspace_id: str = "") -> str:
+async def _rag_invoke(query: str, workspace_id: str = "") -> str:
     global docmost_rag  # noqa: PLW0603
     tool = docmost_rag if docmost_rag is not None else _get_docmost_rag()
-    return tool.invoke({"query": query, "workspace_id": workspace_id})
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: tool.invoke({"query": query, "workspace_id": workspace_id}))
 
 
-def _page_read_invoke(page_id: str) -> str:
+async def _page_read_invoke(page_id: str) -> str:
     global docmost_page_read  # noqa: PLW0603
     tool = docmost_page_read if docmost_page_read is not None else _get_docmost_page_read()
-    return tool.invoke({"page_id": page_id})
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: tool.invoke({"page_id": page_id}))
 
 
 # ---------------------------------------------------------------------------
@@ -125,21 +131,21 @@ async def research(
 
         try:
             if source == "web_search":
-                content = _tavily_invoke(query)
+                content = await _tavily_invoke(query)
                 url = None
 
             elif source == "web_crawl":
                 # For web_crawl, query should be a URL
-                content = _firecrawl_invoke(query)
+                content = await _firecrawl_invoke(query)
                 url = query if query.startswith(("http://", "https://")) else None
 
             elif source == "knowledge_base":
-                content = _rag_invoke(query, workspace_id=workspace_id)
+                content = await _rag_invoke(query, workspace_id=workspace_id)
                 url = None
 
             elif source == "page_read":
                 # For page_read, query is treated as page_id
-                content = _page_read_invoke(query)
+                content = await _page_read_invoke(query)
                 url = None
 
         except Exception as exc:
