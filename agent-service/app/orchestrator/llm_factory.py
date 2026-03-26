@@ -1,7 +1,7 @@
 """LLM factory for PydanticAI — maps existing config to PydanticAI model instances.
 
 Reads from app/config.py settings and creates appropriate PydanticAI model references.
-Supports: OpenAI, Gemini, Ollama, OpenAI-compatible providers.
+Supports: OpenAI, OpenAI-Responses, Gemini, Ollama, OpenAI-compatible providers.
 """
 from __future__ import annotations
 
@@ -43,13 +43,13 @@ def create_pydantic_ai_model(
         return GoogleModel(_model, provider=GoogleProvider(api_key=_gemini_key))
 
     if _provider == "ollama":
-        from pydantic_ai.models.openai import OpenAIModel
+        from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openai import OpenAIProvider
 
         ollama_base = _base_url or "http://localhost:11434/v1"
         if not ollama_base.endswith("/v1"):
             ollama_base = ollama_base.rstrip("/") + "/v1"
-        return OpenAIModel(
+        return OpenAIChatModel(
             _model,
             provider=OpenAIProvider(
                 base_url=ollama_base,
@@ -58,19 +58,28 @@ def create_pydantic_ai_model(
         )
 
     if _provider == "openai-compatible":
-        from pydantic_ai.models.openai import OpenAIModel
+        from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openai import OpenAIProvider
 
-        return OpenAIModel(
+        return OpenAIChatModel(
             _model,
             provider=OpenAIProvider(base_url=_base_url, api_key=_api_key),
         )
 
-    # Default: OpenAI or unknown provider
-    from pydantic_ai.models.openai import OpenAIModel
+    if _provider == "openai-responses":
+        from pydantic_ai.models.openai import OpenAIResponsesModel
+        from pydantic_ai.providers.openai import OpenAIProvider
+
+        return OpenAIResponsesModel(
+            _model,
+            provider=OpenAIProvider(api_key=_api_key),
+        )
+
+    # Default: OpenAI (Chat Completions API) or unknown provider
+    from pydantic_ai.models.openai import OpenAIChatModel
     from pydantic_ai.providers.openai import OpenAIProvider
 
-    return OpenAIModel(
+    return OpenAIChatModel(
         _model,
         provider=OpenAIProvider(api_key=_api_key),
     )
