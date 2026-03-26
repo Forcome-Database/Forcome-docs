@@ -9,6 +9,8 @@ import {
   Res,
   UseGuards,
   Logger,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { FastifyRequest, FastifyReply } from 'fastify';
 import * as http from 'http';
@@ -260,107 +262,122 @@ export class AgentGatewayController {
     @AuthUser() user: any,
     @AuthWorkspace() workspace: any,
   ) {
-    const { fields, files } = await this.readRunRequest(req);
-    const legacyBody = isLegacyAgentRunBody(req.body) ? req.body : null;
-
-    const agentUrl = this.environmentService.getAgentServiceUrl();
-    if (!agentUrl) {
-      res.status(503).send({ error: 'Agent service not configured' });
-      return;
-    }
-
-    // Resolve template prompt if provided
-    let templatePrompt: string | undefined;
-    const requestedTemplateId =
-      fields.templateId ||
-      (typeof legacyBody?.template_id === 'string' ? legacyBody.template_id : undefined);
-    if (requestedTemplateId) {
-      const prompt = await this.aiTemplateService.getTemplatePrompt(
-        requestedTemplateId,
-        workspace.id,
-        user.id,
+    // Per-user concurrent task limit
+    const allowed = await this.agentGatewayService.acquireTaskSlot(user.id);
+    if (!allowed) {
+      throw new HttpException(
+        'Too many concurrent AI tasks. Maximum 3 allowed.',
+        HttpStatus.TOO_MANY_REQUESTS,
       );
-      templatePrompt = prompt || undefined;
     }
 
-    // Get workspace system prompt
-    const wsSettings = workspace.settings?.ai;
-    const systemPrompt: string | undefined = wsSettings?.systemPrompt || undefined;
+    try {
+      const { fields, files } = await this.readRunRequest(req);
+      const legacyBody = isLegacyAgentRunBody(req.body) ? req.body : null;
 
-    const payload = JSON.stringify(
-      legacyBody
-        ? {
-            ...legacyBody,
-            workspace_id:
-              typeof legacyBody.workspace_id === 'string'
-                ? legacyBody.workspace_id
-                : workspace.id,
-            ...(systemPrompt && typeof legacyBody.system_prompt !== 'string'
-              ? { system_prompt: systemPrompt }
-              : {}),
-            ...(templatePrompt && typeof legacyBody.template_prompt !== 'string'
-              ? { template_prompt: templatePrompt }
-              : {}),
-          }
-        : this.agentGatewayService.buildLegacyRunPayload({
-            prompt: fields.prompt || '',
-            threadId: fields.threadId,
-            workspaceId: workspace.id,
-            pageId: fields.pageId,
-            pageTitle: fields.pageTitle,
-            pageContent: fields.pageContent,
-            selectedText: fields.selectedText,
-            intentRoute: fields.intentRoute || 'document_create',
-            insertMode: fields.insertMode || 'create',
-            files,
-            templateId: fields.templateId,
-            systemPrompt,
-            templatePrompt,
-            conversationHistory: Array.isArray(fields.conversationHistory)
-              ? fields.conversationHistory
-              : [],
-            operation: fields.operation,
-            documentTask:
-              fields.documentTask && typeof fields.documentTask === 'object'
-                ? (fields.documentTask as Record<string, unknown>)
-                : null,
-          }),
-    );
-
-    const url = new URL('/agent/run', agentUrl);
-    const secret = this.environmentService.getAgentInternalSecret();
-
-    const options: http.RequestOptions = {
-      hostname: url.hostname,
-      port: url.port,
-      path: url.pathname,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Secret': secret || '',
-      },
-    };
-
-    await this.proxyAgentStream(res, options, payload, 'Agent proxy error', (chunk: Buffer) => {
-      const text = chunk.toString('utf8');
-      // SSE data lines start with "data: "
-      const lines = text.split('\n');
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const parsed = JSON.parse(line.slice(6));
-          if (parsed.type === 'session' && parsed.session_id) {
-            this.agentGatewayService
-              .registerSessionOwner(parsed.session_id, user.id, workspace.id)
-              .catch((err) =>
-                this.logger.warn(`Failed to register session owner: ${err.message}`),
-              );
-          }
-        } catch {
-          // Not valid JSON, skip
-        }
+      const agentUrl = this.environmentService.getAgentServiceUrl();
+      if (!agentUrl) {
+        res.status(503).send({ error: 'Agent service not configured' });
+        return;
       }
-    });
+
+      // Resolve template prompt if provided
+      let templatePrompt: string | undefined;
+      const requestedTemplateId =
+        fields.templateId ||
+        (typeof legacyBody?.template_id === 'string' ? legacyBody.template_id : undefined);
+      if (requestedTemplateId) {
+        const prompt = await this.aiTemplateService.getTemplatePrompt(
+          requestedTemplateId,
+          workspace.id,
+          user.id,
+        );
+        templatePrompt = prompt || undefined;
+      }
+
+      // Get workspace system prompt
+      const wsSettings = workspace.settings?.ai;
+      const systemPrompt: string | undefined = wsSettings?.systemPrompt || undefined;
+
+      const payload = JSON.stringify(
+        legacyBody
+          ? {
+              ...legacyBody,
+              workspace_id:
+                typeof legacyBody.workspace_id === 'string'
+                  ? legacyBody.workspace_id
+                  : workspace.id,
+              ...(systemPrompt && typeof legacyBody.system_prompt !== 'string'
+                ? { system_prompt: systemPrompt }
+                : {}),
+              ...(templatePrompt && typeof legacyBody.template_prompt !== 'string'
+                ? { template_prompt: templatePrompt }
+                : {}),
+            }
+          : this.agentGatewayService.buildLegacyRunPayload({
+              prompt: fields.prompt || '',
+              threadId: fields.threadId,
+              workspaceId: workspace.id,
+              pageId: fields.pageId,
+              pageTitle: fields.pageTitle,
+              pageContent: fields.pageContent,
+              selectedText: fields.selectedText,
+              intentRoute: fields.intentRoute || 'document_create',
+              insertMode: fields.insertMode || 'create',
+              files,
+              templateId: fields.templateId,
+              systemPrompt,
+              templatePrompt,
+              conversationHistory: Array.isArray(fields.conversationHistory)
+                ? fields.conversationHistory
+                : [],
+              operation: fields.operation,
+              documentTask:
+                fields.documentTask && typeof fields.documentTask === 'object'
+                  ? (fields.documentTask as Record<string, unknown>)
+                  : null,
+            }),
+      );
+
+      const url = new URL('/agent/run', agentUrl);
+      const secret = this.environmentService.getAgentInternalSecret();
+
+      const options: http.RequestOptions = {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Internal-Secret': secret || '',
+        },
+      };
+
+      await this.proxyAgentStream(res, options, payload, 'Agent proxy error', (chunk: Buffer) => {
+        const text = chunk.toString('utf8');
+        // SSE data lines start with "data: "
+        const lines = text.split('\n');
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const parsed = JSON.parse(line.slice(6));
+            if (parsed.type === 'session' && parsed.session_id) {
+              this.agentGatewayService
+                .registerSessionOwner(parsed.session_id, user.id, workspace.id)
+                .catch((err) =>
+                  this.logger.warn(`Failed to register session owner: ${err.message}`),
+                );
+            }
+          } catch {
+            // Not valid JSON, skip
+          }
+        }
+      });
+    } finally {
+      await this.agentGatewayService.releaseTaskSlot(user.id).catch((err) =>
+        this.logger.warn(`Failed to release task slot: ${err.message}`),
+      );
+    }
   }
 
   @Post('resume')

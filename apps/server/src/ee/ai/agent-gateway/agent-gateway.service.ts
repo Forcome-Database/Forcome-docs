@@ -10,6 +10,10 @@ export class AgentGatewayService {
   private static readonly SESSION_OWNER_PREFIX = 'agent_session_owner:';
   private static readonly SESSION_OWNER_TTL = 86400; // 24 hours
 
+  private static readonly CONCURRENT_PREFIX = 'agent_concurrent:';
+  private static readonly MAX_CONCURRENT_TASKS = 3;
+  private static readonly CONCURRENT_TTL = 1800; // 30 min safety net
+
   private readonly redis: Redis;
 
   constructor(
@@ -17,6 +21,27 @@ export class AgentGatewayService {
     private readonly redisService: RedisService,
   ) {
     this.redis = this.redisService.getOrThrow();
+  }
+
+  async acquireTaskSlot(userId: string): Promise<boolean> {
+    const key = `${AgentGatewayService.CONCURRENT_PREFIX}${userId}`;
+    const current = await this.redis.incr(key);
+    if (current === 1) {
+      await this.redis.expire(key, AgentGatewayService.CONCURRENT_TTL);
+    }
+    if (current > AgentGatewayService.MAX_CONCURRENT_TASKS) {
+      await this.redis.decr(key);
+      return false;
+    }
+    return true;
+  }
+
+  async releaseTaskSlot(userId: string): Promise<void> {
+    const key = `${AgentGatewayService.CONCURRENT_PREFIX}${userId}`;
+    const val = await this.redis.decr(key);
+    if (val <= 0) {
+      await this.redis.del(key);
+    }
   }
 
   async registerSessionOwner(
