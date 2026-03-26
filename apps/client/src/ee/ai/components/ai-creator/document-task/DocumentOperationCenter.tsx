@@ -1,5 +1,6 @@
-import React from "react";
-import { Button, Group, Stack } from "@mantine/core";
+import React, { useMemo } from "react";
+import { Badge, Button, Group, Stack } from "@mantine/core";
+import { IconChevronRight } from "@tabler/icons-react";
 import type { AgentStepInfo } from "@/ee/ai/types/agent.types";
 import type { AgentAssetSummary } from "@/ee/ai/types/agent.types";
 import type { CreationBrief } from "@/ee/ai/types/brief.types";
@@ -10,6 +11,8 @@ import { DiffReviewPanel } from "./DiffReviewPanel";
 import { PendingChangeBar } from "./PendingChangeBar";
 import { ExpertCollabPanel } from "../expert-collab/ExpertCollabPanel";
 import { TaskActivityFeed } from "./TaskActivityFeed";
+
+type Phase = "preparing" | "confirming" | "delivering";
 
 interface DiffEntry {
   diffId: string;
@@ -74,12 +77,22 @@ export function DocumentOperationCenter({
   expertCollab,
 }: DocumentOperationCenterProps) {
   const { t } = useTranslation();
+
+  const currentPhase = useMemo<Phase>(() => {
+    if (brief && onConfirmBrief) return "confirming";
+    if (onOpenBlueprint || onOpenReview) return "confirming";
+    if (status === "completed" || pendingChangeCount > 0) return "delivering";
+    if (status === "error" || status === "cancelled") return "delivering";
+    return "preparing";
+  }, [status, brief, onConfirmBrief, onOpenBlueprint, onOpenReview, pendingChangeCount]);
+
   return (
     <div
       data-document-task-scroll-region="true"
       style={{ height: "100%", minHeight: 0, overflowY: "auto" }}
     >
       <Stack gap="sm">
+        {/* DocumentTaskHeader: always visible */}
         <DocumentTaskHeader
           status={status}
           sourceScope={sourceScope}
@@ -87,50 +100,95 @@ export function DocumentOperationCenter({
           deepCollaborationEnabled={deepCollaborationEnabled}
           onToggleDeepCollaboration={onToggleDeepCollaboration}
         />
-        <TaskActivityFeed steps={steps} defaultExpanded={defaultExpanded} />
-        {brief && onConfirmBrief ? (
-          <SmartBriefCard
-            brief={brief}
-            assetSummary={assetSummary}
-            onConfirm={onConfirmBrief}
-          />
-        ) : null}
-        {onOpenBlueprint || onOpenReview ? (
-          <Group gap="xs">
-            {onOpenBlueprint ? (
-              <Button size="xs" variant="default" onClick={onOpenBlueprint}>
-                {t("Review blueprint")}
-              </Button>
+
+        {/* Phase indicator */}
+        <Group gap={4} justify="center" mb="sm">
+          <Badge
+            variant={currentPhase === "preparing" ? "filled" : "light"}
+            color={currentPhase === "preparing" ? "blue" : "gray"}
+            size="sm"
+          >
+            {t("Preparing")}
+          </Badge>
+          <IconChevronRight size={12} color="gray" />
+          <Badge
+            variant={currentPhase === "confirming" ? "filled" : "light"}
+            color={currentPhase === "confirming" ? "blue" : "gray"}
+            size="sm"
+          >
+            {t("Confirming")}
+          </Badge>
+          <IconChevronRight size={12} color="gray" />
+          <Badge
+            variant={currentPhase === "delivering" ? "filled" : "light"}
+            color={currentPhase === "delivering" ? "blue" : "gray"}
+            size="sm"
+          >
+            {t("Delivering")}
+          </Badge>
+        </Group>
+
+        {/* PREPARING phase: only activity feed */}
+        {currentPhase === "preparing" && (
+          <TaskActivityFeed steps={steps} defaultExpanded={defaultExpanded} />
+        )}
+
+        {/* CONFIRMING phase: brief/blueprint/review + expert collab + activity */}
+        {currentPhase === "confirming" && (
+          <>
+            {brief && onConfirmBrief ? (
+              <SmartBriefCard
+                brief={brief}
+                assetSummary={assetSummary}
+                onConfirm={onConfirmBrief}
+              />
             ) : null}
-            {onOpenReview ? (
-              <Button size="xs" variant="default" onClick={onOpenReview}>
-                {t("Open review")}
-              </Button>
+            {onOpenBlueprint || onOpenReview ? (
+              <Group gap="xs">
+                {onOpenBlueprint ? (
+                  <Button size="xs" variant="default" onClick={onOpenBlueprint}>
+                    {t("Review blueprint")}
+                  </Button>
+                ) : null}
+                {onOpenReview ? (
+                  <Button size="xs" variant="default" onClick={onOpenReview}>
+                    {t("Open review")}
+                  </Button>
+                ) : null}
+              </Group>
             ) : null}
-          </Group>
-        ) : null}
-        <DiffReviewPanel
-          taskSummary={taskSummary}
-          plan={plan}
-          diffSet={diffSet}
-        />
-        {deepCollaborationEnabled && expertCollab ? (
-          <ExpertCollabPanel
-            reason={expertCollab.reason}
-            question={expertCollab.question}
-            options={expertCollab.options}
-            recommendedOption={expertCollab.recommendedOption}
-            onConfirm={onConfirmExpertCollab}
-            onRevise={onReviseExpertCollab}
-          />
-        ) : null}
-        <PendingChangeBar
-          pendingChangeCount={pendingChangeCount}
-          canApply={canApply}
-          canRollback={canRollback}
-          onApply={onApplyPendingChanges}
-          onRollback={onRollbackSnapshot}
-        />
+            {deepCollaborationEnabled && expertCollab && onConfirmExpertCollab && (
+              <ExpertCollabPanel
+                reason={expertCollab.reason}
+                question={expertCollab.question}
+                options={expertCollab.options}
+                recommendedOption={expertCollab.recommendedOption}
+                onConfirm={onConfirmExpertCollab}
+                onRevise={onReviseExpertCollab}
+              />
+            )}
+            <TaskActivityFeed steps={steps} defaultExpanded={false} />
+          </>
+        )}
+
+        {/* DELIVERING phase: activity + diff + pending changes */}
+        {currentPhase === "delivering" && (
+          <>
+            <TaskActivityFeed steps={steps} defaultExpanded={false} />
+            <DiffReviewPanel
+              taskSummary={taskSummary}
+              plan={plan}
+              diffSet={diffSet}
+            />
+            <PendingChangeBar
+              pendingChangeCount={pendingChangeCount}
+              canApply={canApply}
+              canRollback={canRollback}
+              onApply={onApplyPendingChanges}
+              onRollback={onRollbackSnapshot}
+            />
+          </>
+        )}
       </Stack>
     </div>
   );
