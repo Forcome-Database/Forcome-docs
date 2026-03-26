@@ -46,9 +46,9 @@ from app.models.document_task import DocumentTask
 
 # Phase 4 tools
 from app.orchestrator.tools.evaluate import evaluate_quality
-from app.orchestrator.tools.fix_tools import fix_selected_issues
 from app.workers.fixer import apply_auto_fixes
 from app.workers.researcher import research as research_tool
+from app.orchestrator.review.review_loop import run_review_loop, L2_MESSAGES, L3_MESSAGES
 
 import re as _re
 
@@ -883,113 +883,23 @@ class OrchestratorEngine:
             thread_id=request.thread_id,
         )
 
-        while review_report.user_decision_needed:
-            review_response = await self._await_user_input(
-                thread_id=request.thread_id,
-                phase="review",
-                data={
-                    "type": "review",
-                    "report": review_report.model_dump(),
-                },
-                timeout_message="Timed out waiting for review confirmation (10 min). Content below target.",
-                raise_on_timeout=False,
-            )
-
-            if not isinstance(review_response, dict):
-                if _has_blocking_review_issues(review_report):
-                    raise RuntimeError("Review timed out with unresolved blocking issues. Cannot finalize.")
-                break
-
-            skip_requested = bool(review_response.get("skip"))
-            selected_ids = [
-                issue_id for issue_id in review_response.get("selected_issue_ids", [])
-                if isinstance(issue_id, str)
-            ]
-            feedback = review_response.get("feedback")
-
-            if skip_requested and _has_blocking_review_issues(review_report, allow_visual_skip=True):
-                blocked_event = {
-                    "type": "blocked",
-                    "kind": "review",
-                    "message": "Blocking review issues remain and must be fixed before completion",
-                    "required_action": "Fix the remaining blocking issues before completing",
-                    "allowed_resolutions": ["fix_selected_issues", "update_brief", "update_blueprint"],
-                }
-                session_store.upsert_session(
-                    session_id=request.thread_id,
-                    thread_id=request.thread_id,
-                    run_state="blocked",
-                    phase="review",
-                    blocked={k: v for k, v in blocked_event.items() if k != "type"},
-                )
-                await emit(request.thread_id, blocked_event)
-                continue
-
-            if not selected_ids and not skip_requested:
-                blocked_event = {
-                    "type": "blocked",
-                    "kind": "review",
-                    "message": "Select one or more review issues to fix before continuing",
-                    "required_action": "Choose review issues to fix, or skip visual issues explicitly",
-                    "allowed_resolutions": ["fix_selected_issues", "skip_visual_issues"],
-                }
-                session_store.upsert_session(
-                    session_id=request.thread_id,
-                    thread_id=request.thread_id,
-                    run_state="blocked",
-                    phase="review",
-                    blocked={k: v for k, v in blocked_event.items() if k != "type"},
-                )
-                await emit(request.thread_id, blocked_event)
-                continue
-
-            if skip_requested:
-                if _has_blocking_review_issues(review_report, allow_visual_skip=True):
-                    await emit(
-                        request.thread_id,
-                        {
-                            "type": "blocked",
-                            "message": "Blocking structure/length/asset issues remain. Cannot skip to finalize.",
-                        },
-                    )
-                    continue
-                break
-
-            if not selected_ids:
-                await emit(
-                    request.thread_id,
-                    {
-                        "type": "blocked",
-                        "message": "Select issues to fix. Only visual issues can be skipped.",
-                    },
-                )
-                continue
-
-            section_drafts = await fix_selected_issues(
-                drafts=section_drafts,
-                issues=review_report.issues,
-                selected_issue_ids=selected_ids,
-                blueprint=blueprint,
-                asset_map=asset_map,
-                page_id=request.page_id,
-                thread_id=request.thread_id,
-                feedback=feedback if isinstance(feedback, str) else None,
-            )
-            await self._emit_draft_preview(
-                thread_id=request.thread_id,
-                blueprint=blueprint,
-                section_drafts=section_drafts,
-            )
-            review_report, section_drafts = await self._build_review_report(
-                section_drafts=section_drafts,
-                blueprint=blueprint,
-                brief=brief,
-                asset_map=asset_map,
-                thread_id=request.thread_id,
-            )
+        section_drafts = await run_review_loop(
+            review_report=review_report,
+            section_drafts=section_drafts,
+            blueprint=blueprint,
+            brief=brief,
+            asset_map=asset_map,
+            thread_id=request.thread_id,
+            page_id=request.page_id,
+            messages=L2_MESSAGES,
+            await_user_input=self._await_user_input,
+            build_review_report=self._build_review_report,
+            emit_draft_preview=self._emit_draft_preview,
+            has_blocking_issues=_has_blocking_review_issues,
+        )
 
         if _build_section_alignment_issues(section_drafts, blueprint):
-            raise RuntimeError("Section set inconsistent with blueprint. Cannot finalize.")
+            raise RuntimeError(L2_MESSAGES.alignment_error)
 
         document_tree = build_document_tree(blueprint, section_drafts)
 
@@ -1202,113 +1112,23 @@ class OrchestratorEngine:
             thread_id=request.thread_id,
         )
 
-        while review_report.user_decision_needed:
-            review_response = await self._await_user_input(
-                thread_id=request.thread_id,
-                phase="review",
-                data={
-                    "type": "review",
-                    "report": review_report.model_dump(),
-                },
-                timeout_message="等待评审确认超时（10分钟），当前内容仍未达标",
-                raise_on_timeout=False,
-            )
-
-            if not isinstance(review_response, dict):
-                if _has_blocking_review_issues(review_report):
-                    raise RuntimeError("评审超时，仍存在未解决的阻塞问题，无法完成")
-                break
-
-            skip_requested = bool(review_response.get("skip"))
-            selected_ids = [
-                issue_id for issue_id in review_response.get("selected_issue_ids", [])
-                if isinstance(issue_id, str)
-            ]
-            feedback = review_response.get("feedback")
-
-            if skip_requested and _has_blocking_review_issues(review_report, allow_visual_skip=True):
-                blocked_event = {
-                    "type": "blocked",
-                    "kind": "review",
-                    "message": "Blocking review issues remain and must be fixed before completion",
-                    "required_action": "Fix the remaining blocking issues before completing",
-                    "allowed_resolutions": ["fix_selected_issues", "update_brief", "update_blueprint"],
-                }
-                session_store.upsert_session(
-                    session_id=request.thread_id,
-                    thread_id=request.thread_id,
-                    run_state="blocked",
-                    phase="review",
-                    blocked={k: v for k, v in blocked_event.items() if k != "type"},
-                )
-                await emit(request.thread_id, blocked_event)
-                continue
-
-            if not selected_ids and not skip_requested:
-                blocked_event = {
-                    "type": "blocked",
-                    "kind": "review",
-                    "message": "Select one or more review issues to fix before continuing",
-                    "required_action": "Choose review issues to fix, or skip visual issues explicitly",
-                    "allowed_resolutions": ["fix_selected_issues", "skip_visual_issues"],
-                }
-                session_store.upsert_session(
-                    session_id=request.thread_id,
-                    thread_id=request.thread_id,
-                    run_state="blocked",
-                    phase="review",
-                    blocked={k: v for k, v in blocked_event.items() if k != "type"},
-                )
-                await emit(request.thread_id, blocked_event)
-                continue
-
-            if skip_requested:
-                if _has_blocking_review_issues(review_report, allow_visual_skip=True):
-                    await emit(
-                        request.thread_id,
-                        {
-                            "type": "blocked",
-                            "message": "仍存在必须修复的结构、长度或素材问题，无法直接跳过完成",
-                        },
-                    )
-                    continue
-                break
-
-            if not selected_ids:
-                await emit(
-                    request.thread_id,
-                    {
-                        "type": "blocked",
-                        "message": "请选择要修复的问题；只有视觉问题才允许跳过完成",
-                    },
-                )
-                continue
-
-            section_drafts = await fix_selected_issues(
-                drafts=section_drafts,
-                issues=review_report.issues,
-                selected_issue_ids=selected_ids,
-                blueprint=blueprint,
-                asset_map=asset_map,
-                page_id=request.page_id,
-                thread_id=request.thread_id,
-                feedback=feedback if isinstance(feedback, str) else None,
-            )
-            await self._emit_draft_preview(
-                thread_id=request.thread_id,
-                blueprint=blueprint,
-                section_drafts=section_drafts,
-            )
-            review_report, section_drafts = await self._build_review_report(
-                section_drafts=section_drafts,
-                blueprint=blueprint,
-                brief=brief,
-                asset_map=asset_map,
-                thread_id=request.thread_id,
-            )
+        section_drafts = await run_review_loop(
+            review_report=review_report,
+            section_drafts=section_drafts,
+            blueprint=blueprint,
+            brief=brief,
+            asset_map=asset_map,
+            thread_id=request.thread_id,
+            page_id=request.page_id,
+            messages=L3_MESSAGES,
+            await_user_input=self._await_user_input,
+            build_review_report=self._build_review_report,
+            emit_draft_preview=self._emit_draft_preview,
+            has_blocking_issues=_has_blocking_review_issues,
+        )
 
         if _build_section_alignment_issues(section_drafts, blueprint):
-            raise RuntimeError("章节集合与 blueprint 不一致，无法 finalize")
+            raise RuntimeError(L3_MESSAGES.alignment_error)
 
         # 9. Merge and finalize — derive final markdown from the canonical document tree
         document_tree = build_document_tree(blueprint, section_drafts)
