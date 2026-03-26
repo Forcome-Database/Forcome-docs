@@ -11,6 +11,9 @@ Level 3 falls back to Level 1 pending Phase 3.
 from __future__ import annotations
 
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 import uuid
 from typing import Literal
 
@@ -83,12 +86,20 @@ def _build_text_asset_context(asset_map: object | None) -> str:
     if not asset_map:
         return ""
 
-    text_items = [item for item in asset_map.items if item.type == "text"]
-    if not text_items:
+    # Prefer full source markdown — preserves document structure, images, tables, code
+    if getattr(asset_map, "source_markdown", ""):
+        title = getattr(asset_map, "document_title", "")
+        header = f"--- Source Document: {title} ---\n" if title else ""
+        return header + asset_map.source_markdown
+
+    # Fallback: join all content-bearing items (text + table + code)
+    relevant_types = {"text", "table", "code"}
+    relevant_items = [item for item in asset_map.items if item.type in relevant_types]
+    if not relevant_items:
         return ""
 
     parts: list[str] = []
-    for item in text_items:
+    for item in relevant_items:
         parts.append(f"--- Source: {item.source or item.id} ---\n{item.content}")
     return "\n\n".join(parts)
 
@@ -569,6 +580,14 @@ class OrchestratorEngine:
                 asset_map = await parse_assets_tool(**parse_kwargs)
             except Exception as exc:
                 parse_error = str(exc)[:200]
+                logger.error(
+                    "parse_assets_failed",
+                    extra={"error": parse_error, "file_count": len(request.files)},
+                )
+                await emit(
+                    request.thread_id,
+                    {"type": "error", "error": f"Document parsing failed: {parse_error}"},
+                )
 
         asset_map, evidence_items = await collect_evidence(
             request,

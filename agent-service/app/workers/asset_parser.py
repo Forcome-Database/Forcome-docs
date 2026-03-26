@@ -315,6 +315,7 @@ def _asset_map_from_parsed_document(parsed: DocumentParseResult, filename: str) 
         source_structure=headings,
         source_word_count=count_words(text),
         source_section_counts=count_words_by_section(text),
+        source_markdown=text,
         document_title=(parsed.document_title or "").strip() or _fallback_document_title(filename),
     )
 

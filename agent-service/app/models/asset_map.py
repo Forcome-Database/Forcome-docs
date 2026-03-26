@@ -28,6 +28,7 @@ class AssetMap(BaseModel):
     source_word_count: int = 0
     source_section_counts: dict[str, int] = Field(default_factory=dict)
     document_title: str = ""
+    source_markdown: str = ""
 
     def items_by_type(self, asset_type: str) -> list[AssetItem]:
         return [item for item in self.items if item.type == asset_type]
