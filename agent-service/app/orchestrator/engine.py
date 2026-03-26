@@ -84,11 +84,9 @@ def _build_asset_summary(asset_map: object) -> dict:
 
 def _build_text_asset_context(asset_map: object | None) -> str:
     if not asset_map:
-        print(f"[DEBUG _build_text_asset_context] asset_map is None/empty → returning ''")
         return ""
 
     sm = getattr(asset_map, "source_markdown", "")
-    print(f"[DEBUG _build_text_asset_context] source_markdown len={len(sm)}, items={len(getattr(asset_map, 'items', []))}")
 
     # Build VLM image context as a SEPARATE section (not mixed into source doc)
     vlm_context = ""
@@ -599,15 +597,8 @@ class OrchestratorEngine:
                 if page_id_for_assets is not None:
                     parse_kwargs["page_id"] = page_id_for_assets
                 asset_map = await parse_assets_tool(**parse_kwargs)
-                print(f"[DEBUG _prepare_evidence] parse SUCCESS:")
-                print(f"[DEBUG]   items={len(asset_map.items) if asset_map else 0}")
-                print(f"[DEBUG]   source_markdown len={len(asset_map.source_markdown) if asset_map else 0}")
-                print(f"[DEBUG]   word_count={asset_map.source_word_count if asset_map else 0}")
-                if asset_map and asset_map.source_markdown:
-                    print(f"[DEBUG]   source_markdown first 200 chars: {asset_map.source_markdown[:200]}")
             except Exception as exc:
                 parse_error = str(exc)[:200]
-                print(f"[DEBUG _prepare_evidence] parse FAILED: {parse_error}")
                 logger.error(
                     "parse_assets_failed",
                     extra={"error": parse_error, "file_count": len(request.files)},
@@ -616,8 +607,6 @@ class OrchestratorEngine:
                     request.thread_id,
                     {"type": "error", "error": f"Document parsing failed: {parse_error}"},
                 )
-        else:
-            print(f"[DEBUG _prepare_evidence] NO FILES in request")
 
         asset_map, evidence_items = await collect_evidence(
             request,
@@ -715,10 +704,6 @@ class OrchestratorEngine:
         # Pass the full source markdown so LLM sees the complete document
         # with images in correct positions.
         source_md = getattr(asset_map, "source_markdown", "") if asset_map else ""
-        print(f"\n[DEBUG _execute_preservation_patch]")
-        print(f"[DEBUG]   source_md len={len(source_md)}")
-        print(f"[DEBUG]   has files={bool(request.files)}, file_count={len(request.files)}")
-        print(f"[DEBUG]   user_message={request.user_message[:80]}")
         # REMOVED direct insert — always use LLM for optimization
         # The previous direct insert produced no optimization at all
         if False:  # disabled — LLM path below handles all cases
