@@ -7,6 +7,7 @@ export interface AgentStepInfo {
   description: string;
   status: 'running' | 'done' | 'error' | 'pending';
   resultSummary?: string;
+  startTime?: number;
 }
 
 export interface AgentProposalOption {

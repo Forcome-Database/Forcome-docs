@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
+import { useInterval } from "@mantine/hooks";
 import { useTranslation } from "react-i18next";
 import type { AgentStepInfo } from "@/ee/ai/types/agent.types";
 
@@ -45,6 +46,11 @@ function formatStepLabel(
     return step.description;
   }
 
+  if (step.step?.startsWith("write_section")) {
+    const num = step.step.replace(/write_section_?/, "");
+    return t("Writing section") + (num ? ` ${num}` : "");
+  }
+
   switch (step.step) {
     case "parse_assets":
       return t("Parse uploaded source files");
@@ -58,9 +64,24 @@ function formatStepLabel(
       return t("Review generated changes");
     case "finalize":
       return t("Prepare apply package");
+    case "research":
+      return t("Researching online sources");
+    case "simple_edit":
+      return t("Editing content");
+    case "consistency_check":
+      return t("Checking consistency");
+    case "evaluate":
+      return t("Evaluating quality");
     default:
-      return step.step;
+      return step.step?.replace(/_/g, " ") ?? t("Processing");
   }
+}
+
+function formatElapsed(startTime?: number): string {
+  if (!startTime) return "";
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  if (elapsed < 60) return `${elapsed}s`;
+  return `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
 }
 
 export function TaskActivityFeed({
@@ -70,6 +91,19 @@ export function TaskActivityFeed({
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(defaultExpanded);
 
+  const [, setTick] = useState(0);
+  const interval = useInterval(() => setTick((tick) => tick + 1), 1000);
+
+  useEffect(() => {
+    const hasRunning = steps.some((s) => s.status === "running");
+    if (hasRunning) {
+      interval.start();
+    } else {
+      interval.stop();
+    }
+    return () => interval.stop();
+  }, [steps]);
+
   const visibleSteps = useMemo(() => {
     if (expanded) {
       return steps;
@@ -78,7 +112,6 @@ export function TaskActivityFeed({
   }, [expanded, steps]);
 
   const hiddenCount = Math.max(steps.length - visibleSteps.length, 0);
-  const latestStep = steps[steps.length - 1] || null;
   const hiddenUpdatesLabel = t("{{count}} earlier updates hidden", {
     count: hiddenCount,
   }).replace("{{count}}", String(hiddenCount));
@@ -106,41 +139,22 @@ export function TaskActivityFeed({
           ) : null}
         </Group>
 
-        {latestStep ? (
-          <Paper
-            withBorder
-            radius="md"
-            p="sm"
-            style={{
-              background:
-                "linear-gradient(180deg, rgba(59, 130, 246, 0.06) 0%, rgba(59, 130, 246, 0.01) 100%)",
-            }}
-          >
-            <Group justify="space-between" align="flex-start" wrap="nowrap">
-              <Stack gap={4}>
-                <Text size="xs" fw={700} c="dimmed" tt="uppercase">
-                  {t("Latest update")}
-                </Text>
-                <Text size="sm" fw={600}>
-                  {formatStepLabel(latestStep, t)}
-                </Text>
-                {latestStep.resultSummary ? (
-                  <Text size="xs" c="dimmed">
-                    {latestStep.resultSummary}
-                  </Text>
-                ) : null}
-              </Stack>
-              <Badge color={statusColor(latestStep.status)} variant="light">
-                {formatStatusLabel(latestStep.status, t)}
-              </Badge>
-            </Group>
-          </Paper>
-        ) : null}
-
         {visibleSteps.length > 0 ? (
           <Stack gap="xs">
             {visibleSteps.map((step, index) => (
-              <Group key={`${step.step}-${step.status}-${index}`} align="stretch" wrap="nowrap">
+              <Group
+                key={`${step.step}-${step.status}-${index}`}
+                align="stretch"
+                wrap="nowrap"
+                style={{
+                  borderLeft:
+                    index === visibleSteps.length - 1
+                      ? "3px solid var(--mantine-color-blue-5)"
+                      : undefined,
+                  paddingLeft:
+                    index === visibleSteps.length - 1 ? 8 : undefined,
+                }}
+              >
                 <Stack gap={4} align="center" pt={4}>
                   <Box
                     style={{
@@ -169,9 +183,16 @@ export function TaskActivityFeed({
                       <Text fw={500} size="sm">
                         {formatStepLabel(step, t)}
                       </Text>
-                      <Badge color={statusColor(step.status)} variant="light">
-                        {formatStatusLabel(step.status, t)}
-                      </Badge>
+                      <Group gap="xs" wrap="nowrap">
+                        {step.startTime && (
+                          <Text size="xs" c="dimmed">
+                            {formatElapsed(step.startTime)}
+                          </Text>
+                        )}
+                        <Badge color={statusColor(step.status)} variant="light">
+                          {formatStatusLabel(step.status, t)}
+                        </Badge>
+                      </Group>
                     </Group>
                     {step.resultSummary ? (
                       <Text size="xs" c="dimmed">

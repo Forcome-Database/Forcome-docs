@@ -33,6 +33,7 @@ export function applyAgentStepEvent(
         ? {
             description: event.description,
             status: "running" as const,
+            startTime: nextSteps[index].startTime ?? Date.now(),
           }
         : {
             status: "done" as const,
@@ -46,6 +47,7 @@ export function applyAgentStepEvent(
       status: event.type === "step_start" ? "running" : "done",
       resultSummary:
         event.type === "step_done" ? event.resultSummary : undefined,
+      startTime: event.type === "step_start" ? Date.now() : undefined,
     });
   }
 
