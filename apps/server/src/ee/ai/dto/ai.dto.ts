@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export enum AiAction {
   IMPROVE_WRITING = 'improve_writing',
@@ -21,15 +21,18 @@ export class AiGenerateDto {
 
   @IsNotEmpty()
   @IsString()
+  @MaxLength(50000)
   content: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   prompt?: string;
 }
 
 export class AiAnswerDto {
   @IsNotEmpty()
   @IsString()
+  @MaxLength(2000)
   query: string;
 }
