@@ -40,11 +40,6 @@ MINERU_SUPPORTED_MIMETYPES = {
 }
 
 
-def _get_docling_parser():
-    from app.tools.docling_parser import docling_parser  # type: ignore
-    return docling_parser
-
-
 def _get_docmost_upload():
     from app.tools.docmost_api import docmost_upload  # type: ignore
     return docmost_upload
@@ -55,16 +50,9 @@ def _get_vlm_understand():
     return vlm_understand
 
 
-docling_parser = None
 docmost_upload = None
 vlm_understand = None
 logger = logging.getLogger(__name__)
-
-
-def _docling_parser_invoke(args: dict) -> str:
-    global docling_parser  # noqa: PLW0603
-    tool = docling_parser if docling_parser is not None else _get_docling_parser()
-    return tool.invoke(args)
 
 
 def _docmost_upload_invoke(args: dict) -> str:
@@ -208,17 +196,6 @@ def _extract_code_blocks(text: str) -> tuple[list[str], list[str]]:
 
 def _fallback_document_title(filename: str) -> str:
     return Path(filename).stem.strip()
-
-
-def _parse_with_docling(file_content_b64: str, filename: str, mimetype: str) -> DocumentParseResult:
-    raw_json = _docling_parser_invoke(
-        {
-            "file_content_b64": file_content_b64,
-            "filename": filename,
-            "mimetype": mimetype,
-        }
-    )
-    return DocumentParseResult.model_validate(json.loads(raw_json))
 
 
 def _parse_with_mineru(file_content_b64: str, filename: str, mimetype: str) -> DocumentParseResult:
