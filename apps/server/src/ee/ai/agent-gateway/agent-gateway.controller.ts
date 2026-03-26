@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Post,
   Get,
@@ -369,9 +370,10 @@ export class AgentGatewayController {
     @AuthUser() user: any,
   ) {
     const sessionId = body.sessionId || body.session_id;
-    if (sessionId) {
-      await this.agentGatewayService.validateSessionOwner(sessionId, user.id);
+    if (!sessionId) {
+      throw new BadRequestException('sessionId is required');
     }
+    await this.agentGatewayService.validateSessionOwner(sessionId, user.id);
 
     const agentUrl = this.environmentService.getAgentServiceUrl();
     if (!agentUrl) {
@@ -460,9 +462,10 @@ export class AgentGatewayController {
 
   @Post('stop')
   async stopAgent(@Body() dto: AgentStopDto, @AuthUser() user: any) {
-    if (dto.sessionId) {
-      await this.agentGatewayService.validateSessionOwner(dto.sessionId, user.id);
+    if (!dto.sessionId) {
+      throw new BadRequestException('sessionId is required');
     }
+    await this.agentGatewayService.validateSessionOwner(dto.sessionId, user.id);
     return this.agentGatewayService.stopAgent(dto.taskId);
   }
 

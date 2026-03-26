@@ -42,7 +42,12 @@ export class AgentGatewayService {
     if (!raw) {
       throw new ForbiddenException('Session not found or expired');
     }
-    const data = JSON.parse(raw);
+    let data: { userId: string; workspaceId: string };
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new ForbiddenException('Invalid session data');
+    }
     if (data.userId !== userId) {
       throw new ForbiddenException('You do not own this session');
     }
