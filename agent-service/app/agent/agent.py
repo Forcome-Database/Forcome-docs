@@ -40,17 +40,9 @@ def create_agent(
 
     # 构建 ModelSettings（动态 max_tokens + Thinking 能力）
     # ModelSettings 是 TypedDict，直接传关键字参数构造
-    model_settings_kwargs: dict = {"max_tokens": max_tokens}
-
-    # Thinking 能力（pydantic-ai >= 1.72.0）
-    # ModelSettings.thinking 字段类型为 ThinkingLevel = Union[bool, Literal['minimal','low','medium','high','xhigh']]
-    # 注意：不是所有 provider 都支持 thinking，不支持时 provider 会忽略该字段
-    try:
-        from pydantic_ai.settings import ModelSettings as _MS  # noqa: F401 — 仅做存在性校验
-        model_settings_kwargs["thinking"] = "high"
-        logger.debug("Thinking capability set to 'high'")
-    except (ImportError, Exception) as e:
-        logger.debug(f"Thinking capability not available: {e}")
+    # thinking 字段类型: ThinkingLevel = Union[bool, Literal['minimal','low','medium','high','xhigh']]
+    # 不支持 thinking 的 provider 会静默忽略该字段
+    model_settings_kwargs: dict = {"max_tokens": max_tokens, "thinking": "high"}
 
     # Tool functions use `RunContext["AgentDeps"]` with TYPE_CHECKING guard,
     # so `AgentDeps` is absent from their module globals at runtime.

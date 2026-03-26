@@ -60,7 +60,8 @@ async def run_agent(
         prompt = user_message
 
     # 3. 流式执行 Agent
-    final_output = ""
+    streamed_chunks: list[str] = []  # 流式 chunk 累积（回退用）
+    authoritative_output: str | None = None  # AgentRunResultEvent 权威输出
     try:
         stream_kwargs: dict[str, Any] = {"deps": deps}
         if message_history:
@@ -72,10 +73,10 @@ async def run_agent(
                 yield {"type": "cancelled"}
                 return
 
-            # AgentRunResultEvent 包含权威的最终输出，在此处捕获
+            # AgentRunResultEvent 包含权威的最终输出
             if isinstance(event, AgentRunResultEvent):
                 if hasattr(event.result, "output"):
-                    final_output = event.result.output
+                    authoritative_output = event.result.output
                 continue
 
             # 将 PydanticAI 事件转换为 SSE dict
@@ -83,9 +84,9 @@ async def run_agent(
             if sse is None:
                 continue
 
-            # 累积 content chunk（用于后验证回退，AgentRunResultEvent 优先）
+            # 累积 content chunk（仅作为 AgentRunResultEvent 缺失时的回退）
             if sse["type"] == "content":
-                final_output += sse.get("chunk", "")
+                streamed_chunks.append(sse.get("chunk", ""))
 
             yield sse
 
@@ -93,6 +94,9 @@ async def run_agent(
         logger.exception("Agent execution failed for thread %s", deps.thread_id)
         yield {"type": "error", "message": str(e)}
         return
+
+    # 选择最终输出：AgentRunResultEvent 优先，流式 chunks 回退
+    final_output = authoritative_output if authoritative_output is not None else "".join(streamed_chunks)
 
     # 4. 后验证（在循环结束后，使用最终完整输出）
     if deps.uploaded_image_urls and final_output:

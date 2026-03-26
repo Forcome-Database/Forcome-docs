@@ -22,8 +22,9 @@ async def extract_document_impl(deps: "AgentDeps", purpose: str = "") -> str:
         from app.workers.asset_parser import parse_document
 
         # 并行解析所有文件
+        loop = asyncio.get_running_loop()
         tasks = [
-            asyncio.get_event_loop().run_in_executor(
+            loop.run_in_executor(
                 None, parse_document, f["content_b64"], f["filename"], f["mimetype"]
             )
             for f in deps.files
