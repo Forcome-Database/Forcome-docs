@@ -19,6 +19,10 @@ dependencies = [
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",
     "redis>=5.0",
+    "trafilatura>=2.0.0",
+    "imagehash>=4.3",
+    "pybreaker>=1.0",
+    "cachetools>=5.0",
 ]
 
 [project.optional-dependencies]
