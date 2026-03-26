@@ -656,7 +656,13 @@ class OrchestratorEngine:
         return final_content
 
     async def _execute_preservation_patch(self, request: OrchestratorRequest) -> str:
-        """Execute strict-preservation document transforms without brief/blueprint steps."""
+        """Execute strict-preservation document transforms without brief/blueprint steps.
+
+        When source files are present with parsed markdown, bypass the LLM entirely
+        and use the parsed+image-rewritten markdown directly. This preserves the
+        original document structure, image positions, and content exactly as parsed.
+        Only falls back to LLM-based editing when no source markdown is available.
+        """
         asset_map, evidence_items = await self._prepare_evidence(
             request,
             page_id_for_assets=request.page_id,
@@ -675,6 +681,44 @@ class OrchestratorEngine:
             blocked=None,
         )
 
+        # Strict preservation: if we have parsed source markdown with images
+        # already rewritten to Docmost URLs, use it DIRECTLY — do NOT ask LLM
+        # to rewrite, which would scramble image positions and document structure.
+        source_md = getattr(asset_map, "source_markdown", "") if asset_map else ""
+        if source_md and request.files:
+            logger.info(
+                "preservation_patch_direct_insert",
+                extra={"word_count": len(source_md.split()), "thread_id": request.thread_id},
+            )
+            await emit(request.thread_id, {
+                "type": "step_start",
+                "step": "preservation_patch",
+                "description": "Applying parsed document directly (strict preservation)…",
+            })
+
+            # Stream the source markdown as content events for UI feedback
+            chunk_size = 200
+            for i in range(0, len(source_md), chunk_size):
+                await emit(request.thread_id, {
+                    "type": "content",
+                    "chunk": source_md[i:i + chunk_size],
+                })
+
+            await emit(request.thread_id, {
+                "type": "step_done",
+                "step": "preservation_patch",
+                "result_summary": f"Document preserved ({len(source_md.split())} words, images intact)",
+            })
+
+            final_content = await finalize_and_emit(
+                thread_id=request.thread_id,
+                sections=[source_md],
+                insert_mode=request.insert_mode,
+                asset_map=None,
+            )
+            return final_content
+
+        # Fallback: no source markdown available — use LLM-based editing
         asset_context = _build_text_asset_context(asset_map)
         preservation_instructions = (
             "[Preservation Patch]\n"

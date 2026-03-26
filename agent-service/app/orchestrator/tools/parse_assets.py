@@ -40,6 +40,34 @@ def _normalize_source_ref(ref: str) -> str:
     return normalized
 
 
+def _rewrite_source_markdown_image_refs(markdown: str, items: list) -> str:
+    """Rewrite image refs in source_markdown using uploaded image URLs from items."""
+    source_ref_to_url: dict[str, str] = {}
+    for item in items:
+        if item.type != "image" or not item.source_ref or not item.content:
+            continue
+        normalized_ref = _normalize_source_ref(item.source_ref)
+        if normalized_ref:
+            source_ref_to_url[normalized_ref] = item.content
+
+    if not source_ref_to_url:
+        return markdown
+
+    def resolve_url(raw_ref: str) -> str | None:
+        normalized = _normalize_source_ref(raw_ref)
+        return source_ref_to_url.get(normalized) if normalized else None
+
+    result = MARKDOWN_IMAGE_REF_RE.sub(
+        lambda m: f"![{m.group(1)}]({r})" if (r := resolve_url(m.group(2))) else m.group(0),
+        markdown,
+    )
+    result = HTML_IMAGE_SRC_RE.sub(
+        lambda m: f"{m.group(1)}{r}{m.group(3)}" if (r := resolve_url(m.group(2))) else m.group(0),
+        result,
+    )
+    return result
+
+
 def _rewrite_text_asset_image_refs(items: list) -> list:
     source_ref_to_url: dict[str, str] = {}
     for item in items:
@@ -228,6 +256,14 @@ async def parse_assets_tool(
     if page_id:
         combined.items = upgrade_source_image_assets(combined.items, page_id)
         combined.items = _rewrite_text_asset_image_refs(combined.items)
+
+        # Also rewrite image refs in source_markdown so preservation_patch
+        # can use it directly with correct Docmost image URLs
+        if combined.source_markdown:
+            combined.source_markdown = _rewrite_source_markdown_image_refs(
+                combined.source_markdown, combined.items
+            )
+
         combined.items = _placeholderize_text_asset_image_refs(combined.items)
 
     return combined
