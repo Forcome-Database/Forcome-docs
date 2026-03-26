@@ -447,7 +447,7 @@ class OrchestratorEngine:
                     "type": "blueprint",
                     "blueprint": current_blueprint.model_dump(),
                 },
-                timeout_message="绛夊緟 Blueprint 纭瓒呮椂锛?0鍒嗛挓锛夛紝浠诲姟宸插彇娑?",
+                timeout_message="Timed out waiting for blueprint confirmation (10 min). Task cancelled.",
             )
 
             if not isinstance(blueprint_response, dict) or not blueprint_response.get("blueprint"):
@@ -879,13 +879,13 @@ class OrchestratorEngine:
                     "type": "review",
                     "report": review_report.model_dump(),
                 },
-                timeout_message="绛夊緟璇勫纭瓒呮椂锛?0鍒嗛挓锛夛紝褰撳墠鍐呭浠嶆湭杈炬爣",
+                timeout_message="Timed out waiting for review confirmation (10 min). Content below target.",
                 raise_on_timeout=False,
             )
 
             if not isinstance(review_response, dict):
                 if _has_blocking_review_issues(review_report):
-                    raise RuntimeError("璇勫瓒呮椂锛屼粛瀛樺湪鏈В鍐崇殑闃诲闂锛屾棤娉曞畬鎴?")
+                    raise RuntimeError("Review timed out with unresolved blocking issues. Cannot finalize.")
                 break
 
             skip_requested = bool(review_response.get("skip"))
@@ -937,7 +937,7 @@ class OrchestratorEngine:
                         request.thread_id,
                         {
                             "type": "blocked",
-                            "message": "浠嶅瓨鍦ㄥ繀椤讳慨澶嶇殑缁撴瀯銆侀暱搴︽垨绱犳潗闂锛屾棤娉曠洿鎺ヨ烦杩囧畬鎴?",
+                            "message": "Blocking structure/length/asset issues remain. Cannot skip to finalize.",
                         },
                     )
                     continue
@@ -948,7 +948,7 @@ class OrchestratorEngine:
                     request.thread_id,
                     {
                         "type": "blocked",
-                        "message": "璇烽€夋嫨瑕佷慨澶嶇殑闂锛涘彧鏈夎瑙夐棶棰樻墠鍏佽璺宠繃瀹屾垚",
+                        "message": "Select issues to fix. Only visual issues can be skipped.",
                     },
                 )
                 continue
@@ -977,7 +977,7 @@ class OrchestratorEngine:
             )
 
         if _build_section_alignment_issues(section_drafts, blueprint):
-            raise RuntimeError("绔犺妭闆嗗悎涓?blueprint 涓嶄竴鑷达紝鏃犳硶 finalize")
+            raise RuntimeError("Section set inconsistent with blueprint. Cannot finalize.")
 
         document_tree = build_document_tree(blueprint, section_drafts)
 
