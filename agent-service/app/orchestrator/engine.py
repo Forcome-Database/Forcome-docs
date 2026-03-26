@@ -48,6 +48,14 @@ from app.models.document_task import DocumentTask
 from app.orchestrator.tools.evaluate import evaluate_quality
 from app.orchestrator.tools.fix_tools import fix_selected_issues
 from app.workers.fixer import apply_auto_fixes
+from app.workers.researcher import research as research_tool
+
+import re as _re
+
+
+def _extract_first_url(text: str) -> str | None:
+    urls = _re.findall(r'https?://\S+', text)
+    return urls[0].rstrip('.,)>') if urls else None
 
 
 def _build_asset_summary(asset_map: object) -> dict:
@@ -1024,8 +1032,8 @@ class OrchestratorEngine:
             )
 
         # 1b. Research step — if no uploaded files, gather web research
-        has_text_assets = True
-        has_sufficient_evidence = True
+        has_text_assets = bool(asset_map and asset_map.items)
+        has_sufficient_evidence = has_text_assets
         if not has_sufficient_evidence:
             await emit(request.thread_id, {
                 "type": "step_start",
