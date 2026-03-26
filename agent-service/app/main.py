@@ -23,8 +23,6 @@ from app.schemas.request import AgentResumeRequest, AgentStopRequest
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-_task_counter = 0
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -163,9 +161,7 @@ async def _run_orchestrator_with_stream(
 
 @app.post("/agent/run", dependencies=[Depends(verify_internal_secret)])
 async def run_agent(request: dict):
-    global _task_counter
-    _task_counter += 1
-    task_id = f"task-{_task_counter}"
+    task_id = f"task-{uuid4().hex[:12]}"
     thread_id = request.get("thread_id") or str(uuid4())
     session_store.upsert_session(
         session_id=thread_id,
