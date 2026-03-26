@@ -9,6 +9,8 @@ import logging
 import re
 from pathlib import Path
 
+import pybreaker
+
 from app.models.asset_map import AssetItem, AssetMap
 from app.models.source_assets import DocumentParseResult, SourceImagePayload
 from app.tools.mineru_client import MinerUClient, MinerUConfig
@@ -65,6 +67,13 @@ def _vlm_understand_invoke(args: dict) -> str:
     global vlm_understand  # noqa: PLW0603
     tool = vlm_understand if vlm_understand is not None else _get_vlm_understand()
     return tool.invoke(args)
+
+
+_mineru_breaker = pybreaker.CircuitBreaker(
+    fail_max=3,
+    reset_timeout=300,
+    name="mineru",
+)
 
 
 def _generate_asset_id(content: str, prefix: str = "asset") -> str:
@@ -325,7 +334,14 @@ def parse_document(file_content_b64: str, filename: str, mimetype: str) -> Asset
         "mineru_parse_start",
         extra={"source_filename": filename, "source_mimetype": mimetype or "unknown"},
     )
-    parsed = _parse_with_mineru(file_content_b64, filename, mimetype)
+    try:
+        parsed = _mineru_breaker.call(
+            _parse_with_mineru, file_content_b64, filename, mimetype
+        )
+    except pybreaker.CircuitBreakerError:
+        raise ValueError(
+            "Document parsing service temporarily unavailable. Please try again later."
+        )
     logger.info(
         "mineru_parse_complete",
         extra={
