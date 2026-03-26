@@ -145,13 +145,13 @@ export class AiInternalController {
   }
 
   private assertInternalSecret(req: FastifyRequest) {
+    const configuredSecret = this.environmentService.getAgentInternalSecret();
+    if (!configuredSecret) {
+      throw new UnauthorizedException('Internal endpoints are disabled');
+    }
     const header = req.headers['x-internal-secret'];
     const secret = Array.isArray(header) ? header[0] : header;
-
-    if (
-      !secret ||
-      secret !== this.environmentService.getAgentInternalSecret()
-    ) {
+    if (!secret || secret !== configuredSecret) {
       throw new UnauthorizedException('Invalid internal secret');
     }
   }
