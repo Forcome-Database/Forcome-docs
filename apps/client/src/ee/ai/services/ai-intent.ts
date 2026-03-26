@@ -227,7 +227,7 @@ export function resolveAiIntent(
       sourcePolicy: "transform_source",
       lengthPolicy,
       prioritizeUserInstructions: true,
-      effectiveMode: params.agentMode ? "agent" : "standard",
+      effectiveMode: "agent",  // Force agent mode — URLs need Firecrawl web scraping via Agent
     };
   }
 
