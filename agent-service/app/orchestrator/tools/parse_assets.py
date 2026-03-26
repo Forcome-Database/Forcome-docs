@@ -375,12 +375,10 @@ async def parse_assets_tool(
         combined.items = upgrade_source_image_assets(combined.items, page_id)
         combined.items = _rewrite_text_asset_image_refs(combined.items)
 
-        # Rewrite image refs in source_markdown AND inject VLM captions
+        # Rewrite image refs in source_markdown (do NOT inject VLM captions —
+        # they overwhelm the original content and confuse the LLM)
         if combined.source_markdown:
             combined.source_markdown = _rewrite_source_markdown_image_refs(
-                combined.source_markdown, combined.items
-            )
-            combined.source_markdown = _inject_vlm_captions_into_markdown(
                 combined.source_markdown, combined.items
             )
 

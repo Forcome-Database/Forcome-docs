@@ -87,24 +87,41 @@ def _build_text_asset_context(asset_map: object | None) -> str:
         print(f"[DEBUG _build_text_asset_context] asset_map is None/empty → returning ''")
         return ""
 
-    # Prefer full source markdown — preserves document structure, images, tables, code
     sm = getattr(asset_map, "source_markdown", "")
     print(f"[DEBUG _build_text_asset_context] source_markdown len={len(sm)}, items={len(getattr(asset_map, 'items', []))}")
+
+    # Build VLM image context as a SEPARATE section (not mixed into source doc)
+    vlm_context = ""
+    image_items = [i for i in asset_map.items if i.type == "image" and getattr(i, "caption", "") and len(i.caption) > 20]
+    if image_items:
+        vlm_parts = []
+        for img in image_items:
+            ref = img.content if not img.content.startswith("data:") else f"Image {img.source_page or '?'}"
+            vlm_parts.append(f"[Image: {ref}]\n{img.caption[:300]}")
+        vlm_context = "\n\n[Image Descriptions — for your understanding only, DO NOT include these in output]\n" + "\n\n".join(vlm_parts)
+
+    # Prefer full source markdown
     if sm:
         title = getattr(asset_map, "document_title", "")
         header = f"--- Source Document: {title} ---\n" if title else ""
-        return header + asset_map.source_markdown
+        result = header + asset_map.source_markdown
+        if vlm_context:
+            result += "\n\n" + vlm_context
+        return result
 
     # Fallback: join all content-bearing items (text + table + code)
     relevant_types = {"text", "table", "code"}
     relevant_items = [item for item in asset_map.items if item.type in relevant_types]
     if not relevant_items:
-        return ""
+        return vlm_context or ""
 
     parts: list[str] = []
     for item in relevant_items:
         parts.append(f"--- Source: {item.source or item.id} ---\n{item.content}")
-    return "\n\n".join(parts)
+    result = "\n\n".join(parts)
+    if vlm_context:
+        result += "\n\n" + vlm_context
+    return result
 
 
 def _should_promote_level2_to_structured_write(
@@ -741,17 +758,22 @@ class OrchestratorEngine:
         asset_context = _build_text_asset_context(asset_map)
         preservation_instructions = (
             "[Document Optimization Instructions]\n"
-            "You are optimizing the formatting and layout of a source document.\n"
-            "CRITICAL RULES:\n"
-            "1. KEEP ALL original text content — do not remove, summarize, or skip any part.\n"
-            "2. KEEP ALL image references (![...](url)) in their EXACT original positions.\n"
-            "   Do NOT move, reorder, or remove any images.\n"
-            "3. IMPROVE formatting: add proper headings, numbered lists, bold for key terms.\n"
-            "4. IMPROVE readability: fix line breaks, add spacing between sections.\n"
-            "5. KEEP all URLs, links, and technical details exactly as they are.\n"
-            "6. Output the COMPLETE optimized document in Markdown format.\n"
-            "7. If there are image descriptions (blockquotes after images), keep them.\n"
-            "8. Do NOT add content that isn't in the source document."
+            "You must output the source document with IMPROVED formatting.\n\n"
+            "ABSOLUTE RULES (violations = failure):\n"
+            "1. Output EVERY image reference exactly as: ![](url) — copy each ![...](/api/files/...) line verbatim.\n"
+            "   NEVER remove, reorder, or modify image references. They MUST appear in original order.\n"
+            "2. Keep ALL original text content. Do not remove, summarize, or skip any paragraph.\n"
+            "3. Keep all URLs and technical details exactly as they are.\n\n"
+            "FORMATTING IMPROVEMENTS:\n"
+            "- Add proper markdown headings (# ## ###) for sections.\n"
+            "- Use numbered lists for step-by-step instructions.\n"
+            "- Bold key terms and important warnings.\n"
+            "- Add blank lines between sections for readability.\n\n"
+            "FORBIDDEN:\n"
+            "- Do NOT output image descriptions or captions from the [Image Descriptions] section.\n"
+            "- Do NOT describe what images show — just keep the ![](url) references.\n"
+            "- Do NOT add content not in the source document.\n"
+            "- Do NOT output the [Image Descriptions] section."
         )
         merged_asset_context = (
             f"{asset_context}\n\n{preservation_instructions}"
