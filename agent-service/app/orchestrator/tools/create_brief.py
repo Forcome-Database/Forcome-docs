@@ -7,11 +7,39 @@ goal, length, style, tone, and structural strategy.
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from app.agent.events import emit  # imported at module level so tests can patch it
 from app.models.asset_map import AssetMap
 from app.models.brief import CreationBrief, normalize_image_strategy
+
+logger = logging.getLogger(__name__)
+
+
+def _extract_explicit_length(text: str) -> int | None:
+    """Extract explicit word count from user message like '2000字' or '2000 words'."""
+    m = re.search(r'(\d{3,6})\s*(?:字|词|words?|characters?)', text, re.IGNORECASE)
+    return int(m.group(1)) if m else None
+
+
+def _validate_brief(brief: CreationBrief, user_message: str) -> tuple[bool, list[str]]:
+    """Deterministic validation of Brief quality. No LLM needed."""
+    issues: list[str] = []
+    if brief.target_length <= 0:
+        issues.append("target_length is zero or negative")
+    if brief.goal in ('', 'general-purpose writing'):
+        issues.append("goal was not analyzed from user message")
+    if brief.audience in ('', 'general audience'):
+        issues.append("audience was not inferred")
+    explicit = _extract_explicit_length(user_message)
+    if explicit and brief.target_length > 0:
+        if abs(brief.target_length - explicit) > explicit * 0.5:
+            issues.append(
+                f"target_length {brief.target_length} diverges from user-specified {explicit}"
+            )
+    return len(issues) == 0, issues
+
 
 _SMALL_BLANK_PAGE_KEYWORDS = {
     "short",
@@ -254,6 +282,43 @@ async def generate_brief(
         brief_kwargs["constraints"] = [str(c) for c in llm_data["constraints"]]
 
     brief = CreationBrief(**brief_kwargs)
+
+    # Validate brief quality; retry once if validation fails
+    valid, issues = _validate_brief(brief, user_message)
+    if not valid:
+        logger.warning("Brief validation failed: %s. Retrying once.", issues)
+        hint = (
+            f"\nPrevious attempt had issues: {', '.join(issues)}. "
+            "Please address these."
+        )
+        retry_data = await _call_llm_for_brief(prompt + hint)
+
+        # Re-seed target_length from source if still missing
+        if source_wc > 0 and "target_length" not in retry_data:
+            retry_data["target_length"] = source_wc
+
+        retry_kwargs: dict = {}
+        if retry_data.get("audience"):
+            retry_kwargs["audience"] = str(retry_data["audience"])
+        if retry_data.get("goal"):
+            retry_kwargs["goal"] = str(retry_data["goal"])
+        if retry_data.get("target_length"):
+            try:
+                retry_kwargs["target_length"] = int(retry_data["target_length"])
+            except (TypeError, ValueError):
+                pass
+        if retry_data.get("style"):
+            retry_kwargs["style"] = str(retry_data["style"])
+        if retry_data.get("tone"):
+            retry_kwargs["tone"] = str(retry_data["tone"])
+        if retry_data.get("structure_strategy") in ("copy_source", "ai_recommend", "user_defined"):
+            retry_kwargs["structure_strategy"] = retry_data["structure_strategy"]
+        if retry_data.get("image_strategy"):
+            retry_kwargs["image_strategy"] = normalize_image_strategy(str(retry_data["image_strategy"]))
+        if isinstance(retry_data.get("constraints"), list):
+            retry_kwargs["constraints"] = [str(c) for c in retry_data["constraints"]]
+
+        brief = CreationBrief(**retry_kwargs)
 
     await emit(
         thread_id,
