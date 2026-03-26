@@ -344,6 +344,18 @@ class OrchestratorEngine:
             },
         )
 
+        # Emit routing decision event for frontend transparency
+        await emit(
+            request.thread_id,
+            {
+                "type": "routing_decision",
+                "task_type": request.intent_route,
+                "strategy": f"level_{complexity['level']}",
+                "reason": complexity["reasoning"],
+                "confidence": 1.0,
+            },
+        )
+
         # Step 2: Dispatch based on complexity level
         level = complexity["level"]
 

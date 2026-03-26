@@ -155,4 +155,12 @@ class DocumentTaskEvent(BaseModel):
     payload: DocumentTaskEnvelope
 
 
-SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ContentClearEvent | ImageEvent | DraftPatchEvent | ToolCallEvent | ErrorEvent | BlockedEvent | DoneEvent | AwaitInputEvent | SectionProgressEvent | SectionStateEvent | ComplexityAnalyzedEvent | FixAppliedEvent | SessionEvent | CancelledEvent | DocumentTaskEvent
+class RoutingDecisionEvent(BaseModel):
+    type: Literal["routing_decision"] = "routing_decision"
+    task_type: str
+    strategy: str
+    reason: str
+    confidence: float = 1.0
+
+
+SSEEvent = StepStartEvent | StepDoneEvent | ContentEvent | ContentClearEvent | ImageEvent | DraftPatchEvent | ToolCallEvent | ErrorEvent | BlockedEvent | DoneEvent | AwaitInputEvent | SectionProgressEvent | SectionStateEvent | ComplexityAnalyzedEvent | FixAppliedEvent | SessionEvent | CancelledEvent | DocumentTaskEvent | RoutingDecisionEvent
