@@ -47,6 +47,19 @@ export function DocumentTaskHeader({
       relaxed_optimization: t("Relaxed optimization"),
     }[mode] ?? mode;
 
+  const statusColor =
+    {
+      idle: "gray",
+      running: "blue",
+      awaiting_input: "yellow",
+      blocked: "orange",
+      completed: "green",
+      error: "red",
+      cancelled: "gray",
+      active: "blue",
+      hydrated: "teal",
+    }[status] ?? "gray";
+
   return (
     <Paper
       withBorder
@@ -81,37 +94,16 @@ export function DocumentTaskHeader({
           ) : null}
         </Group>
 
-        <Group grow align="stretch">
-          <Paper withBorder radius="md" p="sm">
-            <Stack gap={2}>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                {t("Status")}
-              </Text>
-              <Text size="sm" fw={600}>
-                {statusLabel}
-              </Text>
-            </Stack>
-          </Paper>
-          <Paper withBorder radius="md" p="sm">
-            <Stack gap={2}>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                {t("Source Scope")}
-              </Text>
-              <Text size="sm" fw={600}>
-                {sourceScopeLabel}
-              </Text>
-            </Stack>
-          </Paper>
-          <Paper withBorder radius="md" p="sm">
-            <Stack gap={2}>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                {t("Mode")}
-              </Text>
-              <Text size="sm" fw={600}>
-                {modeLabel}
-              </Text>
-            </Stack>
-          </Paper>
+        <Group gap="xs" wrap="wrap">
+          <Badge variant="light" color={statusColor} size="sm">
+            {statusLabel}
+          </Badge>
+          <Badge variant="outline" color="gray" size="sm">
+            {sourceScopeLabel}
+          </Badge>
+          <Badge variant="outline" color="gray" size="sm">
+            {modeLabel}
+          </Badge>
         </Group>
       </Stack>
     </Paper>

@@ -48,7 +48,11 @@ function hasBlockingReviewIssues(report: ReviewReport | null): boolean {
 function formatDocumentTaskMode(
   mode: "strict_preservation" | "relaxed_optimization",
 ): string {
-  return mode;
+  const modeMap: Record<string, string> = {
+    strict_preservation: "Strict",
+    relaxed_optimization: "Creative",
+  };
+  return modeMap[mode] ?? mode;
 }
 
 export default function AiCreatorPanel() {
