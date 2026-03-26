@@ -40,6 +40,103 @@ def _normalize_source_ref(ref: str) -> str:
     return normalized
 
 
+async def _enrich_images_with_vlm(items: list) -> list:
+    """Call VLM for images lacking meaningful descriptions. Runs in parallel."""
+    import asyncio
+
+    images_to_enrich = []
+    for item in items:
+        if item.type != "image":
+            continue
+        # Skip images that already have a real caption
+        caption = item.caption or ""
+        if caption and not caption.startswith("Image ") and len(caption) > 20:
+            continue
+        # Need the original b64 data — check if content is a data URI or URL
+        if item.content.startswith("data:image/"):
+            images_to_enrich.append(item)
+        # If content is already a URL (uploaded), we can't call VLM on it
+        # In that case, check source_image_cache or skip
+
+    if not images_to_enrich:
+        print(f"[DEBUG _enrich_images_with_vlm] no images need VLM enrichment")
+        return items
+
+    print(f"[DEBUG _enrich_images_with_vlm] enriching {len(images_to_enrich)} images with VLM")
+
+    async def _call_vlm_for_image(item) -> tuple:
+        """Call VLM in executor (vlm_understand is sync)."""
+        try:
+            from app.tools.vlm_understand import vlm_understand
+            # Extract b64 from data URI
+            if "," in item.content:
+                image_b64 = item.content.split(",", 1)[1]
+            else:
+                image_b64 = item.content
+            loop = asyncio.get_event_loop()
+            desc = await loop.run_in_executor(
+                None,
+                vlm_understand.invoke,
+                {"image_b64": image_b64, "question": "请详细描述这张图片的内容，包括所有可见的文字、UI元素和操作步骤"},
+            )
+            print(f"[DEBUG VLM] image {item.id[:20]}: {desc[:80]}...")
+            return item.id, desc
+        except Exception as e:
+            print(f"[DEBUG VLM] FAILED for {item.id[:20]}: {e}")
+            return item.id, None
+
+    # Call VLM in parallel (max 3 concurrent to avoid overwhelming the API)
+    sem = asyncio.Semaphore(3)
+
+    async def _bounded_call(item):
+        async with sem:
+            return await _call_vlm_for_image(item)
+
+    results = await asyncio.gather(*[_bounded_call(img) for img in images_to_enrich])
+
+    # Update items with VLM descriptions
+    vlm_map = {item_id: desc for item_id, desc in results if desc}
+    updated_items = []
+    for item in items:
+        if item.id in vlm_map:
+            updated_items.append(
+                item.model_copy(update={"caption": vlm_map[item.id]})
+            )
+        else:
+            updated_items.append(item)
+
+    print(f"[DEBUG _enrich_images_with_vlm] enriched {len(vlm_map)} images")
+    return updated_items
+
+
+def _inject_vlm_captions_into_markdown(markdown: str, items: list) -> str:
+    """Insert VLM captions as blockquotes after each image in the markdown."""
+    # Build a map from image URL → caption
+    url_to_caption = {}
+    for item in items:
+        if item.type == "image" and item.caption and len(item.caption) > 20:
+            # item.content at this point is the Docmost URL (after rewrite)
+            if item.content and not item.content.startswith("data:"):
+                url_to_caption[item.content] = item.caption
+
+    if not url_to_caption:
+        return markdown
+
+    # For each markdown image reference, append a caption blockquote
+    lines = markdown.split("\n")
+    result_lines = []
+    for line in lines:
+        result_lines.append(line)
+        # Check if this line contains a markdown image
+        for url, caption in url_to_caption.items():
+            if url in line and line.strip().startswith("!["):
+                # Add caption as a blockquote after the image
+                result_lines.append(f"\n> {caption}\n")
+                break
+
+    return "\n".join(result_lines)
+
+
 def _rewrite_source_markdown_image_refs(markdown: str, items: list) -> str:
     """Rewrite image refs in source_markdown using uploaded image URLs from items."""
     source_ref_to_url: dict[str, str] = {}
@@ -273,12 +370,20 @@ async def parse_assets_tool(
 
     if page_id:
         combined.items = upgrade_source_image_assets(combined.items, page_id)
+
+        # Enrich images that lack meaningful descriptions with VLM captions.
+        # This is critical for image-heavy PDFs (e.g., tutorials with screenshots)
+        # where MinerU extracts little text but the real content is in images.
+        combined.items = await _enrich_images_with_vlm(combined.items)
+
         combined.items = _rewrite_text_asset_image_refs(combined.items)
 
-        # Also rewrite image refs in source_markdown so preservation_patch
-        # can use it directly with correct Docmost image URLs
+        # Rewrite image refs in source_markdown AND inject VLM captions
         if combined.source_markdown:
             combined.source_markdown = _rewrite_source_markdown_image_refs(
+                combined.source_markdown, combined.items
+            )
+            combined.source_markdown = _inject_vlm_captions_into_markdown(
                 combined.source_markdown, combined.items
             )
 
