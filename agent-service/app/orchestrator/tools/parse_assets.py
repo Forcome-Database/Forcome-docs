@@ -369,13 +369,10 @@ async def parse_assets_tool(
         print(f"[DEBUG]   source_markdown first 200: {combined.source_markdown[:200]}")
 
     if page_id:
-        combined.items = upgrade_source_image_assets(combined.items, page_id)
-
-        # Enrich images that lack meaningful descriptions with VLM captions.
-        # This is critical for image-heavy PDFs (e.g., tutorials with screenshots)
-        # where MinerU extracts little text but the real content is in images.
+        # Enrich images BEFORE upload — images still have data URI content at this point
         combined.items = await _enrich_images_with_vlm(combined.items)
 
+        combined.items = upgrade_source_image_assets(combined.items, page_id)
         combined.items = _rewrite_text_asset_image_refs(combined.items)
 
         # Rewrite image refs in source_markdown AND inject VLM captions

@@ -694,17 +694,17 @@ class OrchestratorEngine:
             blocked=None,
         )
 
-        # Strict preservation: if we have parsed source markdown with images
-        # already rewritten to Docmost URLs, use it DIRECTLY — do NOT ask LLM
-        # to rewrite, which would scramble image positions and document structure.
+        # Use LLM to optimize the parsed content while preserving structure.
+        # Pass the full source markdown so LLM sees the complete document
+        # with images in correct positions.
         source_md = getattr(asset_map, "source_markdown", "") if asset_map else ""
         print(f"\n[DEBUG _execute_preservation_patch]")
         print(f"[DEBUG]   source_md len={len(source_md)}")
         print(f"[DEBUG]   has files={bool(request.files)}, file_count={len(request.files)}")
-        print(f"[DEBUG]   will_direct_insert={bool(source_md and request.files)}")
-        if source_md:
-            print(f"[DEBUG]   source_md first 300 chars: {source_md[:300]}")
-        if source_md and request.files:
+        print(f"[DEBUG]   user_message={request.user_message[:80]}")
+        # REMOVED direct insert — always use LLM for optimization
+        # The previous direct insert produced no optimization at all
+        if False:  # disabled — LLM path below handles all cases
             logger.info(
                 "preservation_patch_direct_insert",
                 extra={"word_count": len(source_md.split()), "thread_id": request.thread_id},
@@ -740,10 +740,18 @@ class OrchestratorEngine:
         # Fallback: no source markdown available — use LLM-based editing
         asset_context = _build_text_asset_context(asset_map)
         preservation_instructions = (
-            "[Preservation Patch]\n"
-            "Preserve structure, factual meaning, images, tables, links, and code blocks.\n"
-            "Use uploaded sources as the primary input when files are present.\n"
-            "Do not introduce brief confirmation, blueprint planning, or section-by-section rewriting."
+            "[Document Optimization Instructions]\n"
+            "You are optimizing the formatting and layout of a source document.\n"
+            "CRITICAL RULES:\n"
+            "1. KEEP ALL original text content — do not remove, summarize, or skip any part.\n"
+            "2. KEEP ALL image references (![...](url)) in their EXACT original positions.\n"
+            "   Do NOT move, reorder, or remove any images.\n"
+            "3. IMPROVE formatting: add proper headings, numbered lists, bold for key terms.\n"
+            "4. IMPROVE readability: fix line breaks, add spacing between sections.\n"
+            "5. KEEP all URLs, links, and technical details exactly as they are.\n"
+            "6. Output the COMPLETE optimized document in Markdown format.\n"
+            "7. If there are image descriptions (blockquotes after images), keep them.\n"
+            "8. Do NOT add content that isn't in the source document."
         )
         merged_asset_context = (
             f"{asset_context}\n\n{preservation_instructions}"
