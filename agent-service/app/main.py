@@ -302,3 +302,68 @@ async def delete_draft(request: dict):
         task_id=request.get("task_id", ""),
     )
     return {"status": "deleted" if ok else "not_found"}
+
+
+# ── Intelligent Agent v2 Endpoint ────────────────────────────────────
+
+from app.agent.runner import run_agent as _run_agent
+from app.agent.deps import AgentDeps
+
+
+@app.post("/agent/v2/run", dependencies=[Depends(verify_internal_secret)])
+async def run_agent_v2(request: dict):
+    """Intelligent agent endpoint — single ReAct agent with tool calling.
+
+    Request body:
+    {
+        "prompt": str,
+        "thread_id": str | null,     # 续接对话时传入，null 时自动生成
+        "page_id": str | null,
+        "workspace_id": str,
+        "user_id": str,
+        "files": [{"content_b64": str, "filename": str, "mimetype": str}]
+    }
+
+    Response: SSE stream of events (session/tool_call/tool_result/content/done/error)
+    """
+    import base64
+    from pydantic_ai.messages import BinaryContent
+
+    thread_id = request.get("thread_id") or str(uuid4())
+    user_message = request.get("prompt") or ""
+    page_id = request.get("page_id")
+    workspace_id = request.get("workspace_id", "")
+    user_id = request.get("user_id", "")
+    files_raw = request.get("files") or []
+
+    deps = AgentDeps(
+        thread_id=thread_id,
+        page_id=page_id,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        docmost_base_url=settings.effective_docmost_url,
+        internal_secret=settings.agent_internal_secret,
+        files=files_raw,  # 供工具使用
+    )
+
+    # 构建多模态输入（BinaryContent for PDF/图片直接传给模型）
+    multimodal_parts = []
+    for f in files_raw:
+        try:
+            data = base64.b64decode(f["content_b64"])
+            multimodal_parts.append(
+                BinaryContent(data=data, media_type=f.get("mimetype", "application/octet-stream"))
+            )
+        except Exception:
+            pass  # 解码失败的文件跳过多模态，仍通过工具处理
+
+    async def event_generator():
+        # 第一个事件：session 建立
+        yield {"data": json.dumps({"type": "session", "thread_id": thread_id}, ensure_ascii=False)}
+        # 流式产出 Agent 事件
+        async for event in _run_agent(
+            user_message, deps, multimodal_parts=multimodal_parts or None
+        ):
+            yield {"data": json.dumps(event, ensure_ascii=False)}
+
+    return EventSourceResponse(event_generator())
