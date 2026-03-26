@@ -13,13 +13,15 @@ import logging
 import re
 from typing import Any
 
+from cachetools import TTLCache
+
 from app.models.asset_map import AssetMap
 from app.tools.source_image_store import clear_source_image_cache, upgrade_source_image_assets
 from app.utils.markdown_images import build_asset_image_placeholder
 from app.workers.asset_parser import parse_document
 
-# Simple in-memory cache: content hash → AssetMap
-_asset_cache: dict[str, AssetMap] = {}
+# In-memory cache with TTL: content hash → AssetMap (max 20 entries, 1 hour TTL)
+_asset_cache: TTLCache = TTLCache(maxsize=20, ttl=3600)
 logger = logging.getLogger(__name__)
 MARKDOWN_IMAGE_REF_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 HTML_IMAGE_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc=["\'])([^"\']+)(["\'])', re.IGNORECASE)
@@ -133,6 +135,21 @@ def _placeholderize_text_asset_image_refs(items: list) -> list:
     return rewritten_items
 
 
+def _deduplicate_image_items(items: list) -> tuple[list, dict[str, str]]:
+    """Deduplicate image AssetItems by content_hash."""
+    seen_hashes: dict[str, str] = {}
+    redirect_map: dict[str, str] = {}
+    result = []
+    for item in items:
+        if item.type == "image" and getattr(item, "content_hash", None):
+            if item.content_hash in seen_hashes:
+                redirect_map[item.id] = seen_hashes[item.content_hash]
+                continue
+            seen_hashes[item.content_hash] = item.id
+        result.append(item)
+    return result, redirect_map
+
+
 async def parse_assets_tool(
     files: list[dict[str, Any]],
     page_id: str | None = None,
@@ -196,6 +213,14 @@ async def parse_assets_tool(
         # Merge section counts (accumulate word counts per heading)
         for key, count in asset_map.source_section_counts.items():
             combined.source_section_counts[key] = combined.source_section_counts.get(key, 0) + count
+
+    # Deduplicate images across all documents
+    combined.items, redirect_map = _deduplicate_image_items(combined.items)
+    if redirect_map:
+        for item in combined.items:
+            if item.type == "text" and item.content:
+                for old_id, new_id in redirect_map.items():
+                    item.content = item.content.replace(old_id, new_id)
 
     if len(results) == 1:
         combined.document_title = results[0].document_title
