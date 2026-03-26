@@ -65,10 +65,19 @@ class DocumentTaskEngine:
     async def run(self, request: OrchestratorRequest) -> str:
         workflow = self.resolve_workflow(request)
 
+        print(f"\n[DEBUG DocumentTaskEngine.run]")
+        print(f"[DEBUG] workflow={workflow}")
+        print(f"[DEBUG] intent_route={request.intent_route}")
+        print(f"[DEBUG] files={len(request.files)}")
+        print(f"[DEBUG] document_task={request.document_task}")
+        print(f"[DEBUG] user_message={request.user_message[:80]}")
+
         if workflow == "inline_rewrite":
+            print(f"[DEBUG] → _execute_level1 (inline_rewrite)")
             return await self.orchestrator._execute_level1(request)
 
         if workflow == "preservation_patch":
+            print(f"[DEBUG] → _execute_preservation_patch")
             return await self.orchestrator._execute_preservation_patch(request)
 
         if len(request.files) >= 2:

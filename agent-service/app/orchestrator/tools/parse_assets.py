@@ -202,7 +202,9 @@ async def parse_assets_tool(
     Returns:
         A merged :class:`~app.models.asset_map.AssetMap` combining all files.
     """
+    print(f"\n[DEBUG parse_assets_tool] files={len(files)}, page_id={page_id}")
     if not files:
+        print(f"[DEBUG parse_assets_tool] NO FILES → returning empty AssetMap")
         return AssetMap()
 
     async def parse_one(file_info: dict) -> AssetMap:
@@ -231,6 +233,7 @@ async def parse_assets_tool(
 
     # Merge results
     combined = AssetMap()
+    md_parts: list[str] = []
     for asset_map in results:
         combined.items.extend(asset_map.items)
         combined.source_word_count += asset_map.source_word_count
@@ -242,6 +245,12 @@ async def parse_assets_tool(
         for key, count in asset_map.source_section_counts.items():
             combined.source_section_counts[key] = combined.source_section_counts.get(key, 0) + count
 
+        # Merge source_markdown from each parsed document
+        if asset_map.source_markdown:
+            md_parts.append(asset_map.source_markdown)
+
+    combined.source_markdown = "\n\n---\n\n".join(md_parts)
+
     # Deduplicate images across all documents
     combined.items, redirect_map = _deduplicate_image_items(combined.items)
     if redirect_map:
@@ -252,6 +261,15 @@ async def parse_assets_tool(
 
     if len(results) == 1:
         combined.document_title = results[0].document_title
+
+    print(f"[DEBUG parse_assets_tool] MERGE DONE:")
+    print(f"[DEBUG]   total items={len(combined.items)}")
+    print(f"[DEBUG]   source_markdown len={len(combined.source_markdown)}")
+    print(f"[DEBUG]   word_count={combined.source_word_count}")
+    print(f"[DEBUG]   image items={len([i for i in combined.items if i.type == 'image'])}")
+    print(f"[DEBUG]   text items={len([i for i in combined.items if i.type == 'text'])}")
+    if combined.source_markdown:
+        print(f"[DEBUG]   source_markdown first 200: {combined.source_markdown[:200]}")
 
     if page_id:
         combined.items = upgrade_source_image_assets(combined.items, page_id)

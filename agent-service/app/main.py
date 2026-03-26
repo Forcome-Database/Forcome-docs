@@ -178,6 +178,19 @@ async def run_agent(request: dict):
     session_store.register_run(task_id=task_id, thread_id=thread_id)
     queue = create_queue(thread_id)
 
+    files_raw = request.get("files", [])
+    print(f"\n{'='*60}")
+    print(f"[DEBUG /agent/run] task_id={task_id} thread_id={thread_id}")
+    print(f"[DEBUG] user_message={request.get('user_message', '')[:100]}")
+    print(f"[DEBUG] intent_route={request.get('intent_route')}")
+    print(f"[DEBUG] insert_mode={request.get('insert_mode')}")
+    print(f"[DEBUG] files count={len(files_raw)}")
+    for i, f in enumerate(files_raw):
+        print(f"[DEBUG] file[{i}]: name={f.get('filename')}, mime={f.get('mimetype')}, b64_len={len(f.get('content_b64',''))}")
+    print(f"[DEBUG] document_task={request.get('document_task')}")
+    print(f"[DEBUG] page_id={request.get('page_id')}")
+    print(f"{'='*60}\n")
+
     orch_request = OrchestratorRequest(
         user_message=request.get("user_message", ""),
         thread_id=thread_id,
@@ -189,7 +202,7 @@ async def run_agent(request: dict):
         intent_route=request.get("intent_route", "document_create"),
         document_task=request.get("document_task"),
         insert_mode=request.get("insert_mode", "create"),
-        files=request.get("files", []),
+        files=files_raw,
         template_id=request.get("template_id"),
         system_prompt=request.get("system_prompt"),
         template_prompt=request.get("template_prompt"),

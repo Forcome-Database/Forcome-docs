@@ -84,10 +84,13 @@ def _build_asset_summary(asset_map: object) -> dict:
 
 def _build_text_asset_context(asset_map: object | None) -> str:
     if not asset_map:
+        print(f"[DEBUG _build_text_asset_context] asset_map is None/empty → returning ''")
         return ""
 
     # Prefer full source markdown — preserves document structure, images, tables, code
-    if getattr(asset_map, "source_markdown", ""):
+    sm = getattr(asset_map, "source_markdown", "")
+    print(f"[DEBUG _build_text_asset_context] source_markdown len={len(sm)}, items={len(getattr(asset_map, 'items', []))}")
+    if sm:
         title = getattr(asset_map, "document_title", "")
         header = f"--- Source Document: {title} ---\n" if title else ""
         return header + asset_map.source_markdown
@@ -572,14 +575,22 @@ class OrchestratorEngine:
     ):
         asset_map = None
         parse_error = None
+        print(f"\n[DEBUG _prepare_evidence] files={len(request.files)}, page_id_for_assets={page_id_for_assets}")
         if request.files:
             try:
                 parse_kwargs = {"files": request.files}
                 if page_id_for_assets is not None:
                     parse_kwargs["page_id"] = page_id_for_assets
                 asset_map = await parse_assets_tool(**parse_kwargs)
+                print(f"[DEBUG _prepare_evidence] parse SUCCESS:")
+                print(f"[DEBUG]   items={len(asset_map.items) if asset_map else 0}")
+                print(f"[DEBUG]   source_markdown len={len(asset_map.source_markdown) if asset_map else 0}")
+                print(f"[DEBUG]   word_count={asset_map.source_word_count if asset_map else 0}")
+                if asset_map and asset_map.source_markdown:
+                    print(f"[DEBUG]   source_markdown first 200 chars: {asset_map.source_markdown[:200]}")
             except Exception as exc:
                 parse_error = str(exc)[:200]
+                print(f"[DEBUG _prepare_evidence] parse FAILED: {parse_error}")
                 logger.error(
                     "parse_assets_failed",
                     extra={"error": parse_error, "file_count": len(request.files)},
@@ -588,6 +599,8 @@ class OrchestratorEngine:
                     request.thread_id,
                     {"type": "error", "error": f"Document parsing failed: {parse_error}"},
                 )
+        else:
+            print(f"[DEBUG _prepare_evidence] NO FILES in request")
 
         asset_map, evidence_items = await collect_evidence(
             request,
@@ -685,6 +698,12 @@ class OrchestratorEngine:
         # already rewritten to Docmost URLs, use it DIRECTLY — do NOT ask LLM
         # to rewrite, which would scramble image positions and document structure.
         source_md = getattr(asset_map, "source_markdown", "") if asset_map else ""
+        print(f"\n[DEBUG _execute_preservation_patch]")
+        print(f"[DEBUG]   source_md len={len(source_md)}")
+        print(f"[DEBUG]   has files={bool(request.files)}, file_count={len(request.files)}")
+        print(f"[DEBUG]   will_direct_insert={bool(source_md and request.files)}")
+        if source_md:
+            print(f"[DEBUG]   source_md first 300 chars: {source_md[:300]}")
         if source_md and request.files:
             logger.info(
                 "preservation_patch_direct_insert",
