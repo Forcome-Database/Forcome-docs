@@ -385,6 +385,81 @@ export class AgentGatewayController {
     }
   }
 
+  @Post('v2/run')
+  async agentV2Run(
+    @Req() req: FastifyRequest,
+    @Res() res: FastifyReply,
+    @AuthUser() user: any,
+    @AuthWorkspace() workspace: any,
+  ) {
+    const agentUrl = this.environmentService.getAgentServiceUrl();
+    if (!agentUrl) {
+      res.status(503).send({ error: 'Agent service not configured' });
+      return;
+    }
+
+    // Parse JSON body (no multipart needed for v2)
+    const body = (req.body as Record<string, unknown> | undefined) ?? {};
+
+    const prompt = typeof body.prompt === 'string' ? body.prompt : '';
+    const pageId = typeof body.pageId === 'string' ? body.pageId : undefined;
+    const threadId = typeof body.threadId === 'string' ? body.threadId : undefined;
+    const rawFiles = Array.isArray(body.files) ? body.files : [];
+    const files = rawFiles.filter(
+      (f): f is { content_b64: string; filename: string; mimetype: string } =>
+        f !== null &&
+        typeof f === 'object' &&
+        typeof (f as Record<string, unknown>).content_b64 === 'string' &&
+        typeof (f as Record<string, unknown>).filename === 'string' &&
+        typeof (f as Record<string, unknown>).mimetype === 'string',
+    );
+
+    const payload = JSON.stringify(
+      this.agentGatewayService.buildV2RunPayload({
+        prompt,
+        pageId,
+        threadId,
+        workspaceId: workspace.id,
+        userId: user.id,
+        files,
+      }),
+    );
+
+    const url = new URL('/agent/v2/run', agentUrl);
+    const secret = this.environmentService.getAgentInternalSecret();
+
+    const options: http.RequestOptions = {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': secret || '',
+      },
+    };
+
+    await this.proxyAgentStream(res, options, payload, 'Agent v2 proxy error', (chunk: Buffer) => {
+      const text = chunk.toString('utf8');
+      const lines = text.split('\n');
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const parsed = JSON.parse(line.slice(6));
+          if (parsed.type === 'session' && parsed.session_id) {
+            this.agentGatewayService
+              .registerSessionOwner(parsed.session_id, user.id, workspace.id)
+              .catch((err) =>
+                this.logger.warn(`Failed to register session owner: ${err.message}`),
+              );
+          }
+        } catch {
+          // Not valid JSON, skip
+        }
+      }
+    });
+  }
+
   @Post('resume')
   async resumeAgent(
     @Body() body: any,
