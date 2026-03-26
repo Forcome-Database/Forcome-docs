@@ -302,6 +302,8 @@ describe('AgentGatewayController', () => {
       stopAgent: jest.fn(),
       getTools: jest.fn(),
       buildLegacyRunPayload: jest.fn((payload) => buildLegacyRunPayload(payload)),
+      validateSessionOwner: jest.fn(async () => undefined),
+      registerSessionOwner: jest.fn(async () => undefined),
     };
     const environmentService = {
       getAgentServiceUrl: jest.fn(() => 'http://agent-service.internal'),
@@ -323,6 +325,8 @@ describe('AgentGatewayController', () => {
       status: jest.fn().mockReturnThis(),
       send,
     };
+
+    const user = { id: 'user-1', workspaceId: 'ws-1' };
 
     let capturedOptions: any;
 
@@ -353,7 +357,7 @@ describe('AgentGatewayController', () => {
       return proxyReq as any;
     });
 
-    await controller.getSessionSnapshot('session-1', res as any);
+    await controller.getSessionSnapshot('session-1', res as any, user as any);
 
     expect(capturedOptions.path).toBe('/agent/session/session-1');
     expect(send).toHaveBeenCalledWith({
@@ -367,6 +371,8 @@ describe('AgentGatewayController', () => {
       stopAgent: jest.fn(),
       getTools: jest.fn(),
       buildLegacyRunPayload: jest.fn((payload) => buildLegacyRunPayload(payload)),
+      validateSessionOwner: jest.fn(async () => undefined),
+      registerSessionOwner: jest.fn(async () => undefined),
     };
     const environmentService = {
       getAgentServiceUrl: jest.fn(() => 'http://agent-service.internal'),
@@ -382,6 +388,8 @@ describe('AgentGatewayController', () => {
       environmentService as any,
       aiTemplateService as any,
     );
+
+    const user = { id: 'user-1', workspaceId: 'ws-1' };
 
     const writeHead = jest.fn();
     const write = jest.fn();
@@ -437,6 +445,7 @@ describe('AgentGatewayController', () => {
         },
       },
       res as any,
+      user as any,
       )
       .then(() => {
         settled = true;

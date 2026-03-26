@@ -1,11 +1,52 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { EnvironmentService } from '../../../integrations/environment/environment.service';
+import { RedisService } from '@nestjs-labs/nestjs-ioredis';
+import type { Redis } from 'ioredis';
 
 @Injectable()
 export class AgentGatewayService {
   private readonly logger = new Logger(AgentGatewayService.name);
 
-  constructor(private environmentService: EnvironmentService) {}
+  private static readonly SESSION_OWNER_PREFIX = 'agent_session_owner:';
+  private static readonly SESSION_OWNER_TTL = 86400; // 24 hours
+
+  private readonly redis: Redis;
+
+  constructor(
+    private environmentService: EnvironmentService,
+    private readonly redisService: RedisService,
+  ) {
+    this.redis = this.redisService.getOrThrow();
+  }
+
+  async registerSessionOwner(
+    sessionId: string,
+    userId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    await this.redis.set(
+      `${AgentGatewayService.SESSION_OWNER_PREFIX}${sessionId}`,
+      JSON.stringify({ userId, workspaceId }),
+      'EX',
+      AgentGatewayService.SESSION_OWNER_TTL,
+    );
+  }
+
+  async validateSessionOwner(
+    sessionId: string,
+    userId: string,
+  ): Promise<void> {
+    const raw = await this.redis.get(
+      `${AgentGatewayService.SESSION_OWNER_PREFIX}${sessionId}`,
+    );
+    if (!raw) {
+      throw new ForbiddenException('Session not found or expired');
+    }
+    const data = JSON.parse(raw);
+    if (data.userId !== userId) {
+      throw new ForbiddenException('You do not own this session');
+    }
+  }
 
   buildLegacyRunPayload(params: {
     prompt: string;

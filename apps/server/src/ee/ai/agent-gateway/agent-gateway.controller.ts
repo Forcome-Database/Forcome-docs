@@ -143,6 +143,7 @@ export class AgentGatewayController {
     options: http.RequestOptions,
     payload: string,
     logContext: string,
+    onChunk?: (chunk: Buffer) => void,
   ): Promise<void> {
     res.hijack();
 
@@ -155,6 +156,13 @@ export class AgentGatewayController {
 
         proxyRes.on('data', (chunk: Buffer) => {
           res.raw.write(chunk);
+          if (onChunk) {
+            try {
+              onChunk(chunk);
+            } catch {
+              // Ignore callback errors to avoid breaking the stream
+            }
+          }
         });
         proxyRes.on('end', () => {
           res.raw.end();
@@ -332,11 +340,39 @@ export class AgentGatewayController {
       },
     };
 
-    await this.proxyAgentStream(res, options, payload, 'Agent proxy error');
+    await this.proxyAgentStream(res, options, payload, 'Agent proxy error', (chunk: Buffer) => {
+      const text = chunk.toString('utf8');
+      // SSE data lines start with "data: "
+      const lines = text.split('\n');
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const parsed = JSON.parse(line.slice(6));
+          if (parsed.type === 'session' && parsed.session_id) {
+            this.agentGatewayService
+              .registerSessionOwner(parsed.session_id, user.id, workspace.id)
+              .catch((err) =>
+                this.logger.warn(`Failed to register session owner: ${err.message}`),
+              );
+          }
+        } catch {
+          // Not valid JSON, skip
+        }
+      }
+    });
   }
 
   @Post('resume')
-  async resumeAgent(@Body() body: any, @Res() res: FastifyReply) {
+  async resumeAgent(
+    @Body() body: any,
+    @Res() res: FastifyReply,
+    @AuthUser() user: any,
+  ) {
+    const sessionId = body.sessionId || body.session_id;
+    if (sessionId) {
+      await this.agentGatewayService.validateSessionOwner(sessionId, user.id);
+    }
+
     const agentUrl = this.environmentService.getAgentServiceUrl();
     if (!agentUrl) {
       res.status(503).send({ error: 'Agent service not configured' });
@@ -369,7 +405,10 @@ export class AgentGatewayController {
   async getSessionSnapshot(
     @Param('sessionId') sessionId: string,
     @Res() res: FastifyReply,
+    @AuthUser() user: any,
   ) {
+    await this.agentGatewayService.validateSessionOwner(sessionId, user.id);
+
     const agentUrl = this.environmentService.getAgentServiceUrl();
     if (!agentUrl) {
       res.status(503).send({ error: 'Agent service not configured' });
@@ -420,7 +459,10 @@ export class AgentGatewayController {
   }
 
   @Post('stop')
-  async stopAgent(@Body() dto: AgentStopDto) {
+  async stopAgent(@Body() dto: AgentStopDto, @AuthUser() user: any) {
+    if (dto.sessionId) {
+      await this.agentGatewayService.validateSessionOwner(dto.sessionId, user.id);
+    }
     return this.agentGatewayService.stopAgent(dto.taskId);
   }
 
