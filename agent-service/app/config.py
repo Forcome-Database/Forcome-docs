@@ -78,3 +78,13 @@ class Settings(BaseSettings):
     model_config = {"env_file": ["../.env", ".env"], "extra": "ignore"}
 
 settings = Settings()
+
+import warnings as _warnings
+
+if not settings.agent_internal_secret:
+    _warnings.warn(
+        "AGENT_INTERNAL_SECRET is not configured. "
+        "The agent-service API will reject all requests until this is set. "
+        "Set AGENT_INTERNAL_SECRET in .env for production deployments.",
+        stacklevel=1,
+    )
