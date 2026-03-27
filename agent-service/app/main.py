@@ -341,6 +341,7 @@ async def run_agent_v2(request: dict):
     # 参考：MiniMax Agent 用专门 Skill 处理 Office 文档，LLM 不直接看二进制
     _IMAGE_MIMETYPES = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"}
     multimodal_parts = []
+    doc_filenames = []
     for f in files_raw:
         mime = f.get("mimetype", "")
         if mime in _IMAGE_MIMETYPES:
@@ -349,6 +350,14 @@ async def run_agent_v2(request: dict):
                 multimodal_parts.append(BinaryContent(data=data, media_type=mime))
             except Exception:
                 pass
+        else:
+            doc_filenames.append(f.get("filename", "unknown"))
+
+    # 文档文件不作为多模态传递，但必须在文本 prompt 中告知 Agent 有文件上传
+    # 否则 Agent 不知道 deps.files 中有内容，会误调 read_page 读空白页面
+    if doc_filenames:
+        file_list = ", ".join(doc_filenames)
+        user_message = f"{user_message}\n\n[Uploaded files: {file_list}]\nCall extract_document tool to process these files."
 
     async def event_generator():
         # 第一个事件：session 建立
