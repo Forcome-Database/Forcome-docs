@@ -53,7 +53,7 @@ async def extract_document_impl(deps: "AgentDeps", purpose: str = "") -> str:
                                 timeout=60,
                             )
                         for item in upgraded:
-                            if hasattr(item, "content") and item.content.startswith("http"):
+                            if hasattr(item, "content") and item.content and not item.content.startswith("data:"):
                                 ref = getattr(item, "source_ref", None) or getattr(item, "id", str(item))
                                 all_image_urls[ref] = item.content
                                 deps.uploaded_image_urls[ref] = item.content
