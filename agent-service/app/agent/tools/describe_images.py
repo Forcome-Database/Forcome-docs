@@ -23,7 +23,7 @@ async def describe_images_impl(deps: "AgentDeps") -> dict:
         return {"status": "error", "error": "No images have been uploaded. Call extract_document first."}
 
     # 从 deps.image_payloads 获取图片数据（extract_document 已保存，避免重复提取）
-    image_payloads = getattr(deps, "image_payloads", None) or []
+    image_payloads = deps.image_payloads or []
     if not image_payloads:
         return {"status": "error", "error": "No image data available. Call extract_document first."}
 

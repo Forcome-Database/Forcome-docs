@@ -60,7 +60,7 @@ async def test_yields_error_on_exception(deps):
 
 @pytest.mark.asyncio
 async def test_content_accumulated(deps):
-    """content 事件的 chunk 应被正确产出（需在 FinalResultEvent 之后）。"""
+    """content 事件的 chunk 应被正确产出并累积。"""
     from pydantic_ai.messages import PartDeltaEvent, TextPartDelta, FinalResultEvent
 
     async def mock_stream(*args, **kwargs):
@@ -129,7 +129,7 @@ async def test_thinking_phases_tracked(deps):
         # Phase 2: thinking after tool result
         yield PartStartEvent(index=1, part=ThinkingPart(content=""))
         yield PartDeltaEvent(index=1, delta=ThinkingPartDelta(content_delta="Analyzing..."))
-        # Final output (FinalResultEvent gates content)
+        # Final output
         yield FinalResultEvent(tool_name=None, tool_call_id=None)
         yield PartDeltaEvent(index=2, delta=TextPartDelta(content_delta="Result"))
 

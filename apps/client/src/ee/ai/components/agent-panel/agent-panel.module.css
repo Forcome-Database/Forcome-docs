@@ -56,10 +56,6 @@
   padding: var(--mantine-spacing-sm) 0;
 }
 
-.toolStep {
-  padding: 2px 0;
-}
-
 .markdownPreview {
   font-size: var(--mantine-font-size-sm);
   line-height: 1.6;

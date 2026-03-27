@@ -147,8 +147,7 @@ async def extract_document_impl(deps: "AgentDeps", purpose: str = "") -> dict:
                 " then place each image after the text it illustrates."
             )
 
-        # P3 验证器将使用此值；通过 setattr 安全设置，避免循环依赖
-        setattr(deps, "source_word_count", word_count)
+        deps.source_word_count = word_count
 
         return {
             "status": "success",

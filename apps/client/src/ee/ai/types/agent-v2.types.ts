@@ -6,6 +6,10 @@ export type AgentV2Event =
   | { type: "thinking"; content?: string; chunk?: string; phase?: number }
   | { type: "content"; chunk: string }
   | { type: "warning"; issues: string[] }
+  | { type: "retrying"; reason: string }
+  | { type: "content_clear" }
+  /** 最终完成事件。final_content 是后端权威输出（不含中间叙述），
+   *  前端用于 "Apply to page"，而非使用流式累积的 content。 */
   | { type: "done"; final_content?: string }
   | { type: "error"; message: string }
   | { type: "cancelled" };
@@ -15,14 +19,6 @@ export type TimelineItem =
   | { kind: "thinking"; content: string }
   | { kind: "tool"; id: string; tool: string; description: string; status: "running" | "done" }
   | { kind: "text"; content: string; isNarration: boolean };
-
-/** 工具调用步骤（兼容旧引用） */
-export interface ToolStep {
-  id: string;
-  tool: string;
-  description: string;
-  status: "running" | "done";
-}
 
 /** 面板消息 */
 export interface AgentMessage {

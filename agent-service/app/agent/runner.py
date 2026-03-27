@@ -67,8 +67,13 @@ async def run_agent(
         prompt = user_message
 
     # 3. 流式执行 Agent
-    streamed_chunks: list[str] = []  # 流式 chunk 累积（回退用）
-    authoritative_output: str | None = None  # AgentRunResultEvent 权威输出
+    # 流式 chunk 累积——仅作为 AgentRunResultEvent 缺失时的回退。
+    # 注意：streamed_chunks 包含所有轮次的文本（含中间叙述），
+    # 而 authoritative_output 是 PydanticAI 验证后的纯最终轮输出。
+    streamed_chunks: list[str] = []
+    # AgentRunResultEvent 提供的权威输出（若存在），不含中间轮叙述文本。
+    # 前端通过 done.final_content 接收此值，用于 "Apply to page"。
+    authoritative_output: str | None = None
     tool_call_count = 0  # 工具调用计数器（安全阀）
     thinking_phase = 0  # 思考阶段计数器（多阶段可见性）
     try:
@@ -118,7 +123,10 @@ async def run_agent(
             if sse is None:
                 continue
 
-            # 追踪思考阶段 — 每个 PartStartEvent(ThinkingPart) 开启新阶段
+            # 追踪思考阶段——PydanticAI 多轮工具调用中，每轮可能触发新的
+            # ThinkingPart。PartStartEvent 以 content="" 空标记开始新阶段，
+            # 后续的 ThinkingPartDelta 带实际内容。phase 字段帮助前端将
+            # 多阶段思考分别展示为"思考 1"、"思考 2"等可折叠块。
             if sse["type"] == "thinking":
                 if sse.get("content") == "":  # PartStartEvent 标记
                     thinking_phase += 1
@@ -145,7 +153,7 @@ async def run_agent(
             validation = validate_agent_output(
                 final_output,
                 deps.uploaded_image_urls,
-                source_word_count=getattr(deps, "source_word_count", 0),
+                source_word_count=deps.source_word_count,
             )
             if not validation.passed:
                 logger.warning(
@@ -180,7 +188,7 @@ async def run_agent(
             retry_validation = validate_agent_output(
                 retry_output,
                 deps.uploaded_image_urls,
-                source_word_count=getattr(deps, "source_word_count", 0),
+                source_word_count=deps.source_word_count,
             )
             if retry_validation.score > validation.score:
                 yield {"type": "content_clear"}

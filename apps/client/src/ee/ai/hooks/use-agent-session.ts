@@ -80,7 +80,10 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
         }
 
         case "tool_call": {
-          // 回溯降级：所有前面未标记的 text 项 → narration
+          // 回溯降级：当收到 tool_call 时，说明 Agent 仍在收集阶段，
+          // 之前流式输出的 text 实际是 Agent 的分析叙述（而非最终文档）。
+          // 将这些 text 项标记为 narration，前端以可折叠"规划"块展示。
+          // 只有最后一轮（所有 tool_call 完成后）的 text 才是最终文档。
           for (const item of timelineRef.current) {
             if (item.kind === "text" && !item.isNarration) {
               item.isNarration = true;
@@ -117,6 +120,30 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
         case "warning":
           updateLastAssistant(() => ({
             warnings: event.issues,
+          }));
+          break;
+
+        case "retrying":
+          // Quality retry：清空当前 timeline 中的文档内容，等待重新生成
+          for (const item of timelineRef.current) {
+            if (item.kind === "text" && !item.isNarration) {
+              item.content = "";
+            }
+          }
+          updateLastAssistant(() => ({
+            timeline: [...timelineRef.current],
+          }));
+          break;
+
+        case "content_clear":
+          // Quality retry 重新生成前清空文档内容
+          for (const item of timelineRef.current) {
+            if (item.kind === "text" && !item.isNarration) {
+              item.content = "";
+            }
+          }
+          updateLastAssistant(() => ({
+            timeline: [...timelineRef.current],
           }));
           break;
 
