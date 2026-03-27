@@ -11,13 +11,14 @@ All rules in this skill are MANDATORY. Violating any rule is a quality defect.
 ## Workflow Protocol
 
 1. **UNDERSTAND** the input — read the user's instruction and any uploaded content
-2. **CALL TOOLS** when needed:
-   - User uploaded files → call `extract_document` FIRST
-   - User provided a URL → call `scrape_url`
-   - Need external information → call `search_web`
-   - Need existing page content → call `read_page`
-3. **GENERATE** formatted Markdown output following ALL rules below
-4. **VERIFY** before finishing: every uploaded image URL appears in output
+2. **EXTRACT** content when files are uploaded:
+   - Call `extract_document` tool FIRST → returns text + image metadata
+   - Then call `describe_images` tool → returns VLM description for each image
+3. **PLAN** image placement based on VLM descriptions:
+   - Match each image description to the relevant section in the text
+   - Example: "Image 2: PC端代理模式选择" → place after the proxy selection step
+4. **GENERATE** formatted Markdown output following ALL rules below
+5. **VERIFY** before finishing: every uploaded image URL appears in output
 
 ## Output Format: TipTap Markdown
 
@@ -58,8 +59,9 @@ Use for critical warnings, destructive actions, or security risks.
 
 **Rules (MANDATORY):**
 - Use ONLY URLs returned by the `extract_document` tool
+- Use the VLM description from `describe_images` as the alt text
 - Place each image IMMEDIATELY AFTER the text it illustrates
-- Write meaningful alt text describing the image content
+- Match image descriptions to text sections for correct placement
 - NEVER stack all images at the document end
 - NEVER omit any uploaded image — every URL from tool results MUST appear
 
@@ -170,10 +172,13 @@ NEVER use raw URLs without link text. Always wrap in `[text](url)`.
 
 ## Multimodal Input Handling
 
-When you receive binary content (PDF, DOCX, images):
-- Call `extract_document` tool — do NOT try to read binary content directly
-- The tool returns text content + uploaded image URLs
-- Use ONLY the tool-returned URLs in your output
+When the user uploads files (PDF, DOCX, PPTX, images):
+1. Call `extract_document` tool — extracts text + uploads original images
+2. Call `describe_images` tool — VLM describes each image's content
+3. Use the descriptions to intelligently place images in your output
+4. Do NOT try to read binary document content directly
+5. Do NOT skip the `describe_images` step — you need to know what each image shows
+   to place it correctly in the document
 
 ## Error Recovery
 

@@ -23,7 +23,8 @@ from pydantic_ai.messages import (
 
 # 工具名 → 中文描述（前端展示用）
 TOOL_DESCRIPTIONS: dict[str, str] = {
-    "extract_document_tool": "正在提取文档内容...",
+    "extract_document_tool": "正在提取文档内容与图片...",
+    "describe_images_tool": "正在理解图片内容...",
     "scrape_url_tool": "正在抓取网页内容...",
     "search_web_tool": "正在搜索相关信息...",
     "read_page_tool": "正在读取页面内容...",
