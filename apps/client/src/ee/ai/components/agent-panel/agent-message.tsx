@@ -1,4 +1,4 @@
-import { Alert, Stack, Text } from "@mantine/core";
+import { Alert, Group, Loader, Stack, Text } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
 import type { AgentMessage as AgentMessageType } from "../../types/agent-v2.types";
 import { ToolCallStep } from "./tool-call-step";
@@ -10,12 +10,27 @@ interface AgentMessageProps {
 }
 
 export function AgentMessage({ message }: AgentMessageProps) {
+  const allToolsDone = message.toolSteps?.length
+    ? message.toolSteps.every((s) => s.status === "done")
+    : false;
+  const showThinking =
+    message.streaming && !message.content && allToolsDone;
+
   return (
     <div className={classes.agentMessage}>
       <Stack gap={4}>
         {message.toolSteps?.map((step) => (
           <ToolCallStep key={step.id} step={step} />
         ))}
+
+        {showThinking && (
+          <Group gap={8} py={4}>
+            <Loader size={14} />
+            <Text size="xs" c="dimmed">
+              正在思考与组织内容...
+            </Text>
+          </Group>
+        )}
 
         {message.content && (
           <StreamingMarkdown
