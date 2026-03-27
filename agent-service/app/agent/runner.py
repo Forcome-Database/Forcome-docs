@@ -121,11 +121,20 @@ async def run_agent(
     final_output = authoritative_output if authoritative_output is not None else "".join(streamed_chunks)
 
     # 4. 后验证（在循环结束后，使用最终完整输出）
-    if deps.uploaded_image_urls and final_output:
+    validation = None
+    if final_output:
         try:
-            validation = validate_agent_output(final_output, deps.uploaded_image_urls)
+            validation = validate_agent_output(
+                final_output,
+                deps.uploaded_image_urls,
+                source_word_count=getattr(deps, "source_word_count", 0),
+            )
             if not validation.passed:
-                yield {"type": "warning", "issues": validation.issues}
+                logger.warning(
+                    "Validation issues for thread %s (score=%.2f): %s",
+                    deps.thread_id, validation.score, validation.issues,
+                )
+                yield {"type": "warning", "issues": validation.issues, "score": validation.score}
         except Exception as e:
             logger.warning("Post-validation failed for thread %s: %s", deps.thread_id, e)
 

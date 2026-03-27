@@ -38,3 +38,6 @@ class AgentDeps:
     # 原生提取的图片 payloads（extract_document 填充，describe_images 消费）
     image_payloads: list = field(default_factory=list)
     # 类型: list[SourceImagePayload]，用 list 避免循环导入
+
+    # extract_document 工具填充的源内容词数（供 validator 检测压缩比）
+    source_word_count: int = 0
