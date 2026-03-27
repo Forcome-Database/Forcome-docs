@@ -100,6 +100,16 @@ async def run_agent(
             if isinstance(event, AgentRunResultEvent):
                 if hasattr(event.result, "output"):
                     authoritative_output = event.result.output
+                # Gemini truncation detection: MAX_TOKENS → PydanticAI 'length'
+                try:
+                    resp = getattr(event.result, "response", None)
+                    if resp and getattr(resp, "finish_reason", None) == "length":
+                        yield {
+                            "type": "warning",
+                            "issues": ["输出可能不完整：已达到模型 token 上限，内容可能被截断。"],
+                        }
+                except Exception:
+                    pass
                 continue
 
             # 将 PydanticAI 事件转换为 SSE dict
