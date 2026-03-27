@@ -23,6 +23,7 @@ dependencies = [
     "imagehash>=4.3",
     "pybreaker>=1.0",
     "cachetools>=5.0,<8.0",
+    "pymupdf>=1.25",
 ]
 
 [project.optional-dependencies]
