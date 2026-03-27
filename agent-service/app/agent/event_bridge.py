@@ -19,6 +19,7 @@ from pydantic_ai.messages import (
     PartStartEvent,
     FinalResultEvent,
     TextPartDelta,
+    ThinkingPartDelta,
 )
 
 # 工具名 → 中文描述（前端展示用）
@@ -68,7 +69,9 @@ def map_pydantic_event_to_sse(event: object) -> dict | None:
     if isinstance(event, PartDeltaEvent):
         if isinstance(event.delta, TextPartDelta):
             return {"type": "content", "chunk": event.delta.content_delta}
-        # 工具参数 delta、thinking delta 等 → 静默跳过
+        if isinstance(event.delta, ThinkingPartDelta) and event.delta.content_delta:
+            return {"type": "thinking", "chunk": event.delta.content_delta}
+        # 工具参数 delta 等 → 静默跳过
         return None
 
     # FinalResultEvent：模型决定"这是最终回复"，但内容流尚未完成

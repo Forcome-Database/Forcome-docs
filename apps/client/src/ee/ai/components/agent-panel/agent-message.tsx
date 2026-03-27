@@ -1,5 +1,6 @@
-import { Alert, Group, Loader, Stack, Text } from "@mantine/core";
-import { IconAlertTriangle } from "@tabler/icons-react";
+import { useState } from "react";
+import { Alert, Collapse, Group, Loader, Stack, Text, UnstyledButton } from "@mantine/core";
+import { IconAlertTriangle, IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import type { AgentMessage as AgentMessageType } from "../../types/agent-v2.types";
 import { ToolCallStep } from "./tool-call-step";
 import { StreamingMarkdown } from "./streaming-markdown";
@@ -10,11 +11,14 @@ interface AgentMessageProps {
 }
 
 export function AgentMessage({ message }: AgentMessageProps) {
+  const [thinkingOpen, setThinkingOpen] = useState(false);
+
   const allToolsDone = message.toolSteps?.length
     ? message.toolSteps.every((s) => s.status === "done")
     : false;
-  const showThinking =
+  const isThinking =
     message.streaming && !message.content && allToolsDone;
+  const hasThinkingContent = !!message.thinkingContent;
 
   return (
     <div className={classes.agentMessage}>
@@ -23,13 +27,38 @@ export function AgentMessage({ message }: AgentMessageProps) {
           <ToolCallStep key={step.id} step={step} />
         ))}
 
-        {showThinking && (
-          <Group gap={8} py={4}>
-            <Loader size={14} />
-            <Text size="xs" c="dimmed">
-              正在思考与组织内容...
-            </Text>
-          </Group>
+        {/* Thinking indicator: spinner while thinking, collapsible when content available */}
+        {(isThinking || hasThinkingContent) && (
+          <div>
+            <UnstyledButton
+              onClick={() => setThinkingOpen((o) => !o)}
+              className={classes.thinkingToggle}
+            >
+              <Group gap={6}>
+                {isThinking ? (
+                  <Loader size={14} />
+                ) : (
+                  thinkingOpen ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />
+                )}
+                <Text size="xs" c="dimmed">
+                  {isThinking
+                    ? "正在思考与组织内容..."
+                    : `已思考`}
+                </Text>
+              </Group>
+            </UnstyledButton>
+            {hasThinkingContent && (
+              <Collapse in={thinkingOpen}>
+                <Text
+                  size="xs"
+                  c="dimmed"
+                  className={classes.thinkingContent}
+                >
+                  {message.thinkingContent}
+                </Text>
+              </Collapse>
+            )}
+          </div>
         )}
 
         {message.content && (

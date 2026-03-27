@@ -30,6 +30,28 @@
   border-radius: var(--mantine-radius-md);
 }
 
+.thinkingToggle {
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.thinkingToggle:hover {
+  opacity: 0.8;
+}
+
+.thinkingContent {
+  padding: var(--mantine-spacing-xs);
+  margin-top: 4px;
+  background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-7));
+  border-radius: var(--mantine-radius-sm);
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 .agentMessage {
   padding: var(--mantine-spacing-sm) 0;
 }

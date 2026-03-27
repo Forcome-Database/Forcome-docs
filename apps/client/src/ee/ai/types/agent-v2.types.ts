@@ -3,7 +3,7 @@ export type AgentV2Event =
   | { type: "session"; thread_id: string }
   | { type: "tool_call"; tool: string; description: string; args?: Record<string, unknown> }
   | { type: "tool_result"; status: string }
-  | { type: "thinking"; content: string }
+  | { type: "thinking"; content?: string; chunk?: string }
   | { type: "content"; chunk: string }
   | { type: "warning"; issues: string[] }
   | { type: "done" }
@@ -28,6 +28,8 @@ export interface AgentMessage {
   toolSteps?: ToolStep[];
   streaming?: boolean;
   warnings?: string[];
+  /** 模型思考内容（可折叠展示） */
+  thinkingContent?: string;
 }
 
 /** 会话状态 */

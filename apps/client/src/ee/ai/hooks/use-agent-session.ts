@@ -18,6 +18,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
 
   const abortRef = useRef<AbortController | null>(null);
   const contentRef = useRef("");
+  const thinkingRef = useRef("");
   const toolStepsRef = useRef<ToolStep[]>([]);
   const assistantIdRef = useRef("");
 
@@ -44,6 +45,12 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
 
         case "thinking":
           setStatus("thinking");
+          if (event.chunk) {
+            thinkingRef.current += event.chunk;
+            updateLastAssistant(() => ({
+              thinkingContent: thinkingRef.current,
+            }));
+          }
           break;
 
         case "tool_call": {
@@ -143,6 +150,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
       setStatus("streaming");
       setLastOutput(null);
       contentRef.current = "";
+      thinkingRef.current = "";
       toolStepsRef.current = [];
 
       lockEditor();
