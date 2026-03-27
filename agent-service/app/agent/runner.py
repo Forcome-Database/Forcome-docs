@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, AsyncIterator
 
 from pydantic_ai import AgentRunResultEvent
@@ -21,7 +22,7 @@ from app.agent.cancellation import is_task_cancelled
 # 单次 run 最大工具调用次数。
 # PydanticAI 无内置 max_tool_calls 参数，此处作为生产级安全阀：
 # 防止 Agent 在工具失败时无限循环调用。
-MAX_TOOL_CALLS = 10
+MAX_TOOL_CALLS = int(os.environ.get("AGENT_MAX_TOOL_CALLS", "10"))
 
 logger = logging.getLogger(__name__)
 
