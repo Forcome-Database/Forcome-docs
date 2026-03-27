@@ -52,20 +52,34 @@ VitePress 知识库（`wiki/`）已深度集成 Docmost，作为公开只读前�
 
 ## AI Agent 智能体
 
-当前运行时是独立 Python 微服务（`agent-service/`），由 `DocumentTaskEngine` + `OrchestratorEngine` 组成，NestJS 通过 `/api/agent/*` 代理到 FastAPI。当前实现已经不是 LangGraph 图运行时。
+当前有两套 Agent 实现，共存于 `agent-service/` 中：
 
-建议按以下优先级阅读：
+### v2 Intelligent Agent（`feat/intelligent-agent` 分支，推荐）
 
-- **[当前架构说明](agent-service/ARCHITECTURE.md)**：当前 PydanticAI 编排器、工作流分支、事件协议、会话与草稿接口
-- **[历史开发记录](docs/ai-agent-refactor-details.md)**：2026-03-04 的 LangGraph 方案，仅保留开发背景和踩坑记录
-- **[历史架构设计](docs/plans/2026-03-03-ai-agent-architecture-design.md)**：当时的设计方案
+PydanticAI 单 Agent + 5 工具 + 时间线渲染，端点 `POST /agent/v2/run`。
 
-当前已验证的关键约束：
+- **[v2 Agent 模块说明](agent-service/app/agent/README.md)**：架构、工具集、SSE 事件协议、时间线渲染机制
+- **[完整实施总结](docs/superpowers/plans/2026-03-27-intelligent-agent-implementation-summary.md)**：Phase 1-3 + 思维深度增强 + 踩坑记录
+
+关键设计决策：
+- `thinking="high"` 启用 Gemini 深度推理（PydanticAI v1.72.0 自动映射）
+- 前端时间线回溯降级分离叙述文本和文档内容（非后端过滤）
+- `done.final_content` 携带权威输出供 "Apply to page" 使用
+- FinalResultEvent **每轮都触发**，不可用作内容门控（已踩坑确认）
+
+### v1 Orchestrator（master 分支，旧架构）
+
+`DocumentTaskEngine` + `OrchestratorEngine` 多层编排，端点 `POST /agent/run`。
+
+- **[v1 架构说明](agent-service/ARCHITECTURE.md)**：工作流分支、事件协议、会话与草稿接口
+- **[历史开发记录](docs/ai-agent-refactor-details.md)**：LangGraph → PydanticAI 重构历史
+
+### 共享约束
 
 - NestJS 网关使用 `http.request` 代理 SSE，而不是 `fetch`
-- Agent 事件通过 `asyncio.Queue` 推送到 SSE 流
 - `agent-service/app/config.py` 会优先读取根目录 `../.env`
 - `AGENT_SERVICE_URL` 与 `DOCMOST_INTERNAL_URL` 支持从端口配置派生
+- `AGENT_MAX_TOOL_CALLS` 环境变量控制工具调用上限（默认 10）
 
 ## Docker 部署与环境管理
 
