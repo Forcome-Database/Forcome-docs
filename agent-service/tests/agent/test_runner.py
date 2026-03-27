@@ -60,10 +60,11 @@ async def test_yields_error_on_exception(deps):
 
 @pytest.mark.asyncio
 async def test_content_accumulated(deps):
-    """content 事件的 chunk 应被正确产出。"""
-    from pydantic_ai.messages import PartDeltaEvent, TextPartDelta
+    """content 事件的 chunk 应被正确产出（需在 FinalResultEvent 之后）。"""
+    from pydantic_ai.messages import PartDeltaEvent, TextPartDelta, FinalResultEvent
 
     async def mock_stream(*args, **kwargs):
+        yield FinalResultEvent(tool_name=None, tool_call_id=None)
         yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="Hello "))
         yield PartDeltaEvent(index=1, delta=TextPartDelta(content_delta="World"))
 
@@ -115,7 +116,7 @@ async def test_thinking_phases_tracked(deps):
     from pydantic_ai.messages import (
         PartStartEvent, PartDeltaEvent, ThinkingPart, ThinkingPartDelta,
         FunctionToolCallEvent, FunctionToolResultEvent, ToolCallPart, ToolReturnPart,
-        TextPartDelta,
+        TextPartDelta, FinalResultEvent,
     )
 
     async def mock_stream(*args, **kwargs):
@@ -128,7 +129,8 @@ async def test_thinking_phases_tracked(deps):
         # Phase 2: thinking after tool result
         yield PartStartEvent(index=1, part=ThinkingPart(content=""))
         yield PartDeltaEvent(index=1, delta=ThinkingPartDelta(content_delta="Analyzing..."))
-        # Final output
+        # Final output (FinalResultEvent gates content)
+        yield FinalResultEvent(tool_name=None, tool_call_id=None)
         yield PartDeltaEvent(index=2, delta=TextPartDelta(content_delta="Result"))
 
     with patch("app.agent.runner.get_agent") as mock_get:
@@ -157,11 +159,12 @@ async def test_thinking_phases_tracked(deps):
 @pytest.mark.asyncio
 async def test_warning_on_missing_image(deps):
     """图片 URL 缺失时产出 warning 事件。"""
-    from pydantic_ai.messages import PartDeltaEvent, TextPartDelta
+    from pydantic_ai.messages import PartDeltaEvent, TextPartDelta, FinalResultEvent
 
     deps.uploaded_image_urls = {"img1": "http://example.com/missing.jpg"}
 
     async def mock_stream(*args, **kwargs):
+        yield FinalResultEvent(tool_name=None, tool_call_id=None)
         yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="No images here " * 20))
 
     with patch("app.agent.runner.get_agent") as mock_get:
