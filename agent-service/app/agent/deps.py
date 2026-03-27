@@ -34,3 +34,7 @@ class AgentDeps:
     # 工具执行中填充的已上传图片 URL 映射（供后验证使用）
     # 格式: {"原始引用/文件名": "Docmost 完整 URL"}
     uploaded_image_urls: dict[str, str] = field(default_factory=dict)
+
+    # 原生提取的图片 payloads（extract_document 填充，describe_images 消费）
+    image_payloads: list = field(default_factory=list)
+    # 类型: list[SourceImagePayload]，用 list 避免循环导入

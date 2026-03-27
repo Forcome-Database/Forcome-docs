@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     agent_llm_api_key: str = ""
     agent_llm_api_url: str = ""
 
+    # VLM independent config (falls back to LLM config)
+    ai_vlm_model: str = ""
+    ai_vlm_driver: str = ""
+    ai_vlm_api_key: str = ""  # VLM 独立 API key，回退到 llm_api_key
+
     # Port variables
     port: int = 3000
     agent_port: int = 8100
@@ -74,6 +79,21 @@ class Settings(BaseSettings):
     @property
     def llm_api_url(self) -> str:
         return self.agent_llm_api_url or self.openai_api_url
+
+    @property
+    def vlm_provider(self) -> str:
+        """VLM 独立 provider，回退到 LLM provider。"""
+        return self.ai_vlm_driver or self.llm_provider
+
+    @property
+    def vlm_model(self) -> str:
+        """VLM 独立模型名，回退到 LLM 模型。"""
+        return self.ai_vlm_model or self.llm_model
+
+    @property
+    def vlm_api_key(self) -> str:
+        """VLM 独立 API key，回退到 LLM API key。"""
+        return self.ai_vlm_api_key or self.llm_api_key
 
     model_config = {"env_file": ["../.env", ".env"], "extra": "ignore"}
 
