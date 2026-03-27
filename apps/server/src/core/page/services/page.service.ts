@@ -56,6 +56,7 @@ import {
   AiCommitSelectionConflictError,
 } from '../../../ee/ai/creator-commit.utils';
 import { canonicalizeAttachmentImageNodes } from '../../../ee/ai/attachment-image-canonicalizer';
+import { setAiImageDimensions } from '../../../ee/ai/ai-image-dimension-setter';
 
 @Injectable()
 export class PageService {
@@ -325,14 +326,39 @@ export class PageService {
         params.content,
         'markdown',
       );
-      const canonicalizedProsemirrorJson =
-        await this.canonicalizeAiAttachmentImageNodes(
-          currentPage.id,
-          parsedProsemirrorJson,
+
+      // Fetch attachments once for both canonicalize and dimension steps
+      const pageAttachments = await this.attachmentRepo.findByPageId(
+        currentPage.id,
+      );
+
+      let processedJson = parsedProsemirrorJson;
+
+      // Step 1: canonicalize image URLs and attachmentIds
+      if (pageAttachments.length) {
+        processedJson = canonicalizeAttachmentImageNodes(
+          processedJson,
+          pageAttachments,
+        ).document;
+      }
+
+      // Step 2: auto-set image dimensions using sharp
+      if (pageAttachments.length) {
+        const dimensionResult = await setAiImageDimensions(
+          processedJson,
+          pageAttachments.map((a) => ({
+            id: a.id,
+            fileName: a.fileName,
+            filePath: a.filePath,
+          })),
+          this.storageService,
         );
+        processedJson = dimensionResult.document;
+      }
+
       const shouldPromoteTitle = this.shouldPromoteAiTitle(currentPage.title);
       const { title: extractedTitle, prosemirrorJson } =
-        extractTitleAndRemoveHeading(canonicalizedProsemirrorJson);
+        extractTitleAndRemoveHeading(processedJson);
 
       let result: {
         appliedMode: 'append' | 'overwrite' | 'replace';
@@ -969,15 +995,4 @@ export class PageService {
     return !normalizedTitle || normalizedTitle === 'untitled';
   }
 
-  private async canonicalizeAiAttachmentImageNodes(
-    pageId: string,
-    prosemirrorJson: any,
-  ): Promise<any> {
-    const attachments = await this.attachmentRepo.findByPageId(pageId);
-    if (!attachments.length) {
-      return prosemirrorJson;
-    }
-    return canonicalizeAttachmentImageNodes(prosemirrorJson, attachments)
-      .document;
-  }
 }
