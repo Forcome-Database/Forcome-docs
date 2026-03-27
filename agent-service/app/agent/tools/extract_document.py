@@ -21,10 +21,10 @@ from pydantic_ai import RunContext
 logger = logging.getLogger(__name__)
 
 
-async def extract_document_impl(deps: "AgentDeps", purpose: str = "") -> str:
+async def extract_document_impl(deps: "AgentDeps", purpose: str = "") -> dict:
     """可测试的核心逻辑（不依赖 RunContext）。"""
     if not deps.files:
-        return "[No Files] No files were uploaded. Ask the user to upload a document."
+        return {"status": "error", "error": "No files were uploaded. Ask the user to upload a document."}
 
     try:
         from app.workers.asset_parser import parse_document
@@ -140,30 +140,29 @@ async def extract_document_impl(deps: "AgentDeps", purpose: str = "") -> str:
                 doc_title = t
                 break
 
-        summary = f"[Document Summary]\nTitle: {doc_title or 'Untitled'}\nWords: {word_count}\nImages: {len(image_metadata)} uploaded"
-
-        image_section = ""
+        instructions = None
         if image_metadata:
-            lines = []
-            for m in image_metadata:
-                lines.append(
-                    f"  {m['ref']}: ({m['width']}x{m['height']}, {m['size_kb']}KB) → {m['url']}"
-                )
-            image_section = (
-                f"\n\n[Uploaded Images ({len(image_metadata)} total)]\n"
-                + "\n".join(lines)
-                + "\n\nIMPORTANT: Use these EXACT URLs as image src in your Markdown output."
-                + "\nEvery URL above MUST appear in your final output."
-                + "\nCall `describe_images` tool next to understand what each image shows,"
-                + "\nthen place each image after the text it illustrates."
+            instructions = (
+                "Call describe_images next to understand what each image shows,"
+                " then place each image after the text it illustrates."
             )
 
-        return f"{summary}{image_section}\n\n[Document Content]\n\n{content}"
+        # P3 验证器将使用此值；通过 setattr 安全设置，避免循环依赖
+        setattr(deps, "source_word_count", word_count)
+
+        return {
+            "status": "success",
+            "title": doc_title or "Untitled",
+            "word_count": word_count,
+            "images": image_metadata,
+            "content": content,
+            "instructions": instructions,
+        }
 
     except asyncio.TimeoutError:
-        return "[Error] Document extraction timed out after 120 seconds."
+        return {"status": "error", "error": "Document extraction timed out after 120 seconds."}
     except Exception as e:
-        return f"[Error] Failed to extract document: {type(e).__name__}: {e}"
+        return {"status": "error", "error": f"Failed to extract document: {type(e).__name__}: {e}"}
 
 
 def _ext_for_mime(mime: str) -> str:
@@ -175,7 +174,7 @@ def _ext_for_mime(mime: str) -> str:
     }.get(mime, ".png")
 
 
-async def extract_document_tool(ctx: RunContext["AgentDeps"], purpose: str = "") -> str:
+async def extract_document_tool(ctx: RunContext["AgentDeps"], purpose: str = "") -> dict:
     """Extract text and images from uploaded document files.
 
     Call this when the user has uploaded PDF, DOCX, PPTX, or other document files.

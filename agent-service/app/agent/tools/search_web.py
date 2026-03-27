@@ -10,26 +10,29 @@ if TYPE_CHECKING:
 from pydantic_ai import RunContext
 
 
-async def search_web_impl(query: str) -> str:
+def _get_tavily_fn():
+    """返回可调用的 tavily_search 函数（工厂，方便测试 mock）。"""
+    from app.tools.tavily_search import tavily_search
+    return tavily_search.func if hasattr(tavily_search, "func") else tavily_search
+
+
+async def search_web_impl(query: str) -> dict:
     """可测试的核心逻辑。"""
     try:
-        from app.tools.tavily_search import tavily_search
-
-        # tavily_search 是 sync 函数（被 @tool 装饰），使用 .func 获取原始函数
-        fn = tavily_search.func if hasattr(tavily_search, "func") else tavily_search
+        fn = _get_tavily_fn()
         result_text = await asyncio.wait_for(
             asyncio.to_thread(fn, query), timeout=15
         )
         if not result_text or len(str(result_text).strip()) < 20:
-            return f"[No Results] No search results found for: {query}"
-        return f"[Search Results for '{query}']\n\n{result_text}"
+            return {"status": "no_results", "query": query, "results": "", "message": "No results found."}
+        return {"status": "success", "query": query, "results": str(result_text)}
     except asyncio.TimeoutError:
-        return "[Error] Web search timed out after 15 seconds."
+        return {"status": "error", "query": query, "error": "Web search timed out after 15 seconds."}
     except Exception as e:
-        return f"[Error] Search failed: {type(e).__name__}: {e}"
+        return {"status": "error", "query": query, "error": f"Search failed: {type(e).__name__}: {e}"}
 
 
-async def search_web_tool(ctx: RunContext["AgentDeps"], query: str) -> str:
+async def search_web_tool(ctx: RunContext["AgentDeps"], query: str) -> dict:
     """Search the internet for current information on a topic.
 
     Call this when you need facts, references, or up-to-date information

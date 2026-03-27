@@ -10,32 +10,42 @@ if TYPE_CHECKING:
 from pydantic_ai import RunContext
 
 
-async def scrape_url_impl(url: str) -> str:
+def _get_firecrawl_fn():
+    """返回可调用的 firecrawl_scrape 函数（工厂，方便测试 mock）。"""
+    from app.tools.firecrawl_scrape import firecrawl_scrape
+    return firecrawl_scrape.func if hasattr(firecrawl_scrape, "func") else firecrawl_scrape
+
+
+async def scrape_url_impl(url: str) -> dict:
     """可测试的核心逻辑。"""
     if not url.startswith(("http://", "https://")):
-        return f"[Error] Invalid URL format: {url}. Must start with http:// or https://."
+        return {"status": "error", "url": url, "error": f"Invalid URL format: {url}. Must start with http:// or https://."}
 
     try:
-        from app.tools.firecrawl_scrape import firecrawl_scrape
-
-        # firecrawl_scrape 是 sync 函数（被 @tool 装饰），使用 .func 获取原始函数
-        fn = firecrawl_scrape.func if hasattr(firecrawl_scrape, "func") else firecrawl_scrape
+        fn = _get_firecrawl_fn()
         content = await asyncio.wait_for(
             asyncio.to_thread(fn, url), timeout=30
         )
         if not content or len(str(content).strip()) < 50:
-            return f"[Error] No meaningful content extracted from {url}."
+            return {"status": "error", "url": url, "error": f"No meaningful content extracted from {url}."}
         content_str = str(content)
-        if len(content_str) > 8000:
-            content_str = content_str[:8000] + f"\n\n[Truncated — original {len(content_str)} characters]"
-        return f"[Web Content from {url}]\n{content_str}"
+        truncated = len(content_str) > 8000
+        if truncated:
+            content_str = content_str[:8000]
+        return {
+            "status": "success",
+            "url": url,
+            "content": content_str,
+            "word_count": len(content_str.split()),
+            "truncated": truncated,
+        }
     except asyncio.TimeoutError:
-        return f"[Error] Scraping {url} timed out after 30 seconds."
+        return {"status": "error", "url": url, "error": f"Scraping {url} timed out after 30 seconds."}
     except Exception as e:
-        return f"[Error] Failed to scrape {url}: {type(e).__name__}: {e}"
+        return {"status": "error", "url": url, "error": f"Failed to scrape {url}: {type(e).__name__}: {e}"}
 
 
-async def scrape_url_tool(ctx: RunContext["AgentDeps"], url: str) -> str:
+async def scrape_url_tool(ctx: RunContext["AgentDeps"], url: str) -> dict:
     """Fetch and extract the main content from a web URL.
 
     Call this when the user provides a URL or you need to read a web page.

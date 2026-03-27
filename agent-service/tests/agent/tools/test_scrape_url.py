@@ -11,14 +11,14 @@ async def test_returns_content():
     mock_tool.func = mock_fn
     with patch("app.tools.firecrawl_scrape.firecrawl_scrape", mock_tool):
         result = await scrape_url_impl("https://example.com")
-    assert "[Web Content" in result
-    assert "Page content" in result
+    assert result["status"] == "success"
+    assert "Page content" in result["content"]
 
 
 @pytest.mark.asyncio
 async def test_invalid_url():
     result = await scrape_url_impl("not-a-url")
-    assert "[Error]" in result
+    assert result["status"] == "error"
 
 
 @pytest.mark.asyncio
@@ -28,7 +28,7 @@ async def test_empty_content():
     mock_tool.func = mock_fn
     with patch("app.tools.firecrawl_scrape.firecrawl_scrape", mock_tool):
         result = await scrape_url_impl("https://example.com")
-    assert "[Error]" in result
+    assert result["status"] == "error"
 
 
 @pytest.mark.asyncio
@@ -38,5 +38,5 @@ async def test_truncates_long_content():
     mock_tool.func = mock_fn
     with patch("app.tools.firecrawl_scrape.firecrawl_scrape", mock_tool):
         result = await scrape_url_impl("https://example.com")
-    assert "[Truncated" in result
-    assert len(result) < 12000
+    assert result["truncated"] is True
+    assert len(result["content"]) < 12000

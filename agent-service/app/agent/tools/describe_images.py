@@ -17,15 +17,15 @@ from pydantic_ai import RunContext
 logger = logging.getLogger(__name__)
 
 
-async def describe_images_impl(deps: "AgentDeps") -> str:
+async def describe_images_impl(deps: "AgentDeps") -> dict:
     """可测试的核心逻辑。"""
     if not deps.uploaded_image_urls:
-        return "[No Images] No images have been uploaded. Call extract_document first."
+        return {"status": "error", "error": "No images have been uploaded. Call extract_document first."}
 
     # 从 deps.image_payloads 获取图片数据（extract_document 已保存，避免重复提取）
     image_payloads = getattr(deps, "image_payloads", None) or []
     if not image_payloads:
-        return "[No Images] No image data available. Call extract_document first."
+        return {"status": "error", "error": "No image data available. Call extract_document first."}
 
     try:
         from app.tools.vlm_understand import vlm_describe_batch
@@ -39,26 +39,25 @@ async def describe_images_impl(deps: "AgentDeps") -> str:
             None, vlm_describe_batch, images_for_vlm,
         )
 
-        # 构建返回，将描述与已上传 URL 对齐
-        lines = []
-        url_list = list(deps.uploaded_image_urls.values())
+        # 构建结构化返回，将描述与已上传 URL 对齐
+        structured = []
+        url_items = list(deps.uploaded_image_urls.items())
         for i, desc in enumerate(descriptions):
-            url = url_list[i] if i < len(url_list) else "?"
-            lines.append(f'  Image {i+1}: "{desc}" → {url}')
+            ref, url = url_items[i] if i < len(url_items) else (f"image{i+1}", "?")
+            structured.append({"ref": ref, "url": url, "description": desc})
 
-        return (
-            f"[Image Descriptions ({len(descriptions)} images)]\n"
-            + "\n".join(lines)
-            + "\n\nUse these descriptions to place each image after the text it illustrates."
-            + "\nExample: If Image 2 shows '代理模式选择', place it after the '选择代理模式' step."
-        )
+        return {
+            "status": "success",
+            "image_count": len(structured),
+            "descriptions": structured,
+        }
 
     except Exception as e:
         logger.warning(f"describe_images failed: {e}")
-        return f"[Error] Failed to describe images: {type(e).__name__}: {e}"
+        return {"status": "error", "error": f"Failed to describe images: {type(e).__name__}: {e}"}
 
 
-async def describe_images_tool(ctx: RunContext["AgentDeps"]) -> str:
+async def describe_images_tool(ctx: RunContext["AgentDeps"]) -> dict:
     """Understand the content of all uploaded document images using VLM.
 
     Call this AFTER extract_document to understand what each image shows.

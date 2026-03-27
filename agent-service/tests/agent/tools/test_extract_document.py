@@ -26,7 +26,7 @@ def deps_no_files():
 @pytest.mark.asyncio
 async def test_no_files_returns_message(deps_no_files):
     result = await extract_document_impl(deps_no_files)
-    assert "[No Files]" in result
+    assert result["status"] == "error"
 
 
 @pytest.mark.asyncio
@@ -36,8 +36,8 @@ async def test_returns_document_content(deps_with_file):
     mock_am.items = []
     with patch("app.workers.asset_parser.parse_document", return_value=mock_am):
         result = await extract_document_impl(deps_with_file)
-    assert "[Document Content]" in result
-    assert "Test" in result
+    assert result["status"] == "success"
+    assert "Test" in result["content"]
 
 
 @pytest.mark.asyncio
@@ -47,4 +47,4 @@ async def test_handles_parse_error(deps_with_file):
         side_effect=RuntimeError("parse failed"),
     ):
         result = await extract_document_impl(deps_with_file)
-    assert "[Error]" in result
+    assert result["status"] == "error"

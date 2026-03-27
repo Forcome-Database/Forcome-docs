@@ -10,8 +10,8 @@ async def test_returns_results():
     mock_tool.func = mock_fn
     with patch("app.tools.tavily_search.tavily_search", mock_tool):
         result = await search_web_impl("python tutorial")
-    assert "[Search Results" in result
-    assert "Title" in result
+    assert result["status"] == "success"
+    assert "Title" in result["results"]
 
 
 @pytest.mark.asyncio
@@ -21,4 +21,4 @@ async def test_no_results():
     mock_tool.func = mock_fn
     with patch("app.tools.tavily_search.tavily_search", mock_tool):
         result = await search_web_impl("obscure query xyz")
-    assert "[No Results]" in result
+    assert result["status"] == "no_results"
