@@ -60,26 +60,32 @@ def create_pydantic_ai_model(
     if _provider == "openai-compatible":
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openai import OpenAIProvider
+        from pydantic_ai.profiles.openai import OpenAIModelProfile
 
+        # 第三方代理对 reasoning_effort 等扩展参数兼容性不可预测，
+        # 禁用 thinking 以避免 400 错误。需要 thinking 时改用 openai-responses。
         return OpenAIChatModel(
             _model,
             provider=OpenAIProvider(base_url=_base_url, api_key=_api_key),
+            profile=OpenAIModelProfile(supports_thinking=False),
         )
 
     if _provider == "openai-responses":
         from pydantic_ai.models.openai import OpenAIResponsesModel
         from pydantic_ai.providers.openai import OpenAIProvider
 
+        # 支持 base_url 以兼容自定义端点（如代理 API 的 /v1/responses）
         return OpenAIResponsesModel(
             _model,
-            provider=OpenAIProvider(api_key=_api_key),
+            provider=OpenAIProvider(base_url=_base_url or None, api_key=_api_key),
         )
 
     # Default: OpenAI (Chat Completions API) or unknown provider
     from pydantic_ai.models.openai import OpenAIChatModel
     from pydantic_ai.providers.openai import OpenAIProvider
 
+    # 支持 base_url 以兼容 OPENAI_API_URL 自定义端点
     return OpenAIChatModel(
         _model,
-        provider=OpenAIProvider(api_key=_api_key),
+        provider=OpenAIProvider(base_url=_base_url or None, api_key=_api_key),
     )
