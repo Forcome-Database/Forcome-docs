@@ -10,15 +10,32 @@ All rules in this skill are MANDATORY. Violating any rule is a quality defect.
 
 ## Workflow Protocol
 
-1. **UNDERSTAND** the input — read the user's instruction and any uploaded content
-2. **EXTRACT** content when files are uploaded:
-   - Call `extract_document` tool FIRST → returns text + image metadata
-   - Then call `describe_images` tool → returns VLM description for each image
-3. **PLAN** image placement based on VLM descriptions:
-   - Match each image description to the relevant section in the text
-   - Example: "Image 2: PC端代理模式选择" → place after the proxy selection step
-4. **GENERATE** formatted Markdown output following ALL rules below
-5. **VERIFY** before finishing: every uploaded image URL appears in output
+1. **UNDERSTAND** — Read the user's instruction carefully. Identify:
+   - What type of task: rewrite from URL? optimize uploaded doc? create new content?
+   - What output format is expected
+
+2. **COLLECT** — Gather content with MINIMAL tool calls (1-2 max per source):
+   - URL provided → call `scrape_url` ONCE. If it returns content > 100 chars, proceed.
+   - File uploaded → call `extract_document` ONCE, then `describe_images` ONCE.
+   - Need external facts → call `search_web` ONCE. Do NOT repeat.
+
+3. **ANALYZE** — Before writing anything, deeply analyze what you collected:
+   - What is the document about? Identify main topics and sections.
+   - What problems exist in the current structure? (formatting, hierarchy, missing info)
+   - What does the user want improved or changed?
+   - Which images belong to which sections?
+
+4. **PLAN** — Decide on the output structure:
+   - What sections will the new document have?
+   - What improvements will you make (list them mentally)?
+   - Where will each image be placed?
+
+5. **GENERATE** — Write the complete formatted Markdown based on your analysis and plan.
+
+6. **VERIFY** — Every uploaded image URL must appear in the output.
+
+**CRITICAL**: Steps 3 (ANALYZE) and 4 (PLAN) happen in your reasoning, NOT as tool calls.
+After collecting content, think deeply before generating — do not call more tools.
 
 ## Output Format: TipTap Markdown
 
@@ -170,23 +187,31 @@ NEVER use raw URLs without link text. Always wrap in `[text](url)`.
 - Long document (2000+ words source): Organize into clear sections with TOC-friendly headings
 - NEVER pad content with filler — better to be concise than verbose
 
-## Multimodal Input Handling
+## Tool Usage Rules
 
-When the user uploads files (PDF, DOCX, PPTX, images):
-1. Call `extract_document` tool — extracts text + uploads original images
-2. Call `describe_images` tool — VLM describes each image's content
-3. Use the descriptions to intelligently place images in your output
-4. Do NOT try to read binary document content directly
-5. Do NOT skip the `describe_images` step — you need to know what each image shows
-   to place it correctly in the document
+**URL tasks** (user gives a URL):
+- Call `scrape_url` ONCE. If content is returned, analyze and generate immediately.
+- If scraping fails: call `search_web` ONCE with the topic/URL as query.
+- After ONE fallback attempt: generate output with whatever content you have.
+- NEVER call search_web more than once. NEVER alternate between tools repeatedly.
 
-## Error Recovery
+**File upload tasks** (user uploads DOCX/PDF/PPTX):
+- Call `extract_document` ONCE → call `describe_images` ONCE → generate.
+- Do NOT call other tools unless the user explicitly asks for additional research.
 
-If a tool returns `[Error]`:
-- Do NOT give up — try alternative approaches
-- For scraping errors: try `search_web` as fallback
-- For parse errors: use whatever text you can extract
-- Always produce output even if tools partially failed
+**Research tasks** (user asks for facts/information):
+- Call `search_web` 1-3 times maximum with different focused queries.
+- After 3 searches, generate output with what you have.
+
+## Error Recovery (ONE ATTEMPT ONLY)
+
+If a tool returns `[Error]` or empty content on first try:
+1. Try ONE alternative: scraping failed → search once; search failed → use what you have.
+2. After that ONE alternative, generate output immediately.
+3. Do NOT retry the same tool. Do NOT cycle between tools.
+4. If both attempts fail, write the best content you can based on your knowledge.
+
+**Stopping rule**: After ANY two tool calls for the same task, stop calling tools and generate output.
 
 ## Language and Style
 

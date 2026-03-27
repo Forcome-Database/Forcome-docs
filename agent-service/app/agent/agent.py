@@ -39,10 +39,15 @@ def create_agent(
     max_tokens = get_max_tokens_for_current_model()
 
     # 构建 ModelSettings（动态 max_tokens + Thinking 能力）
-    # ModelSettings 是 TypedDict，直接传关键字参数构造
-    # thinking 字段类型: ThinkingLevel = Union[bool, Literal['minimal','low','medium','high','xhigh']]
-    # 不支持 thinking 的 provider 会静默忽略该字段
-    model_settings_kwargs: dict = {"max_tokens": max_tokens, "thinking": "high"}
+    # thinking="high": 对支持 thinking 的模型启用深度推理
+    # openai_reasoning_summary="auto": OpenAI Responses API 返回推理摘要文本
+    #   → PydanticAI 将其解析为 ThinkingPart → event_bridge 转为 SSE thinking 事件
+    #   → 前端折叠展示"已思考 Xs"，类似 MiniMax 的深度分析可见性
+    model_settings_kwargs: dict = {
+        "max_tokens": max_tokens,
+        "thinking": "high",
+        "openai_reasoning_summary": "auto",
+    }
 
     # Tool functions use `RunContext["AgentDeps"]` with TYPE_CHECKING guard,
     # so `AgentDeps` is absent from their module globals at runtime.

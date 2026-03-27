@@ -10,12 +10,18 @@ import logging
 from typing import Any, AsyncIterator
 
 from pydantic_ai import AgentRunResultEvent
+from pydantic_ai.messages import FunctionToolCallEvent
 
 from app.agent.agent import get_agent
 from app.agent.deps import AgentDeps
 from app.agent.event_bridge import map_pydantic_event_to_sse
 from app.agent.validator import validate_agent_output
 from app.agent.cancellation import is_task_cancelled
+
+# 单次 run 最大工具调用次数。
+# PydanticAI 无内置 max_tool_calls 参数，此处作为生产级安全阀：
+# 防止 Agent 在工具失败时无限循环调用。
+MAX_TOOL_CALLS = 10
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +68,7 @@ async def run_agent(
     # 3. 流式执行 Agent
     streamed_chunks: list[str] = []  # 流式 chunk 累积（回退用）
     authoritative_output: str | None = None  # AgentRunResultEvent 权威输出
+    tool_call_count = 0  # 工具调用计数器（安全阀）
     try:
         stream_kwargs: dict[str, Any] = {"deps": deps}
         if message_history:
@@ -72,6 +79,21 @@ async def run_agent(
             if is_task_cancelled(None, deps.thread_id):
                 yield {"type": "cancelled"}
                 return
+
+            # 工具调用计数 — 超过上限则强制停止，防止无限循环
+            if isinstance(event, FunctionToolCallEvent):
+                tool_call_count += 1
+                if tool_call_count > MAX_TOOL_CALLS:
+                    logger.error(
+                        "Max tool calls (%d) exceeded for thread %s — stopping agent loop",
+                        MAX_TOOL_CALLS,
+                        deps.thread_id,
+                    )
+                    yield {
+                        "type": "error",
+                        "message": f"工具调用次数超过上限（{MAX_TOOL_CALLS} 次），请尝试简化请求或换一种方式描述任务。",
+                    }
+                    return
 
             # AgentRunResultEvent 包含权威的最终输出
             if isinstance(event, AgentRunResultEvent):
