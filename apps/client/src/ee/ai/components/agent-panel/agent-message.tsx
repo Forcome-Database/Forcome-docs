@@ -109,10 +109,8 @@ export function AgentMessage({ message }: AgentMessageProps) {
           }
         })}
 
-        {/* 加载指示器：有工具在运行但还没内容 */}
-        {message.streaming && !hasDocument && timeline.length > 0 &&
-          timeline[timeline.length - 1]?.kind === "tool" &&
-          (timeline[timeline.length - 1] as Extract<TimelineItem, { kind: "tool" }>).status === "running" && (
+        {/* 工作指示器：streaming 期间始终显示，直到文档完全写完 */}
+        {message.streaming && (
           <Group gap={6} py={4}>
             <Loader size={14} />
             <Text size="xs" c="dimmed">Agent 正在工作...</Text>
