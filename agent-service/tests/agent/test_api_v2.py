@@ -158,8 +158,12 @@ async def test_v2_run_passes_files(app_with_mocked_auth):
 
 
 @pytest.mark.asyncio
-async def test_v2_run_multimodal_parts(app_with_mocked_auth):
-    """v2 endpoint should decode files to BinaryContent for multimodal_parts."""
+async def test_v2_run_multimodal_only_images(app_with_mocked_auth):
+    """v2 endpoint should only pass image files as BinaryContent multimodal_parts.
+
+    Document files (PDF/DOCX/PPTX) must NOT be multimodal — they go through
+    extract_document tool → MinerU for proper text + image extraction.
+    """
     app = app_with_mocked_auth
 
     captured_kwargs = []
@@ -168,8 +172,11 @@ async def test_v2_run_multimodal_parts(app_with_mocked_auth):
         captured_kwargs.append({"multimodal_parts": multimodal_parts})
         yield {"type": "done"}
 
+    # Mix of document and image files
     test_files = [
-        {"content_b64": "dGVzdA==", "filename": "test.txt", "mimetype": "text/plain"},
+        {"content_b64": "dGVzdA==", "filename": "doc.docx", "mimetype": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+        {"content_b64": "iVBORw0KGgo=", "filename": "photo.png", "mimetype": "image/png"},
+        {"content_b64": "dGVzdA==", "filename": "slides.pptx", "mimetype": "application/vnd.openxmlformats-officedocument.presentationml.presentation"},
     ]
 
     with patch("app.main._run_agent", side_effect=mock_run_agent):
@@ -188,10 +195,10 @@ async def test_v2_run_multimodal_parts(app_with_mocked_auth):
 
         assert response.status_code == 200
         assert len(captured_kwargs) == 1
-        # multimodal_parts should be a list with BinaryContent
+        # Only the PNG image should be in multimodal_parts (not DOCX or PPTX)
         multimodal = captured_kwargs[0]["multimodal_parts"]
         assert multimodal is not None
         assert len(multimodal) == 1
-        # Check it's BinaryContent
         from pydantic_ai.messages import BinaryContent
         assert isinstance(multimodal[0], BinaryContent)
+        assert multimodal[0].media_type == "image/png"

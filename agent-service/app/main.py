@@ -335,16 +335,20 @@ async def run_agent_v2(request: dict):
         files=files_raw,  # 供工具使用
     )
 
-    # 构建多模态输入（BinaryContent for PDF/图片直接传给模型）
+    # 构建多模态输入 — 仅图片直传 LLM（LLM 原生支持视觉理解）
+    # 文档文件（PDF/DOCX/PPTX）不作为多模态传递，强制走 extract_document 工具
+    # → MinerU 提取文本 + 图片 → 上传图片到 Docmost → Agent 引用真实 URL
+    # 参考：MiniMax Agent 用专门 Skill 处理 Office 文档，LLM 不直接看二进制
+    _IMAGE_MIMETYPES = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"}
     multimodal_parts = []
     for f in files_raw:
-        try:
-            data = base64.b64decode(f["content_b64"])
-            multimodal_parts.append(
-                BinaryContent(data=data, media_type=f.get("mimetype", "application/octet-stream"))
-            )
-        except Exception:
-            pass  # 解码失败的文件跳过多模态，仍通过工具处理
+        mime = f.get("mimetype", "")
+        if mime in _IMAGE_MIMETYPES:
+            try:
+                data = base64.b64decode(f["content_b64"])
+                multimodal_parts.append(BinaryContent(data=data, media_type=mime))
+            except Exception:
+                pass
 
     async def event_generator():
         # 第一个事件：session 建立
