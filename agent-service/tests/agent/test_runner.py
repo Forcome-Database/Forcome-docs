@@ -110,6 +110,51 @@ async def test_cancelled_stops_stream(deps):
 
 
 @pytest.mark.asyncio
+async def test_thinking_phases_tracked(deps):
+    """多阶段思考事件应携带递增的 phase 字段。"""
+    from pydantic_ai.messages import (
+        PartStartEvent, PartDeltaEvent, ThinkingPart, ThinkingPartDelta,
+        FunctionToolCallEvent, FunctionToolResultEvent, ToolCallPart, ToolReturnPart,
+        TextPartDelta,
+    )
+
+    async def mock_stream(*args, **kwargs):
+        # Phase 1: thinking before tool call
+        yield PartStartEvent(index=0, part=ThinkingPart(content=""))
+        yield PartDeltaEvent(index=0, delta=ThinkingPartDelta(content_delta="Planning..."))
+        # Tool call
+        yield FunctionToolCallEvent(part=ToolCallPart(tool_name="search_web_tool", args={}, tool_call_id="c1"))
+        yield FunctionToolResultEvent(result=ToolReturnPart(tool_name="search_web_tool", content="ok", tool_call_id="c1"))
+        # Phase 2: thinking after tool result
+        yield PartStartEvent(index=1, part=ThinkingPart(content=""))
+        yield PartDeltaEvent(index=1, delta=ThinkingPartDelta(content_delta="Analyzing..."))
+        # Final output
+        yield PartDeltaEvent(index=2, delta=TextPartDelta(content_delta="Result"))
+
+    with patch("app.agent.runner.get_agent") as mock_get:
+        mock_agent = MagicMock()
+        mock_agent.run_stream_events = mock_stream
+        mock_get.return_value = mock_agent
+
+        events = await collect_events(run_agent("test", deps))
+
+    thinking_events = [e for e in events if e.get("type") == "thinking"]
+    assert len(thinking_events) == 4  # 2 PartStart + 2 delta
+
+    # Phase 1 events
+    assert thinking_events[0]["phase"] == 1
+    assert thinking_events[0]["content"] == ""  # PartStartEvent marker
+    assert thinking_events[1]["phase"] == 1
+    assert thinking_events[1]["chunk"] == "Planning..."
+
+    # Phase 2 events
+    assert thinking_events[2]["phase"] == 2
+    assert thinking_events[2]["content"] == ""  # PartStartEvent marker
+    assert thinking_events[3]["phase"] == 2
+    assert thinking_events[3]["chunk"] == "Analyzing..."
+
+
+@pytest.mark.asyncio
 async def test_warning_on_missing_image(deps):
     """图片 URL 缺失时产出 warning 事件。"""
     from pydantic_ai.messages import PartDeltaEvent, TextPartDelta

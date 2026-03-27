@@ -3,12 +3,18 @@ export type AgentV2Event =
   | { type: "session"; thread_id: string }
   | { type: "tool_call"; tool: string; description: string; args?: Record<string, unknown> }
   | { type: "tool_result"; status: string }
-  | { type: "thinking"; content?: string; chunk?: string }
+  | { type: "thinking"; content?: string; chunk?: string; phase?: number }
   | { type: "content"; chunk: string }
   | { type: "warning"; issues: string[] }
   | { type: "done" }
   | { type: "error"; message: string }
   | { type: "cancelled" };
+
+/** 思考阶段（多阶段可见性） */
+export interface ThinkingPhase {
+  phase: number;
+  content: string;
+}
 
 /** 工具调用步骤（前端展示用） */
 export interface ToolStep {
@@ -28,8 +34,8 @@ export interface AgentMessage {
   toolSteps?: ToolStep[];
   streaming?: boolean;
   warnings?: string[];
-  /** 模型思考内容（可折叠展示） */
-  thinkingContent?: string;
+  /** 模型思考阶段（多阶段可折叠展示） */
+  thinkingPhases?: ThinkingPhase[];
 }
 
 /** 会话状态 */

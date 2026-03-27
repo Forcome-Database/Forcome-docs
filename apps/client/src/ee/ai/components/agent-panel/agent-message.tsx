@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Alert, Collapse, Group, Loader, Stack, Text, UnstyledButton } from "@mantine/core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Box, Collapse, Group, Loader, Stack, Text, UnstyledButton } from "@mantine/core";
 import { IconAlertTriangle, IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import type { AgentMessage as AgentMessageType } from "../../types/agent-v2.types";
 import { ToolCallStep } from "./tool-call-step";
@@ -48,7 +48,19 @@ function useThinkingTimer(isActivelyThinking: boolean) {
 }
 
 export function AgentMessage({ message }: AgentMessageProps) {
-  const [thinkingOpen, setThinkingOpen] = useState(false);
+  const [openPhases, setOpenPhases] = useState<Set<number>>(new Set());
+
+  const togglePhase = useCallback((phase: number) => {
+    setOpenPhases((prev) => {
+      const next = new Set(prev);
+      if (next.has(phase)) {
+        next.delete(phase);
+      } else {
+        next.add(phase);
+      }
+      return next;
+    });
+  }, []);
 
   const allToolsDone = message.toolSteps?.length
     ? message.toolSteps.every((s) => s.status === "done")
@@ -57,7 +69,8 @@ export function AgentMessage({ message }: AgentMessageProps) {
     !!message.streaming && !message.content && allToolsDone;
 
   const { elapsed, finalTime, wasThinking } = useThinkingTimer(isActivelyThinking);
-  const hasThinkingContent = !!message.thinkingContent;
+  const phases = message.thinkingPhases ?? [];
+  const hasThinkingContent = phases.length > 0;
 
   // 显示条件：正在思考 OR 思考过（有计时 OR 有内容）
   const showThinkingSection = isActivelyThinking || wasThinking || hasThinkingContent;
@@ -71,33 +84,74 @@ export function AgentMessage({ message }: AgentMessageProps) {
 
         {showThinkingSection && (
           <div>
-            <UnstyledButton
-              onClick={() => hasThinkingContent && setThinkingOpen((o) => !o)}
-              className={classes.thinkingToggle}
-            >
-              <Group gap={6}>
-                {isActivelyThinking ? (
-                  <Loader size={14} />
-                ) : hasThinkingContent ? (
-                  thinkingOpen ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />
-                ) : null}
-                <Text size="xs" c="dimmed">
-                  {isActivelyThinking
-                    ? `已思考 ${elapsed.toFixed(1)}s ...`
-                    : `已思考 ${(finalTime ?? 0).toFixed(1)}s`}
-                </Text>
-              </Group>
-            </UnstyledButton>
-            {hasThinkingContent && (
-              <Collapse in={thinkingOpen}>
-                <Text
-                  size="xs"
-                  c="dimmed"
-                  className={classes.thinkingContent}
-                >
-                  {message.thinkingContent}
-                </Text>
-              </Collapse>
+            {phases.length === 0 ? (
+              /* 无内容但正在思考（纯计时） */
+              <UnstyledButton className={classes.thinkingToggle}>
+                <Group gap={6}>
+                  {isActivelyThinking && <Loader size={14} />}
+                  <Text size="xs" c="dimmed">
+                    {isActivelyThinking
+                      ? `已思考 ${elapsed.toFixed(1)}s ...`
+                      : `已思考 ${(finalTime ?? 0).toFixed(1)}s`}
+                  </Text>
+                </Group>
+              </UnstyledButton>
+            ) : (
+              /* 多阶段思考 — 每个阶段独立可折叠 */
+              phases.map((phase) => {
+                const isLast = phase.phase === phases[phases.length - 1]?.phase;
+                const isPhaseOpen = openPhases.has(phase.phase);
+                const label = isLast ? "最终分析" : `思考阶段 ${phase.phase}`;
+                const summary = phase.content
+                  .split("\n")
+                  .filter((l) => l.trim())
+                  .slice(0, 2)
+                  .join(" ");
+
+                return (
+                  <Box key={phase.phase} mb={4}>
+                    <UnstyledButton
+                      onClick={() => phase.content && togglePhase(phase.phase)}
+                      className={classes.thinkingToggle}
+                    >
+                      <Group gap={6}>
+                        {isLast && isActivelyThinking ? (
+                          <Loader size={14} />
+                        ) : phase.content ? (
+                          isPhaseOpen ? (
+                            <IconChevronDown size={14} />
+                          ) : (
+                            <IconChevronRight size={14} />
+                          )
+                        ) : null}
+                        <Text size="xs" c="dimmed">
+                          {isLast && isActivelyThinking
+                            ? `${label} ${elapsed.toFixed(1)}s ...`
+                            : isLast
+                              ? `${label} ${(finalTime ?? 0).toFixed(1)}s`
+                              : label}
+                        </Text>
+                      </Group>
+                    </UnstyledButton>
+                    {/* 折叠态：显示摘要 */}
+                    {!isPhaseOpen && summary && (
+                      <Text size="xs" c="dimmed" lineClamp={2} ml={20}>
+                        {summary}
+                      </Text>
+                    )}
+                    {/* 展开态：显示完整内容 */}
+                    <Collapse in={isPhaseOpen}>
+                      <Text
+                        size="xs"
+                        c="dimmed"
+                        className={classes.thinkingContent}
+                      >
+                        {phase.content}
+                      </Text>
+                    </Collapse>
+                  </Box>
+                );
+              })
             )}
           </div>
         )}

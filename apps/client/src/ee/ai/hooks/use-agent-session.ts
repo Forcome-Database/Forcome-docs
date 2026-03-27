@@ -7,6 +7,7 @@ import type {
   AgentSessionAPI,
   AgentSessionStatus,
   AgentV2Event,
+  ThinkingPhase,
   ToolStep,
 } from "../types/agent-v2.types";
 
@@ -18,7 +19,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
 
   const abortRef = useRef<AbortController | null>(null);
   const contentRef = useRef("");
-  const thinkingRef = useRef("");
+  const thinkingPhasesRef = useRef<ThinkingPhase[]>([]);
   const toolStepsRef = useRef<ToolStep[]>([]);
   const assistantIdRef = useRef("");
 
@@ -43,15 +44,22 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
           setThreadId(event.thread_id);
           break;
 
-        case "thinking":
+        case "thinking": {
           setStatus("thinking");
-          if (event.chunk) {
-            thinkingRef.current += event.chunk;
-            updateLastAssistant(() => ({
-              thinkingContent: thinkingRef.current,
-            }));
+          const phase = event.phase || 1;
+          let current = thinkingPhasesRef.current.find((p) => p.phase === phase);
+          if (!current) {
+            current = { phase, content: "" };
+            thinkingPhasesRef.current.push(current);
           }
+          if (event.chunk) {
+            current.content += event.chunk;
+          }
+          updateLastAssistant(() => ({
+            thinkingPhases: [...thinkingPhasesRef.current],
+          }));
           break;
+        }
 
         case "tool_call": {
           const step: ToolStep = {
@@ -150,7 +158,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
       setStatus("streaming");
       setLastOutput(null);
       contentRef.current = "";
-      thinkingRef.current = "";
+      thinkingPhasesRef.current = [];
       toolStepsRef.current = [];
 
       lockEditor();
@@ -187,6 +195,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
     setThreadId(null);
     setLastOutput(null);
     contentRef.current = "";
+    thinkingPhasesRef.current = [];
     toolStepsRef.current = [];
     assistantIdRef.current = "";
   }, []);

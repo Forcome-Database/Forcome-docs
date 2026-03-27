@@ -69,6 +69,7 @@ async def run_agent(
     streamed_chunks: list[str] = []  # 流式 chunk 累积（回退用）
     authoritative_output: str | None = None  # AgentRunResultEvent 权威输出
     tool_call_count = 0  # 工具调用计数器（安全阀）
+    thinking_phase = 0  # 思考阶段计数器（多阶段可见性）
     try:
         stream_kwargs: dict[str, Any] = {"deps": deps}
         if message_history:
@@ -105,6 +106,12 @@ async def run_agent(
             sse = map_pydantic_event_to_sse(event)
             if sse is None:
                 continue
+
+            # 追踪思考阶段 — 每个 PartStartEvent(ThinkingPart) 开启新阶段
+            if sse["type"] == "thinking":
+                if sse.get("content") == "":  # PartStartEvent 标记
+                    thinking_phase += 1
+                sse["phase"] = thinking_phase
 
             # 累积 content chunk（仅作为 AgentRunResultEvent 缺失时的回退）
             if sse["type"] == "content":
