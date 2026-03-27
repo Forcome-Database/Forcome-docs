@@ -6,17 +6,17 @@ export type AgentV2Event =
   | { type: "thinking"; content?: string; chunk?: string; phase?: number }
   | { type: "content"; chunk: string }
   | { type: "warning"; issues: string[] }
-  | { type: "done" }
+  | { type: "done"; final_content?: string }
   | { type: "error"; message: string }
   | { type: "cancelled" };
 
-/** 思考阶段（多阶段可见性） */
-export interface ThinkingPhase {
-  phase: number;
-  content: string;
-}
+/** 时间线项 — 按到达顺序渲染，保持事件的自然交错 */
+export type TimelineItem =
+  | { kind: "thinking"; content: string }
+  | { kind: "tool"; id: string; tool: string; description: string; status: "running" | "done" }
+  | { kind: "text"; content: string; isNarration: boolean };
 
-/** 工具调用步骤（前端展示用） */
+/** 工具调用步骤（兼容旧引用） */
 export interface ToolStep {
   id: string;
   tool: string;
@@ -31,11 +31,10 @@ export interface AgentMessage {
   content: string;
   timestamp: number;
   files?: string[];
-  toolSteps?: ToolStep[];
+  /** 时间线：按到达顺序排列的 thinking / tool / text 项 */
+  timeline?: TimelineItem[];
   streaming?: boolean;
   warnings?: string[];
-  /** 模型思考阶段（多阶段可折叠展示） */
-  thinkingPhases?: ThinkingPhase[];
 }
 
 /** 会话状态 */
@@ -58,7 +57,7 @@ export interface AgentSessionAPI {
   reset: () => void;
 }
 
-/** 发送给 v2 端点的请求体（camelCase — NestJS Gateway 负责转为 snake_case） */
+/** 发送给 v2 端点的请求体 */
 export interface AgentV2RunRequest {
   prompt: string;
   pageId?: string;

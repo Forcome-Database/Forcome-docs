@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Box, Collapse, Group, Loader, Stack, Text, UnstyledButton } from "@mantine/core";
-import { IconAlertTriangle, IconChevronDown, IconChevronRight } from "@tabler/icons-react";
-import type { AgentMessage as AgentMessageType } from "../../types/agent-v2.types";
-import { ToolCallStep } from "./tool-call-step";
+import { useCallback, useState } from "react";
+import { Alert, Box, Collapse, Group, Loader, Stack, Text, ThemeIcon, UnstyledButton } from "@mantine/core";
+import { IconAlertTriangle, IconCheck, IconChevronDown, IconChevronRight } from "@tabler/icons-react";
+import type { AgentMessage as AgentMessageType, TimelineItem } from "../../types/agent-v2.types";
 import { StreamingMarkdown } from "./streaming-markdown";
 import classes from "./agent-panel.module.css";
 
@@ -10,159 +9,117 @@ interface AgentMessageProps {
   message: AgentMessageType;
 }
 
-/**
- * 思考计时器 — 工具完成到内容开始之间的等待时间。
- * 不依赖模型返回 thinking 事件（OpenAI 不返回），纯前端计时。
- */
-function useThinkingTimer(isActivelyThinking: boolean) {
-  const [elapsed, setElapsed] = useState(0);
-  const [finalTime, setFinalTime] = useState<number | null>(null);
-  const startRef = useRef<number | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+/** 时间线中的规划/叙述块（可折叠） */
+function NarrationBlock({ content }: { content: string }) {
+  const [opened, setOpened] = useState(false);
+  const summary = content.split("\n").filter((l) => l.trim()).slice(0, 2).join(" ");
 
-  useEffect(() => {
-    if (isActivelyThinking) {
-      // 开始计时
-      if (startRef.current === null) {
-        startRef.current = Date.now();
-        setFinalTime(null);
-      }
-      intervalRef.current = setInterval(() => {
-        if (startRef.current !== null) {
-          setElapsed(((Date.now() - startRef.current) / 1000));
-        }
-      }, 100);
-    } else if (startRef.current !== null) {
-      // 思考结束，冻结时间
-      setFinalTime((Date.now() - startRef.current) / 1000);
-      startRef.current = null;
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    }
+  return (
+    <Box>
+      <UnstyledButton onClick={() => setOpened((o) => !o)} className={classes.thinkingToggle}>
+        <Group gap={6}>
+          {opened ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+          <Text size="xs" c="dimmed">规划</Text>
+        </Group>
+      </UnstyledButton>
+      {!opened && summary && (
+        <Text size="xs" c="dimmed" lineClamp={2} ml={20}>{summary}</Text>
+      )}
+      <Collapse in={opened}>
+        <Text size="xs" c="dimmed" className={classes.thinkingContent}>{content}</Text>
+      </Collapse>
+    </Box>
+  );
+}
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [isActivelyThinking]);
+/** 时间线中的思考块（可折叠） */
+function ThinkingBlock({ content, label }: { content: string; label?: string }) {
+  const [opened, setOpened] = useState(false);
+  const summary = content.split("\n").filter((l) => l.trim()).slice(0, 2).join(" ");
+  const displayLabel = label || "思考";
 
-  return { elapsed, finalTime, wasThinking: finalTime !== null };
+  if (!content.trim()) return null;
+
+  return (
+    <Box>
+      <UnstyledButton onClick={() => setOpened((o) => !o)} className={classes.thinkingToggle}>
+        <Group gap={6}>
+          {opened ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+          <Text size="xs" c="dimmed">{displayLabel}</Text>
+        </Group>
+      </UnstyledButton>
+      {!opened && summary && (
+        <Text size="xs" c="dimmed" lineClamp={2} ml={20}>{summary}</Text>
+      )}
+      <Collapse in={opened}>
+        <Text size="xs" c="dimmed" className={classes.thinkingContent}>{content}</Text>
+      </Collapse>
+    </Box>
+  );
+}
+
+/** 时间线中的工具调用步骤 */
+function ToolItem({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
+  return (
+    <Group gap={8} py={2}>
+      {item.status === "running" ? (
+        <Loader size={14} />
+      ) : (
+        <ThemeIcon size={18} radius="xl" color="teal" variant="light">
+          <IconCheck size={12} />
+        </ThemeIcon>
+      )}
+      <Text size="xs" c="dimmed">{item.description}</Text>
+    </Group>
+  );
 }
 
 export function AgentMessage({ message }: AgentMessageProps) {
-  const [openPhases, setOpenPhases] = useState<Set<number>>(new Set());
-
-  const togglePhase = useCallback((phase: number) => {
-    setOpenPhases((prev) => {
-      const next = new Set(prev);
-      if (next.has(phase)) {
-        next.delete(phase);
-      } else {
-        next.add(phase);
-      }
-      return next;
-    });
-  }, []);
-
-  const allToolsDone = message.toolSteps?.length
-    ? message.toolSteps.every((s) => s.status === "done")
-    : false;
-  const isActivelyThinking =
-    !!message.streaming && !message.content && allToolsDone;
-
-  const { elapsed, finalTime, wasThinking } = useThinkingTimer(isActivelyThinking);
-  const phases = message.thinkingPhases ?? [];
-  const hasThinkingContent = phases.length > 0;
-
-  // 显示条件：正在思考 OR 思考过（有计时 OR 有内容）
-  const showThinkingSection = isActivelyThinking || wasThinking || hasThinkingContent;
+  const timeline = message.timeline ?? [];
+  const hasDocument = timeline.some((item) => item.kind === "text" && !item.isNarration && item.content);
 
   return (
     <div className={classes.agentMessage}>
       <Stack gap={4}>
-        {message.toolSteps?.map((step) => (
-          <ToolCallStep key={step.id} step={step} />
-        ))}
+        {/* 按到达顺序渲染时间线 */}
+        {timeline.map((item, i) => {
+          switch (item.kind) {
+            case "thinking":
+              return <ThinkingBlock key={`t-${i}`} content={item.content} />;
 
-        {showThinkingSection && (
-          <div>
-            {phases.length === 0 ? (
-              /* 无内容但正在思考（纯计时） */
-              <UnstyledButton className={classes.thinkingToggle}>
-                <Group gap={6}>
-                  {isActivelyThinking && <Loader size={14} />}
-                  <Text size="xs" c="dimmed">
-                    {isActivelyThinking
-                      ? `已思考 ${elapsed.toFixed(1)}s ...`
-                      : `已思考 ${(finalTime ?? 0).toFixed(1)}s`}
-                  </Text>
-                </Group>
-              </UnstyledButton>
-            ) : (
-              /* 多阶段思考 — 每个阶段独立可折叠 */
-              phases.map((phase) => {
-                const isLast = phase.phase === phases[phases.length - 1]?.phase;
-                const isPhaseOpen = openPhases.has(phase.phase);
-                const label = isLast ? "最终分析" : `思考阶段 ${phase.phase}`;
-                const summary = phase.content
-                  .split("\n")
-                  .filter((l) => l.trim())
-                  .slice(0, 2)
-                  .join(" ");
+            case "tool":
+              return <ToolItem key={item.id} item={item} />;
 
-                return (
-                  <Box key={phase.phase} mb={4}>
-                    <UnstyledButton
-                      onClick={() => phase.content && togglePhase(phase.phase)}
-                      className={classes.thinkingToggle}
-                    >
-                      <Group gap={6}>
-                        {isLast && isActivelyThinking ? (
-                          <Loader size={14} />
-                        ) : phase.content ? (
-                          isPhaseOpen ? (
-                            <IconChevronDown size={14} />
-                          ) : (
-                            <IconChevronRight size={14} />
-                          )
-                        ) : null}
-                        <Text size="xs" c="dimmed">
-                          {isLast && isActivelyThinking
-                            ? `${label} ${elapsed.toFixed(1)}s ...`
-                            : isLast
-                              ? `${label} ${(finalTime ?? 0).toFixed(1)}s`
-                              : label}
-                        </Text>
-                      </Group>
-                    </UnstyledButton>
-                    {/* 折叠态：显示摘要 */}
-                    {!isPhaseOpen && summary && (
-                      <Text size="xs" c="dimmed" lineClamp={2} ml={20}>
-                        {summary}
-                      </Text>
-                    )}
-                    {/* 展开态：显示完整内容 */}
-                    <Collapse in={isPhaseOpen}>
-                      <Text
-                        size="xs"
-                        c="dimmed"
-                        className={classes.thinkingContent}
-                      >
-                        {phase.content}
-                      </Text>
-                    </Collapse>
-                  </Box>
-                );
-              })
-            )}
-          </div>
+            case "text":
+              if (item.isNarration) {
+                // 被 tool_call 回溯降级的叙述 → 折叠规划块
+                return <NarrationBlock key={`n-${i}`} content={item.content} />;
+              }
+              // 最终文档内容 → 流式 Markdown
+              return (
+                <StreamingMarkdown
+                  key={`c-${i}`}
+                  content={item.content}
+                  streaming={message.streaming}
+                />
+              );
+
+            default:
+              return null;
+          }
+        })}
+
+        {/* 加载指示器：有工具在运行但还没内容 */}
+        {message.streaming && !hasDocument && timeline.length > 0 &&
+          timeline[timeline.length - 1]?.kind === "tool" &&
+          (timeline[timeline.length - 1] as Extract<TimelineItem, { kind: "tool" }>).status === "running" && (
+          <Group gap={6} py={4}>
+            <Loader size={14} />
+            <Text size="xs" c="dimmed">Agent 正在工作...</Text>
+          </Group>
         )}
 
-        {message.content && (
-          <StreamingMarkdown
-            content={message.content}
-            streaming={message.streaming}
-          />
-        )}
-
+        {/* 警告 */}
         {message.warnings && message.warnings.length > 0 && (
           <Alert
             icon={<IconAlertTriangle size={16} />}

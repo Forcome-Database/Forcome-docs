@@ -7,8 +7,7 @@ import type {
   AgentSessionAPI,
   AgentSessionStatus,
   AgentV2Event,
-  ThinkingPhase,
-  ToolStep,
+  TimelineItem,
 } from "../types/agent-v2.types";
 
 export function useAgentSession(pageId: string): AgentSessionAPI {
@@ -18,9 +17,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
   const [lastOutput, setLastOutput] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
-  const contentRef = useRef("");
-  const thinkingPhasesRef = useRef<ThinkingPhase[]>([]);
-  const toolStepsRef = useRef<ToolStep[]>([]);
+  const timelineRef = useRef<TimelineItem[]>([]);
   const assistantIdRef = useRef("");
 
   const editor = useAtomValue(pageEditorAtom);
@@ -37,6 +34,13 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
     [],
   );
 
+  /** 获取 timeline 末尾的指定类型项（用于追加式累积） */
+  const lastTimelineItem = (kind: string) => {
+    const items = timelineRef.current;
+    const last = items[items.length - 1];
+    return last?.kind === kind ? last : null;
+  };
+
   const handleEvent = useCallback(
     (event: AgentV2Event) => {
       switch (event.type) {
@@ -46,50 +50,67 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
 
         case "thinking": {
           setStatus("thinking");
-          const phase = event.phase || 1;
-          let current = thinkingPhasesRef.current.find((p) => p.phase === phase);
-          if (!current) {
-            current = { phase, content: "" };
-            thinkingPhasesRef.current.push(current);
-          }
-          if (event.chunk) {
-            current.content += event.chunk;
+          // 追加到末尾的 thinking 项，或新建
+          const existing = lastTimelineItem("thinking") as Extract<TimelineItem, { kind: "thinking" }> | null;
+          if (existing) {
+            existing.content += event.chunk || "";
+          } else {
+            timelineRef.current.push({ kind: "thinking", content: event.chunk || "" });
           }
           updateLastAssistant(() => ({
-            thinkingPhases: [...thinkingPhasesRef.current],
+            timeline: [...timelineRef.current],
+          }));
+          break;
+        }
+
+        case "content": {
+          setStatus("streaming");
+          // 追加到末尾的 text 项（如果它还不是 narration），或新建
+          const existing = lastTimelineItem("text") as Extract<TimelineItem, { kind: "text" }> | null;
+          if (existing && !existing.isNarration) {
+            existing.content += event.chunk;
+          } else {
+            timelineRef.current.push({ kind: "text", content: event.chunk, isNarration: false });
+          }
+          updateLastAssistant(() => ({
+            timeline: [...timelineRef.current],
+            streaming: true,
           }));
           break;
         }
 
         case "tool_call": {
-          const step: ToolStep = {
+          // 回溯降级：所有前面未标记的 text 项 → narration
+          for (const item of timelineRef.current) {
+            if (item.kind === "text" && !item.isNarration) {
+              item.isNarration = true;
+            }
+          }
+          // 添加 tool 项
+          timelineRef.current.push({
+            kind: "tool",
             id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             tool: event.tool,
             description: event.description,
             status: "running",
-          };
-          toolStepsRef.current = [...toolStepsRef.current, step];
+          });
           updateLastAssistant(() => ({
-            toolSteps: [...toolStepsRef.current],
+            timeline: [...timelineRef.current],
           }));
           break;
         }
 
         case "tool_result":
-          toolStepsRef.current = toolStepsRef.current.map((s) =>
-            s.status === "running" ? { ...s, status: "done" as const } : s,
-          );
+          // 更新最后一个 running 的 tool 项
+          for (let i = timelineRef.current.length - 1; i >= 0; i--) {
+            const item = timelineRef.current[i];
+            if (item.kind === "tool" && item.status === "running") {
+              item.status = "done";
+              break;
+            }
+          }
           updateLastAssistant(() => ({
-            toolSteps: [...toolStepsRef.current],
-          }));
-          break;
-
-        case "content":
-          setStatus("streaming");
-          contentRef.current += event.chunk;
-          updateLastAssistant(() => ({
-            content: contentRef.current,
-            streaming: true,
+            timeline: [...timelineRef.current],
           }));
           break;
 
@@ -99,16 +120,23 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
           }));
           break;
 
-        case "done":
+        case "done": {
           setStatus("done");
-          setLastOutput(contentRef.current);
-          updateLastAssistant(() => ({ streaming: false }));
+          // 使用后端提供的权威输出（仅最终轮文档，不含中间叙述）
+          const finalContent = event.final_content || "";
+          setLastOutput(finalContent);
+          // 同步 content 字段（供 Apply to page 使用）
+          updateLastAssistant(() => ({
+            content: finalContent,
+            streaming: false,
+          }));
           break;
+        }
 
         case "error":
           setStatus("error");
           updateLastAssistant(() => ({
-            content: contentRef.current || `Error: ${event.message}`,
+            content: `Error: ${event.message}`,
             streaming: false,
           }));
           break;
@@ -149,7 +177,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
         role: "assistant",
         content: "",
         timestamp: Date.now(),
-        toolSteps: [],
+        timeline: [],
         streaming: true,
       };
       assistantIdRef.current = assistantMsg.id;
@@ -157,9 +185,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setStatus("streaming");
       setLastOutput(null);
-      contentRef.current = "";
-      thinkingPhasesRef.current = [];
-      toolStepsRef.current = [];
+      timelineRef.current = [];
 
       lockEditor();
 
@@ -194,9 +220,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
     setStatus("idle");
     setThreadId(null);
     setLastOutput(null);
-    contentRef.current = "";
-    thinkingPhasesRef.current = [];
-    toolStepsRef.current = [];
+    timelineRef.current = [];
     assistantIdRef.current = "";
   }, []);
 

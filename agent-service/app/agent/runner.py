@@ -11,7 +11,7 @@ import os
 from typing import Any, AsyncIterator
 
 from pydantic_ai import AgentRunResultEvent
-from pydantic_ai.messages import FinalResultEvent, FunctionToolCallEvent
+from pydantic_ai.messages import FunctionToolCallEvent
 
 from app.agent.agent import get_agent
 from app.agent.deps import AgentDeps
@@ -71,7 +71,6 @@ async def run_agent(
     authoritative_output: str | None = None  # AgentRunResultEvent 权威输出
     tool_call_count = 0  # 工具调用计数器（安全阀）
     thinking_phase = 0  # 思考阶段计数器（多阶段可见性）
-    final_result_seen = False  # 内容门控：FinalResultEvent 之前的文本是中间叙述
     try:
         stream_kwargs: dict[str, Any] = {"deps": deps}
         if message_history:
@@ -97,13 +96,6 @@ async def run_agent(
                         "message": f"工具调用次数超过上限（{MAX_TOOL_CALLS} 次），请尝试简化请求或换一种方式描述任务。",
                     }
                     return
-
-            # FinalResultEvent — 标记后续文本为最终文档输出
-            # 中间轮次（模型调工具前的叙述）不会有此事件
-            # 只有最终轮次（模型生成文档）才会出现，且在 TextDelta 流之前
-            if isinstance(event, FinalResultEvent):
-                final_result_seen = True
-                continue
 
             # AgentRunResultEvent 包含权威的最终输出
             if isinstance(event, AgentRunResultEvent):
@@ -132,12 +124,7 @@ async def run_agent(
                     thinking_phase += 1
                 sse["phase"] = thinking_phase
 
-            # 内容门控：FinalResultEvent 之前的文本是模型的中间叙述
-            # （如"我需要先提取文档..."），不是最终文档。折入当前思考阶段。
-            if sse["type"] == "content" and not final_result_seen:
-                sse = {"type": "thinking", "chunk": sse.get("chunk", ""), "phase": thinking_phase or 1}
-
-            # 累积 content chunk（仅最终内容，作为 AgentRunResultEvent 缺失时的回退）
+            # 累积 content chunk（作为 AgentRunResultEvent 缺失时的回退）
             if sse["type"] == "content":
                 streamed_chunks.append(sse.get("chunk", ""))
 
@@ -208,8 +195,9 @@ async def run_agent(
         except Exception as e:
             logger.warning("Retry failed for thread %s: %s", deps.thread_id, e)
 
-    # 5. 发出 done 事件（E-01：在所有内容流完成后，循环退出后发出）
-    yield {"type": "done"}
+    # 5. 发出 done 事件，携带权威最终输出（不含中间轮叙述文本）
+    # 前端用 final_content 做 "Apply to page"，而非累积的 streamed_chunks
+    yield {"type": "done", "final_content": final_output or ""}
 
     # 6. 保存对话历史
     if deps.session_store and final_output:
