@@ -156,6 +156,45 @@ async def run_agent(
         except Exception as e:
             logger.warning("Post-validation failed for thread %s: %s", deps.thread_id, e)
 
+    # Quality retry for critical failures (score < 0.4 with uploaded images)
+    if (
+        final_output
+        and validation is not None
+        and validation.score < 0.4
+        and deps.uploaded_image_urls
+    ):
+        logger.warning(
+            "Critical quality issues (score=%.2f), attempting retry for thread %s",
+            validation.score, deps.thread_id,
+        )
+        yield {"type": "retrying", "reason": "检测到关键质量问题，正在重新生成..."}
+        try:
+            retry_prompt = (
+                f"{prompt}\n\n"
+                f"[IMPORTANT: Your previous output had these issues: "
+                f"{'; '.join(validation.issues)}. "
+                f"Fix them in this attempt. Ensure ALL image URLs appear in the output.]"
+            )
+            retry_result = await agent.run(retry_prompt, deps=deps)
+            retry_output = retry_result.output
+            retry_validation = validate_agent_output(
+                retry_output,
+                deps.uploaded_image_urls,
+                source_word_count=getattr(deps, "source_word_count", 0),
+            )
+            if retry_validation.score > validation.score:
+                yield {"type": "content_clear"}
+                chunk_size = 200
+                for i in range(0, len(retry_output), chunk_size):
+                    yield {"type": "content", "chunk": retry_output[i : i + chunk_size]}
+                final_output = retry_output
+                logger.info(
+                    "Retry improved score: %.2f → %.2f for thread %s",
+                    validation.score, retry_validation.score, deps.thread_id,
+                )
+        except Exception as e:
+            logger.warning("Retry failed for thread %s: %s", deps.thread_id, e)
+
     # 5. 发出 done 事件（E-01：在所有内容流完成后，循环退出后发出）
     yield {"type": "done"}
 
