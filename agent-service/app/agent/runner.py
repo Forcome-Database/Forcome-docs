@@ -87,6 +87,7 @@ async def run_agent(
     skill = select_skill(
         has_message_history=message_history is not None and len(message_history) > 0,
         has_files=len(deps.files) > 0,
+        has_selection=deps.selection is not None and deps.selection.edit_mode in ("replace", "insert"),
     )
     agent = get_agent(skill=skill)
 
@@ -234,6 +235,7 @@ async def run_agent(
         and len(final_output.strip()) < 200
         and not has_markdown_structure
         and not deps.page_content
+        and edit_mode == "full"  # Selection/insert output is always "document"
     ):
         output_type = "conversation"
 
