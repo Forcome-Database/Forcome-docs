@@ -95,9 +95,9 @@ export default function AgentPanel() {
 
   return (
     <div className={classes.panelRoot}>
-      <Group className={classes.panelHeader} justify="space-between" px="sm" py={6}>
-        <Group gap={6}>
-          <IconSparkles size={18} />
+      <Group className={classes.panelHeader} justify="space-between" px="sm" py={8}>
+        <Group gap={8}>
+          <IconSparkles size={18} className={classes.headerIcon} />
           <Text size="sm" fw={600}>
             {t("AI Agent")}
           </Text>

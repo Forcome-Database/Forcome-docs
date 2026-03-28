@@ -1,4 +1,4 @@
-import { Badge, Group, Text } from "@mantine/core";
+import { Group, Text } from "@mantine/core";
 import { IconUser } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import type { AgentMessage } from "../../types/agent-v2.types";
@@ -13,16 +13,22 @@ export function UserMessage({ message }: UserMessageProps) {
   return (
     <div className={classes.userMessage}>
       <Group gap={8} mb={4}>
-        <IconUser size={16} />
-        <Text size="sm" fw={500}>{t("You")}</Text>
+        <div className={classes.userAvatar}>
+          <IconUser size={13} />
+        </div>
+        <Text size="sm" fw={600}>
+          {t("You")}
+        </Text>
       </Group>
-      <Text size="sm">{message.content}</Text>
+      <Text size="sm" ml={30}>
+        {message.content}
+      </Text>
       {message.files && message.files.length > 0 && (
-        <Group gap={4} mt={4}>
+        <Group gap={4} mt={6} ml={30}>
           {message.files.map((name) => (
-            <Badge key={name} size="xs" variant="light">
+            <span key={name} className={classes.fileBadge}>
               {name}
-            </Badge>
+            </span>
           ))}
         </Group>
       )}

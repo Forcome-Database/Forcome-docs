@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, type KeyboardEvent } from "react";
-import { ActionIcon, Badge, Group, Textarea, Tooltip } from "@mantine/core";
+import { ActionIcon, Group, Textarea, Tooltip } from "@mantine/core";
 import {
   IconArrowUp,
   IconPaperclip,
@@ -63,74 +63,79 @@ export function InputBar({ onSubmit, onCancel, isStreaming }: InputBarProps) {
 
   return (
     <div className={classes.inputBar}>
-      {files.length > 0 && (
-        <Group gap={4} mb={4}>
-          {files.map((f, i) => (
-            <Badge
-              key={`${f.name}-${i}`}
-              size="sm"
-              variant="light"
-              rightSection={
+      <div className={classes.inputContainer}>
+        {files.length > 0 && (
+          <div className={classes.fileChips}>
+            {files.map((f, i) => (
+              <span key={`${f.name}-${i}`} className={classes.fileChip}>
+                {f.name}
                 <IconX
-                  size={12}
-                  style={{ cursor: "pointer" }}
+                  size={11}
+                  className={classes.fileChipClose}
                   onClick={() => removeFile(i)}
                 />
-              }
-            >
-              {f.name}
-            </Badge>
-          ))}
-        </Group>
-      )}
-      <Group gap={4} align="flex-end">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPTED}
-          multiple
-          style={{ display: "none" }}
-          onChange={handleFileChange}
-        />
-        <Tooltip label={t("Attach files")}>
-          <ActionIcon
-            variant="subtle"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isStreaming}
-          >
-            <IconPaperclip size={18} />
-          </ActionIcon>
-        </Tooltip>
-        <Textarea
-          className={classes.inputTextarea}
-          placeholder={t("Describe what to create...")}
-          value={text}
-          onChange={(e) => setText(e.currentTarget.value)}
-          onKeyDown={handleKeyDown}
-          autosize
-          minRows={1}
-          maxRows={6}
-          disabled={isStreaming}
-          style={{ flex: 1 }}
-        />
-        {isStreaming ? (
-          <Tooltip label={t("Stop")}>
-            <ActionIcon variant="filled" color="red" onClick={onCancel}>
-              <IconPlayerStop size={18} />
-            </ActionIcon>
-          </Tooltip>
-        ) : (
-          <Tooltip label={t("Send")}>
-            <ActionIcon
-              variant="filled"
-              onClick={handleSubmit}
-              disabled={!text.trim() && files.length === 0}
-            >
-              <IconArrowUp size={18} />
-            </ActionIcon>
-          </Tooltip>
+              </span>
+            ))}
+          </div>
         )}
-      </Group>
+        <Group gap={4} align="flex-end">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED}
+            multiple
+            style={{ display: "none" }}
+            onChange={handleFileChange}
+          />
+          <Tooltip label={t("Attach files")}>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isStreaming}
+            >
+              <IconPaperclip size={16} />
+            </ActionIcon>
+          </Tooltip>
+          <Textarea
+            className={classes.inputTextarea}
+            placeholder={t("Describe what to create...")}
+            value={text}
+            onChange={(e) => setText(e.currentTarget.value)}
+            onKeyDown={handleKeyDown}
+            autosize
+            minRows={1}
+            maxRows={6}
+            disabled={isStreaming}
+            variant="unstyled"
+          />
+          {isStreaming ? (
+            <Tooltip label={t("Stop")}>
+              <ActionIcon
+                variant="filled"
+                color="red"
+                size="sm"
+                className={classes.stopButton}
+                onClick={onCancel}
+              >
+                <IconPlayerStop size={14} />
+              </ActionIcon>
+            </Tooltip>
+          ) : (
+            <Tooltip label={t("Send")}>
+              <ActionIcon
+                size="sm"
+                className={classes.sendButton}
+                onClick={handleSubmit}
+                disabled={!text.trim() && files.length === 0}
+              >
+                <IconArrowUp size={14} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Group>
+      </div>
     </div>
   );
 }

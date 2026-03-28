@@ -20,18 +20,21 @@ export function ActionBar({ onApply, onRegenerate, content, disabled }: ActionBa
   };
 
   return (
-    <Group gap="xs" className={classes.actionBar}>
+    <Group gap={6} className={classes.actionBar}>
       <Button
         size="xs"
+        className={classes.applyButton}
         leftSection={<IconArrowBarDown size={14} />}
         onClick={onApply}
         disabled={disabled}
       >
         {t("Apply to page")}
       </Button>
+      <div style={{ width: 4 }} />
       <Button
         size="xs"
         variant="default"
+        className={classes.secondaryButton}
         leftSection={<IconRefresh size={14} />}
         onClick={onRegenerate}
         disabled={disabled}
@@ -41,6 +44,7 @@ export function ActionBar({ onApply, onRegenerate, content, disabled }: ActionBa
       <Button
         size="xs"
         variant="default"
+        className={classes.secondaryButton}
         leftSection={<IconCopy size={14} />}
         onClick={handleCopy}
       >

@@ -22,8 +22,10 @@ export function MessageList({ messages }: MessageListProps) {
   if (messages.length === 0) {
     return (
       <div className={classes.emptyState}>
-        <IconSparkles size={32} opacity={0.3} />
-        <Text size="sm" c="dimmed" ta="center" mt="sm">
+        <div className={classes.emptyIconWrap}>
+          <IconSparkles size={24} />
+        </div>
+        <Text size="sm" c="dimmed" ta="center" maw={240} lh={1.5}>
           {t("Describe what you want to create, or upload a document to get started.")}
         </Text>
       </div>
