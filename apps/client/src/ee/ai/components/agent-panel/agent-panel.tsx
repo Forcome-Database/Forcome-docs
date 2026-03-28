@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { ActionIcon, Group, Text, Tooltip } from "@mantine/core";
 import { IconPlus, IconSparkles, IconX } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
@@ -12,15 +12,9 @@ import {
   titleEditorAtom,
 } from "@/features/editor/atoms/editor-atoms";
 import { extractPageSlugId } from "@/lib";
-import { usePageQuery } from "@/features/page/queries/page-query";
 import { maybeExtractTitle } from "../ai-creator/ai-creator-writeback";
 import { htmlToMarkdown } from "@docmost/editor-ext";
-import {
-  captureAiCreatePageSnapshot,
-  commitDraftWithRecovery,
-} from "../../hooks/ai-create-session.commit";
-import { creatorCommit } from "../../services/ai-service";
-import api from "@/lib/api-client";
+import { safeApply } from "../../utils/safe-apply";
 
 import { useAgentSession } from "../../hooks/use-agent-session";
 import { MessageList } from "./message-list";
@@ -35,51 +29,41 @@ export default function AgentPanel() {
   const titleEditor = useAtomValue(titleEditorAtom);
   const { pageSlug } = useParams();
   const pageId = extractPageSlugId(pageSlug);
-  const { data: page } = usePageQuery({ pageId });
 
   const session = useAgentSession(pageId);
 
   const closePanel = () => setAside({ tab: "", isAsideOpen: false });
 
+  const lastSnapshotRef = useRef<any>(null);
+
   const handleApply = useCallback(async () => {
-    if (!session.lastOutput || !editor || !pageId) return;
+    if (!session.lastOutput || !editor) return;
 
-    try {
-      const markdown = titleEditor
-        ? maybeExtractTitle(titleEditor, session.lastOutput)
-        : session.lastOutput;
+    const markdown = titleEditor
+      ? maybeExtractTitle(titleEditor, session.lastOutput)
+      : session.lastOutput;
 
-      const snapshot = captureAiCreatePageSnapshot(editor, titleEditor);
-      const result = await commitDraftWithRecovery({
-        pageId,
-        content: markdown,
-        insertMode: "overwrite",
-        expectedUpdatedAt: page?.updatedAt
-          ? new Date(page.updatedAt).toISOString()
-          : null,
-        pageSnapshot: snapshot,
-        editor,
-        titleEditor,
-        commit: creatorCommit,
-        fetchLatestPage: async (id) => {
-          const res = await api.post("/pages/info", { pageId: id });
-          return res.data;
-        },
+    const result = await safeApply({
+      editor,
+      titleEditor,
+      markdown,
+      mode: "full",
+    });
+
+    if (result.ok) {
+      lastSnapshotRef.current = result.snapshot;
+      notifications.show({
+        message: t("Applied to page"),
+        color: "green",
+        autoClose: 5000,
       });
-
-      if (result.ok) {
-        notifications.show({ message: t("Applied to page"), color: "green" });
-      } else {
-        const failResult = result as { ok: false; reason: string };
-        notifications.show({
-          message: `${t("Failed to apply")}: ${failResult.reason}`,
-          color: "red",
-        });
-      }
-    } catch {
-      notifications.show({ message: t("Failed to apply"), color: "red" });
+    } else {
+      notifications.show({
+        message: `${t("Failed to apply")}: ${result.reason}`,
+        color: "red",
+      });
     }
-  }, [session.lastOutput, editor, titleEditor, pageId, page?.updatedAt, t]);
+  }, [session.lastOutput, editor, titleEditor, t]);
 
   /** Get current page content as markdown to send as context on follow-up turns */
   const getPageContent = useCallback((): string | undefined => {
