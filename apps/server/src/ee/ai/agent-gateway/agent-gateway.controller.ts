@@ -414,6 +414,7 @@ export class AgentGatewayController {
       const prompt = typeof body.prompt === 'string' ? body.prompt : '';
       const pageId = typeof body.pageId === 'string' ? body.pageId : undefined;
       const threadId = typeof body.threadId === 'string' ? body.threadId : undefined;
+      const pageContent = typeof body.pageContent === 'string' ? body.pageContent : undefined;
       const rawFiles = Array.isArray(body.files) ? body.files : [];
       const files = rawFiles.filter(
         (f): f is { content_b64: string; filename: string; mimetype: string } =>
@@ -432,6 +433,7 @@ export class AgentGatewayController {
           workspaceId: workspace.id,
           userId: user.id,
           files,
+          pageContent,
         }),
       );
 

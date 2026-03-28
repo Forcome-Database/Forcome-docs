@@ -171,6 +171,7 @@ export class AgentGatewayService {
     workspaceId: string;
     userId: string;
     files?: Array<{ content_b64: string; filename: string; mimetype: string }>;
+    pageContent?: string;
   }): Record<string, unknown> {
     return {
       prompt: params.prompt,
@@ -179,6 +180,7 @@ export class AgentGatewayService {
       workspace_id: params.workspaceId,
       user_id: params.userId,
       files: params.files || [],
+      page_content: params.pageContent || "",
     };
   }
 }

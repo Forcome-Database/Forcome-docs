@@ -14,6 +14,7 @@ import {
 import { extractPageSlugId } from "@/lib";
 import { usePageQuery } from "@/features/page/queries/page-query";
 import { maybeExtractTitle } from "../ai-creator/ai-creator-writeback";
+import { htmlToMarkdown } from "@docmost/editor-ext";
 import {
   captureAiCreatePageSnapshot,
   commitDraftWithRecovery,
@@ -80,14 +81,34 @@ export default function AgentPanel() {
     }
   }, [session.lastOutput, editor, titleEditor, pageId, page?.updatedAt, t]);
 
+  /** Get current page content as markdown to send as context on follow-up turns */
+  const getPageContent = useCallback((): string | undefined => {
+    if (!editor) return undefined;
+    try {
+      return htmlToMarkdown(editor.getHTML());
+    } catch {
+      return undefined;
+    }
+  }, [editor]);
+
+  const handleSubmit = useCallback(
+    (prompt: string, files?: File[]) => {
+      // Send page content as context on follow-up turns (when threadId exists)
+      const pageContent = session.threadId ? getPageContent() : undefined;
+      session.submit(prompt, files, pageContent);
+    },
+    [session.threadId, session.submit, getPageContent],
+  );
+
   const handleRegenerate = useCallback(() => {
     const lastUserMsg = [...session.messages]
       .reverse()
       .find((m) => m.role === "user");
     if (lastUserMsg) {
-      session.submit(lastUserMsg.content);
+      const pageContent = getPageContent();
+      session.submit(lastUserMsg.content, undefined, pageContent);
     }
-  }, [session.messages, session.submit]);
+  }, [session.messages, session.submit, getPageContent]);
 
   const isDone = session.status === "done";
   const isStreaming =
@@ -118,7 +139,7 @@ export default function AgentPanel() {
 
       <MessageList messages={session.messages} />
 
-      {isDone && session.lastOutput && (
+      {isDone && session.lastOutput && session.outputType === "document" && (
         <ActionBar
           onApply={handleApply}
           onRegenerate={handleRegenerate}
@@ -127,7 +148,7 @@ export default function AgentPanel() {
       )}
 
       <InputBar
-        onSubmit={session.submit}
+        onSubmit={handleSubmit}
         onCancel={session.cancel}
         isStreaming={isStreaming}
       />

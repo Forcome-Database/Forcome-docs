@@ -46,6 +46,7 @@ export function agentV2Run(
     prompt: string;
     pageId?: string;
     threadId?: string;
+    pageContent?: string;
     files?: File[];
   },
   onEvent: (event: AgentV2Event) => void,
@@ -68,6 +69,7 @@ export function agentV2Run(
         prompt: params.prompt,
         pageId: params.pageId,
         threadId: params.threadId,
+        pageContent: params.pageContent,
         files: filePayloads.length > 0 ? filePayloads : undefined,
       };
 

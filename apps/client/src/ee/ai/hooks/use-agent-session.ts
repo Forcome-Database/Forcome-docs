@@ -15,6 +15,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
   const [status, setStatus] = useState<AgentSessionStatus>("idle");
   const [threadId, setThreadId] = useState<string | null>(null);
   const [lastOutput, setLastOutput] = useState<string | null>(null);
+  const [outputType, setOutputType] = useState<"document" | "conversation" | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const timelineRef = useRef<TimelineItem[]>([]);
@@ -152,6 +153,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
           // 使用后端提供的权威输出（仅最终轮文档，不含中间叙述）
           const finalContent = event.final_content || "";
           setLastOutput(finalContent);
+          setOutputType(event.output_type || "document");
           // 同步 content 字段（供 Apply to page 使用）
           updateLastAssistant(() => ({
             content: finalContent,
@@ -190,7 +192,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
   }, [editor]);
 
   const submit = useCallback(
-    async (prompt: string, files?: File[]) => {
+    async (prompt: string, files?: File[], pageContent?: string) => {
       const userMsg: AgentMessage = {
         id: crypto.randomUUID(),
         role: "user",
@@ -217,7 +219,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
       lockEditor();
 
       abortRef.current = agentV2Run(
-        { prompt, pageId, threadId: threadId ?? undefined, files },
+        { prompt, pageId, threadId: threadId ?? undefined, pageContent, files },
         handleEvent,
         (error) => {
           setStatus("error");
@@ -247,9 +249,10 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
     setStatus("idle");
     setThreadId(null);
     setLastOutput(null);
+    setOutputType(null);
     timelineRef.current = [];
     assistantIdRef.current = "";
   }, []);
 
-  return { messages, status, threadId, lastOutput, submit, cancel, reset };
+  return { messages, status, threadId, lastOutput, outputType, submit, cancel, reset };
 }
