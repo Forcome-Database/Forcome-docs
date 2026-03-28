@@ -393,7 +393,7 @@ async def run_agent_v2(request: dict):
     async def event_generator():
         register_in_memory_task(task_id, thread_id)
         try:
-            yield {"data": json.dumps({"type": "session", "thread_id": thread_id}, ensure_ascii=False)}
+            yield {"data": json.dumps({"type": "session", "thread_id": thread_id, "task_id": task_id}, ensure_ascii=False)}
             async for event in _run_agent(
                 user_message, deps, multimodal_parts=multimodal_parts or None
             ):

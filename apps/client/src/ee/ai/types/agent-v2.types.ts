@@ -1,6 +1,6 @@
 /** V2 SSE 事件类型 — 对应 agent-service event_bridge.py 的输出 */
 export type AgentV2Event =
-  | { type: "session"; thread_id: string }
+  | { type: "session"; thread_id: string; task_id?: string }
   | { type: "tool_call"; tool: string; description: string; args?: Record<string, unknown> }
   | { type: "tool_result"; status: string }
   | { type: "thinking"; content?: string; chunk?: string; phase?: number }

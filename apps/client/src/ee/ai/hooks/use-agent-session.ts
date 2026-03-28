@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import { pageEditorAtom } from "@/features/editor/atoms/editor-atoms";
 import { agentV2Run } from "../services/agent-v2-service";
+import api from "@/lib/api-client";
 import type {
   AgentMessage,
   AgentSessionAPI,
@@ -17,6 +18,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
   const [lastOutput, setLastOutput] = useState<string | null>(null);
   const [outputType, setOutputType] = useState<"document" | "conversation" | null>(null);
   const [editMode, setEditMode] = useState<"replace" | "insert" | "full" | null>(null);
+  const taskIdRef = useRef<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const timelineRef = useRef<TimelineItem[]>([]);
@@ -48,6 +50,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
       switch (event.type) {
         case "session":
           setThreadId(event.thread_id);
+          taskIdRef.current = (event as any).task_id || null;
           break;
 
         case "thinking": {
@@ -268,6 +271,11 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
     setStatus("cancelled");
     updateLastAssistant(() => ({ streaming: false }));
     unlockEditor();
+    // Signal the server to stop the LLM call (saves token costs)
+    if (taskIdRef.current) {
+      api.post("/agent/stop", { taskId: taskIdRef.current }).catch(() => {});
+      taskIdRef.current = null;
+    }
   }, [updateLastAssistant, unlockEditor]);
 
   const reset = useCallback(() => {
