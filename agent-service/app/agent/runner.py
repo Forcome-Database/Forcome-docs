@@ -90,9 +90,31 @@ async def run_agent(
     )
     agent = get_agent(skill=skill)
 
-    # Inject page context for editing mode
+    # Inject context based on edit mode
     PAGE_CONTENT_LIMIT = 20_000
-    if skill == "editing" and deps.page_content:
+    edit_mode = "full"
+
+    if deps.selection and deps.selection.edit_mode in ("replace", "insert"):
+        # Selection mode: provide targeted context
+        edit_mode = deps.selection.edit_mode
+        parts = []
+        if deps.selection.document_outline:
+            parts.append(f"[DOCUMENT OUTLINE]\n{deps.selection.document_outline}\n[/DOCUMENT OUTLINE]")
+        if deps.selection.context_before:
+            parts.append(f"[CONTEXT BEFORE]\n{deps.selection.context_before}\n[/CONTEXT BEFORE]")
+        if deps.selection.edit_mode == "replace" and deps.selection.selected_text:
+            parts.append(f"[SELECTED TEXT]\n{deps.selection.selected_text}\n[/SELECTED TEXT]")
+        elif deps.selection.edit_mode == "insert":
+            parts.append("[CURSOR POSITION — insert content here]")
+        if deps.selection.context_after:
+            parts.append(f"[CONTEXT AFTER]\n{deps.selection.context_after}\n[/CONTEXT AFTER]")
+        parts.append(f"User request: {user_message}")
+        if multimodal_parts:
+            prompt = ["\n\n".join(parts), *multimodal_parts]
+        else:
+            prompt = "\n\n".join(parts)
+    elif skill == "editing" and deps.page_content:
+        edit_mode = "full"
         page_text = deps.page_content[:PAGE_CONTENT_LIMIT]
         truncated_note = "\n[Document truncated]" if len(deps.page_content) > PAGE_CONTENT_LIMIT else ""
         if multimodal_parts:
@@ -100,7 +122,7 @@ async def run_agent(
         else:
             prompt = f"[CURRENT DOCUMENT]\n{page_text}{truncated_note}\n[/CURRENT DOCUMENT]\n\n{user_message}"
     elif skill == "editing" and deps.page_id:
-        # Fallback: read from database (NOTE: truncates at 8K chars)
+        edit_mode = "full"
         from app.agent.tools.read_page import read_page_impl
         try:
             page_data = await read_page_impl(deps.page_id)
@@ -275,8 +297,8 @@ async def run_agent(
         except Exception as e:
             logger.warning("Retry failed for thread %s: %s", deps.thread_id, e)
 
-    # 5. Extract document content from editing output (strip conversational framing)
-    if skill == "editing" and final_output:
+    # 5. Extract document content from editing output (only for full mode)
+    if skill == "editing" and edit_mode == "full" and final_output:
         extracted = extract_document_content(final_output)
         if extracted != final_output:
             logger.info("Extracted document content from <document> markers for thread %s", deps.thread_id)
@@ -284,7 +306,7 @@ async def run_agent(
 
     # 6. 发出 done 事件，携带权威最终输出（不含中间轮叙述文本）
     # 前端用 final_content 做 "Apply to page"，而非累积的 streamed_chunks
-    yield {"type": "done", "final_content": final_output or "", "output_type": output_type}
+    yield {"type": "done", "final_content": final_output or "", "output_type": output_type, "edit_mode": edit_mode}
 
     # 7. 保存对话历史
     if deps.session_store and all_messages_snapshot:

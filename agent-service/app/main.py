@@ -338,6 +338,19 @@ async def run_agent_v2(request: dict):
     files_raw = request.get("files") or []
     page_content = request.get("page_content", "")
 
+    # Parse selection context
+    from app.agent.deps import SelectionContext
+    selection = None
+    edit_mode_raw = request.get("edit_mode")
+    if edit_mode_raw in ("replace", "insert"):
+        selection = SelectionContext(
+            edit_mode=edit_mode_raw,
+            selected_text=request.get("selected_text", ""),
+            context_before=request.get("context_before", ""),
+            context_after=request.get("context_after", ""),
+            document_outline=request.get("document_outline", ""),
+        )
+
     deps = AgentDeps(
         thread_id=thread_id,
         page_id=page_id,
@@ -348,6 +361,7 @@ async def run_agent_v2(request: dict):
         files=files_raw,  # 供工具使用
         session_store=_get_conv_store(),
         page_content=page_content,
+        selection=selection,
     )
 
     # 构建多模态输入 — 仅图片直传 LLM（LLM 原生支持视觉理解）

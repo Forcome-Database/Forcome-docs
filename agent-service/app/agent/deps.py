@@ -9,6 +9,16 @@ from typing import Any
 
 
 @dataclass
+class SelectionContext:
+    """Editor selection state for targeted editing."""
+    edit_mode: str = "full"       # "replace" | "insert" | "full"
+    selected_text: str = ""       # Markdown of selected content
+    context_before: str = ""      # Preceding blocks as markdown
+    context_after: str = ""       # Following blocks as markdown
+    document_outline: str = ""    # Heading structure
+
+
+@dataclass
 class AgentDeps:
     """每次 Agent 调用的运行时依赖。通过 RunContext 注入到工具中。
 
@@ -30,6 +40,9 @@ class AgentDeps:
 
     # 当前页面内容（编辑模式使用，前端注入或后端 read_page 兜底）
     page_content: str = ""
+
+    # 选区上下文（选区编辑模式使用，前端捕获）
+    selection: SelectionContext | None = None
 
     # 用户上传的文件（由 API 端点填充，格式: list of {"content_b64", "filename", "mimetype"}）
     files: list[dict] = field(default_factory=list)
