@@ -388,13 +388,17 @@ async def run_agent_v2(request: dict):
         file_list = ", ".join(doc_filenames)
         user_message = f"{user_message}\n\n[Uploaded files: {file_list}]\nCall extract_document tool to process these files."
 
+    task_id = str(uuid4())
+
     async def event_generator():
-        # 第一个事件：session 建立
-        yield {"data": json.dumps({"type": "session", "thread_id": thread_id}, ensure_ascii=False)}
-        # 流式产出 Agent 事件
-        async for event in _run_agent(
-            user_message, deps, multimodal_parts=multimodal_parts or None
-        ):
-            yield {"data": json.dumps(event, ensure_ascii=False)}
+        register_in_memory_task(task_id, thread_id)
+        try:
+            yield {"data": json.dumps({"type": "session", "thread_id": thread_id}, ensure_ascii=False)}
+            async for event in _run_agent(
+                user_message, deps, multimodal_parts=multimodal_parts or None
+            ):
+                yield {"data": json.dumps(event, ensure_ascii=False)}
+        finally:
+            unregister_in_memory_task(task_id, thread_id)
 
     return EventSourceResponse(event_generator())

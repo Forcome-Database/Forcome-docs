@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import { pageEditorAtom } from "@/features/editor/atoms/editor-atoms";
 import { agentV2Run } from "../services/agent-v2-service";
@@ -192,6 +192,13 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
     editor.setEditable(true);
     editor.view.dom.classList.remove("ai-generating");
   }, [editor]);
+
+  // Ensure editor is unlocked if component unmounts during streaming
+  useEffect(() => {
+    return () => {
+      unlockEditor();
+    };
+  }, [unlockEditor]);
 
   const submit = useCallback(
     async (prompt: string, files?: File[], pageContent?: string, selection?: {
