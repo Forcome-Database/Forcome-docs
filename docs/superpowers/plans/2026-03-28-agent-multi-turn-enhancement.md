@@ -1003,8 +1003,15 @@ def _prepare_tools():
     return _prepared_tools
 
 
-def create_agent(system_prompt: str) -> Agent[AgentDeps, str]:
-    """Create an Agent instance with the given system prompt."""
+def create_agent(system_prompt: str = "", model: Any = None) -> Agent[AgentDeps, str]:
+    """Create an Agent instance with the given system prompt.
+
+    Args:
+        system_prompt: Skill text. Defaults to CREATION_SKILL if empty.
+        model: Optional model override (for testing).
+    """
+    if not system_prompt:
+        system_prompt = CREATION_SKILL
     tools = _prepare_tools()
     max_tokens = get_max_tokens_for_current_model()
     # ... (same model/settings logic as current create_agent)
@@ -1100,7 +1107,8 @@ if deps.session_store:
         logger.warning("Failed to load conversation for thread %s: %s", deps.thread_id, e)
 ```
 
-After loading history, add skill routing + page injection:
+After loading history AND after prompt construction (lines 63-67), add skill routing + page injection.
+**Important:** This code goes AFTER `prompt = user_message` / `prompt = [user_message, *multimodal_parts]` (line 67), so the page context overrides the raw prompt. Also remove the original `agent = get_agent()` at line 53 — the agent is now selected below:
 ```python
 # 1. Select skill based on context
 from app.agent.skill_router import select_skill
