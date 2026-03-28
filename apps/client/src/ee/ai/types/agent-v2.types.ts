@@ -29,6 +29,16 @@ export interface AgentMessage {
   content: string;
   timestamp: number;
   files?: string[];
+  /** 选区快照 — 提交时锁定，不可变。Apply 使用此快照而非实时选区。 */
+  selectionSnapshot?: {
+    mode: "replace" | "insert" | "full";
+    from: number | null;
+    to: number | null;
+    selectedText: string | null;
+    anchorBefore: string;
+    anchorAfter: string;
+    preview: string; // 用于在消息中显示的截断预览
+  };
   /** 时间线：按到达顺序排列的 thinking / tool / text 项 */
   timeline?: TimelineItem[];
   streaming?: boolean;

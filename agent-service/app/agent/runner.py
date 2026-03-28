@@ -297,8 +297,8 @@ async def run_agent(
         except Exception as e:
             logger.warning("Retry failed for thread %s: %s", deps.thread_id, e)
 
-    # 5. Extract document content from editing output (only for full mode)
-    if skill == "editing" and edit_mode == "full" and final_output:
+    # 5. Extract document content from editing output (ALL editing modes — fail-closed safety)
+    if skill == "editing" and final_output:
         extracted = extract_document_content(final_output)
         if extracted != final_output:
             logger.info("Extracted document content from <document> markers for thread %s", deps.thread_id)

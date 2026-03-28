@@ -39,17 +39,18 @@ export default function AgentPanel() {
 
   const [currentSelection, setCurrentSelection] = useState<EditorSelection | null>(null);
 
-  // Track editor selection continuously via TipTap's onSelectionUpdate
-  useEffect(() => {
+  // Capture selection on input bar focus — catches both REPLACE (non-empty) and INSERT (cursor)
+  // This fires BEFORE the editor loses focus, ensuring we get the live selection state.
+  const captureSelectionOnFocus = useCallback(() => {
     if (!editor) return;
-    const handler = () => {
-      const sel = editor.state.selection;
-      if (!sel.empty) {
-        setCurrentSelection(captureEditorSelection(editor));
-      }
-    };
-    editor.on("selectionUpdate", handler);
-    return () => { editor.off("selectionUpdate", handler); };
+    const sel = editor.state.selection;
+    if (!sel.empty) {
+      setCurrentSelection(captureEditorSelection(editor)); // REPLACE mode
+    } else if (sel.from > 1) {
+      // Cursor placement → INSERT mode (captureEditorSelection handles this)
+      setCurrentSelection(captureEditorSelection(editor));
+    }
+    // else: no meaningful selection → stays null (FULL mode)
   }, [editor]);
 
   const closePanel = () => setAside({ tab: "", isAsideOpen: false });
@@ -63,24 +64,50 @@ export default function AgentPanel() {
       ? maybeExtractTitle(titleEditor, session.lastOutput)
       : session.lastOutput;
 
-    let applyMode: "full" | "replace" | "insert" = session.editMode || "full";
+    // Read edit mode from the done event
+    const applyMode: "full" | "replace" | "insert" = session.editMode || "full";
     let from: number | undefined;
     let to: number | undefined;
 
-    // For selection modes, verify positions are still valid
-    if (applyMode !== "full" && currentSelection) {
-      const relocated = verifyAndRelocate(editor, currentSelection);
-      if (relocated) {
-        from = relocated.from;
-        to = relocated.to;
-      } else {
-        // Position verification failed — fallback to full mode
+    // For selection modes: use the SUBMITTED selection snapshot (immutable),
+    // not the live currentSelection (which may have changed since submit).
+    if (applyMode !== "full") {
+      const lastUserMsg = [...session.messages].reverse().find((m) => m.role === "user");
+      const snapshot = lastUserMsg?.selectionSnapshot;
+
+      if (!snapshot || snapshot.from == null) {
+        // No stored selection → REFUSE (fail-closed, not fallback to full)
         notifications.show({
-          message: t("Document changed since selection. Applying as full document."),
-          color: "yellow",
+          message: t("No selection data available. Please select text and try again."),
+          color: "red",
         });
-        applyMode = "full";
+        return;
       }
+
+      // Verify positions using text anchors (handles concurrent edits)
+      const relocated = verifyAndRelocate(editor, {
+        mode: snapshot.mode,
+        from: snapshot.from,
+        to: snapshot.to,
+        selectedText: snapshot.selectedText,
+        anchorBefore: snapshot.anchorBefore,
+        anchorAfter: snapshot.anchorAfter,
+        contextBefore: "",
+        contextAfter: "",
+        documentOutline: "",
+      });
+
+      if (!relocated) {
+        // Position verification failed → REFUSE (fail-closed)
+        notifications.show({
+          message: t("Cannot locate the original selection. Please select the text again and retry."),
+          color: "red",
+        });
+        return;
+      }
+
+      from = relocated.from;
+      to = relocated.to;
     }
 
     const result = await safeApply({
@@ -105,7 +132,7 @@ export default function AgentPanel() {
         color: "red",
       });
     }
-  }, [session.lastOutput, session.editMode, currentSelection, editor, titleEditor, t]);
+  }, [session.lastOutput, session.editMode, session.messages, editor, titleEditor, t]);
 
   /** Get current page content as markdown to send as context on follow-up turns */
   const getPageContent = useCallback((): string | undefined => {
@@ -122,14 +149,21 @@ export default function AgentPanel() {
       const selection = currentSelection;
 
       if (selection && selection.mode !== "full") {
-        // Selection mode: send selection context instead of full page content
+        // Selection mode: send selection context + full selection data (for immutable snapshot)
         session.submit(prompt, files, undefined, {
           editMode: selection.mode,
           selectedText: selection.selectedText || undefined,
           contextBefore: selection.contextBefore || undefined,
           contextAfter: selection.contextAfter || undefined,
           documentOutline: selection.documentOutline || undefined,
-        });
+          // Pass position data for immutable snapshot storage in message
+          from: selection.from,
+          to: selection.to,
+          anchorBefore: selection.anchorBefore,
+          anchorAfter: selection.anchorAfter,
+        } as any);
+        // Clear live selection after submit — the snapshot is now in the message
+        setCurrentSelection(null);
       } else {
         // Full mode: send page content (existing behavior for follow-ups)
         const pageContent = session.threadId ? getPageContent() : undefined;
@@ -143,21 +177,27 @@ export default function AgentPanel() {
     const lastUserMsg = [...session.messages]
       .reverse()
       .find((m) => m.role === "user");
-    if (lastUserMsg) {
-      if (currentSelection && currentSelection.mode !== "full") {
-        session.submit(lastUserMsg.content, undefined, undefined, {
-          editMode: currentSelection.mode,
-          selectedText: currentSelection.selectedText || undefined,
-          contextBefore: currentSelection.contextBefore || undefined,
-          contextAfter: currentSelection.contextAfter || undefined,
-          documentOutline: currentSelection.documentOutline || undefined,
-        });
-      } else {
-        const pageContent = getPageContent();
-        session.submit(lastUserMsg.content, undefined, pageContent);
-      }
+    if (!lastUserMsg) return;
+
+    // Reuse the stored selection snapshot from the original message
+    const snapshot = lastUserMsg.selectionSnapshot;
+    if (snapshot && snapshot.mode !== "full") {
+      session.submit(lastUserMsg.content, undefined, undefined, {
+        editMode: snapshot.mode,
+        selectedText: snapshot.selectedText || undefined,
+        contextBefore: "",
+        contextAfter: "",
+        documentOutline: "",
+        from: snapshot.from,
+        to: snapshot.to,
+        anchorBefore: snapshot.anchorBefore,
+        anchorAfter: snapshot.anchorAfter,
+      } as any);
+    } else {
+      const pageContent = getPageContent();
+      session.submit(lastUserMsg.content, undefined, pageContent);
     }
-  }, [session.messages, session.submit, currentSelection, getPageContent]);
+  }, [session.messages, session.submit, getPageContent]);
 
   const isDone = session.status === "done";
   const isStreaming =
@@ -216,6 +256,7 @@ export default function AgentPanel() {
         onSubmit={handleSubmit}
         onCancel={session.cancel}
         isStreaming={isStreaming}
+        onFocus={captureSelectionOnFocus}
       />
     </div>
   );

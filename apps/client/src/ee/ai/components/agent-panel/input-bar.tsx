@@ -18,9 +18,10 @@ interface InputBarProps {
   onSubmit: (prompt: string, files?: File[]) => void;
   onCancel: () => void;
   isStreaming: boolean;
+  onFocus?: () => void;
 }
 
-export function InputBar({ onSubmit, onCancel, isStreaming }: InputBarProps) {
+export function InputBar({ onSubmit, onCancel, isStreaming, onFocus }: InputBarProps) {
   const { t } = useTranslation();
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -104,6 +105,7 @@ export function InputBar({ onSubmit, onCancel, isStreaming }: InputBarProps) {
             value={text}
             onChange={(e) => setText(e.currentTarget.value)}
             onKeyDown={handleKeyDown}
+            onFocus={onFocus}
             autosize
             minRows={1}
             maxRows={6}

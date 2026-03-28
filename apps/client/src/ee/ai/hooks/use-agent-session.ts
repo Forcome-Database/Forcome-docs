@@ -214,6 +214,18 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
         content: prompt,
         timestamp: Date.now(),
         files: files?.map((f) => f.name),
+        // Store selection snapshot with the message — immutable once submitted
+        selectionSnapshot: selection ? {
+          mode: (selection.editMode as "replace" | "insert" | "full") || "full",
+          from: (selection as any).from ?? null,
+          to: (selection as any).to ?? null,
+          selectedText: selection.selectedText ?? null,
+          anchorBefore: (selection as any).anchorBefore ?? "",
+          anchorAfter: (selection as any).anchorAfter ?? "",
+          preview: selection.selectedText
+            ? selection.selectedText.substring(0, 120).replace(/\n/g, " ")
+            : selection.editMode === "insert" ? "Insert at cursor" : "",
+        } : undefined,
       };
 
       const assistantMsg: AgentMessage = {

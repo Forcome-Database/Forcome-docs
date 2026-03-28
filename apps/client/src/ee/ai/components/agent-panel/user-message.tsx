@@ -32,6 +32,16 @@ export function UserMessage({ message }: UserMessageProps) {
           ))}
         </Group>
       )}
+      {message.selectionSnapshot && message.selectionSnapshot.preview && (
+        <Group gap={4} mt={6} ml={30}>
+          <span className={classes.fileBadge}>
+            {message.selectionSnapshot.mode === "insert" ? "📍 " : "✂️ "}
+            {message.selectionSnapshot.preview.length > 60
+              ? message.selectionSnapshot.preview.substring(0, 60) + "..."
+              : message.selectionSnapshot.preview}
+          </span>
+        </Group>
+      )}
     </div>
   );
 }

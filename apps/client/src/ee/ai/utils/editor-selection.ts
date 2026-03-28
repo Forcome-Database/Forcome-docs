@@ -232,17 +232,17 @@ export function captureEditorSelection(editor: any): EditorSelection {
     ? rangeToMarkdown(editor, afterRange.from, afterRange.to)
     : "";
 
-  // Text anchors (use raw positions, not block-expanded, so they anchor the
-  // actual selection boundary in the text stream)
+  // Text anchors at BLOCK-EXPANDED positions — must match verifyAndRelocate's
+  // positions. Use "\n" separator consistent with fullText extraction in verify.
   const anchorBefore = doc.textBetween(
-    Math.max(0, rawFrom - ANCHOR_LENGTH),
-    rawFrom,
-    " ",
+    Math.max(0, from - ANCHOR_LENGTH),
+    from,
+    "\n",
   );
   const anchorAfter = doc.textBetween(
-    rawTo,
-    Math.min(doc.content.size, rawTo + ANCHOR_LENGTH),
-    " ",
+    to,
+    Math.min(doc.content.size, to + ANCHOR_LENGTH),
+    "\n",
   );
 
   return {
@@ -356,11 +356,11 @@ function _anchorMatchesAt(
     const docSize = doc.content.size;
     if (direction === "before") {
       const start = Math.max(0, pos - ANCHOR_LENGTH);
-      const text = doc.textBetween(start, Math.min(pos, docSize), " ");
+      const text = doc.textBetween(start, Math.min(pos, docSize), "\n");
       return text.endsWith(anchorText) || anchorText.endsWith(text);
     } else {
       const end = Math.min(docSize, pos + ANCHOR_LENGTH);
-      const text = doc.textBetween(Math.max(0, pos), end, " ");
+      const text = doc.textBetween(Math.max(0, pos), end, "\n");
       return text.startsWith(anchorText) || anchorText.startsWith(text);
     }
   } catch {
