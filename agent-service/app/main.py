@@ -179,17 +179,6 @@ async def run_agent(request: dict):
     queue = create_queue(thread_id)
 
     files_raw = request.get("files", [])
-    print(f"\n{'='*60}")
-    print(f"[DEBUG /agent/run] task_id={task_id} thread_id={thread_id}")
-    print(f"[DEBUG] user_message={request.get('user_message', '')[:100]}")
-    print(f"[DEBUG] intent_route={request.get('intent_route')}")
-    print(f"[DEBUG] insert_mode={request.get('insert_mode')}")
-    print(f"[DEBUG] files count={len(files_raw)}")
-    for i, f in enumerate(files_raw):
-        print(f"[DEBUG] file[{i}]: name={f.get('filename')}, mime={f.get('mimetype')}, b64_len={len(f.get('content_b64',''))}")
-    print(f"[DEBUG] document_task={request.get('document_task')}")
-    print(f"[DEBUG] page_id={request.get('page_id')}")
-    print(f"{'='*60}\n")
 
     orch_request = OrchestratorRequest(
         user_message=request.get("user_message", ""),
@@ -302,3 +291,114 @@ async def delete_draft(request: dict):
         task_id=request.get("task_id", ""),
     )
     return {"status": "deleted" if ok else "not_found"}
+
+
+# ── Intelligent Agent v2 Endpoint ────────────────────────────────────
+
+from app.agent.runner import run_agent as _run_agent
+from app.agent.deps import AgentDeps
+from app.agent.conversation_store import ConversationStore
+
+_conv_store: ConversationStore | None = None
+
+
+def _get_conv_store() -> ConversationStore | None:
+    global _conv_store
+    if _conv_store is None and settings.redis_url:
+        import redis.asyncio as aioredis
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        _conv_store = ConversationStore(redis_client)
+    return _conv_store
+
+
+@app.post("/agent/v2/run", dependencies=[Depends(verify_internal_secret)])
+async def run_agent_v2(request: dict):
+    """Intelligent agent endpoint — single ReAct agent with tool calling.
+
+    Request body:
+    {
+        "prompt": str,
+        "thread_id": str | null,     # 续接对话时传入，null 时自动生成
+        "page_id": str | null,
+        "workspace_id": str,
+        "user_id": str,
+        "files": [{"content_b64": str, "filename": str, "mimetype": str}]
+    }
+
+    Response: SSE stream of events (session/tool_call/tool_result/content/done/error)
+    """
+    import base64
+    from pydantic_ai.messages import BinaryContent
+
+    thread_id = request.get("thread_id") or str(uuid4())
+    user_message = request.get("prompt") or ""
+    page_id = request.get("page_id")
+    workspace_id = request.get("workspace_id", "")
+    user_id = request.get("user_id", "")
+    files_raw = request.get("files") or []
+    page_content = request.get("page_content", "")
+
+    # Parse selection context
+    from app.agent.deps import SelectionContext
+    selection = None
+    edit_mode_raw = request.get("edit_mode")
+    if edit_mode_raw in ("replace", "insert"):
+        selection = SelectionContext(
+            edit_mode=edit_mode_raw,
+            selected_text=request.get("selected_text", ""),
+            context_before=request.get("context_before", ""),
+            context_after=request.get("context_after", ""),
+            document_outline=request.get("document_outline", ""),
+        )
+
+    deps = AgentDeps(
+        thread_id=thread_id,
+        page_id=page_id,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        docmost_base_url=settings.effective_docmost_url,
+        internal_secret=settings.agent_internal_secret,
+        files=files_raw,  # 供工具使用
+        session_store=_get_conv_store(),
+        page_content=page_content,
+        selection=selection,
+    )
+
+    # 构建多模态输入 — 仅图片直传 LLM（LLM 原生支持视觉理解）
+    # 文档文件（PDF/DOCX/PPTX）不作为多模态传递，强制走 extract_document 工具
+    # → MinerU 提取文本 + 图片 → 上传图片到 Docmost → Agent 引用真实 URL
+    # 参考：MiniMax Agent 用专门 Skill 处理 Office 文档，LLM 不直接看二进制
+    _IMAGE_MIMETYPES = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"}
+    multimodal_parts = []
+    doc_filenames = []
+    for f in files_raw:
+        mime = f.get("mimetype", "")
+        if mime in _IMAGE_MIMETYPES:
+            try:
+                data = base64.b64decode(f["content_b64"])
+                multimodal_parts.append(BinaryContent(data=data, media_type=mime))
+            except Exception:
+                pass
+        else:
+            doc_filenames.append(f.get("filename", "unknown"))
+
+    # 文档文件不作为多模态传递，但必须在文本 prompt 中告知 Agent 有文件上传
+    # 否则 Agent 不知道 deps.files 中有内容，会误调 read_page 读空白页面
+    if doc_filenames:
+        file_list = ", ".join(doc_filenames)
+        user_message = f"{user_message}\n\n[Uploaded files: {file_list}]\nCall extract_document tool to process these files."
+
+    task_id = str(uuid4())
+
+    async def event_generator():
+        register_in_memory_task(task_id, thread_id)
+        try:
+            yield {"data": json.dumps({"type": "session", "thread_id": thread_id, "task_id": task_id}, ensure_ascii=False)}
+            async for event in _run_agent(
+                user_message, deps, multimodal_parts=multimodal_parts or None
+            ):
+                yield {"data": json.dumps(event, ensure_ascii=False)}
+        finally:
+            unregister_in_memory_task(task_id, thread_id)
+
+    return EventSourceResponse(event_generator())

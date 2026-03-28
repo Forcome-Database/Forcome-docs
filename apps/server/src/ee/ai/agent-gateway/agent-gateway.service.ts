@@ -163,4 +163,34 @@ export class AgentGatewayService {
     const resp = await fetch(`${baseUrl}/tools`);
     return resp.json();
   }
+
+  buildV2RunPayload(params: {
+    prompt: string;
+    pageId?: string;
+    threadId?: string;
+    workspaceId: string;
+    userId: string;
+    files?: Array<{ content_b64: string; filename: string; mimetype: string }>;
+    pageContent?: string;
+    editMode?: string;
+    selectedText?: string;
+    contextBefore?: string;
+    contextAfter?: string;
+    documentOutline?: string;
+  }): Record<string, unknown> {
+    return {
+      prompt: params.prompt,
+      page_id: params.pageId || undefined,
+      thread_id: params.threadId || undefined,
+      workspace_id: params.workspaceId,
+      user_id: params.userId,
+      files: params.files || [],
+      page_content: params.pageContent || "",
+      edit_mode: params.editMode || undefined,
+      selected_text: params.selectedText || undefined,
+      context_before: params.contextBefore || undefined,
+      context_after: params.contextAfter || undefined,
+      document_outline: params.documentOutline || undefined,
+    };
+  }
 }

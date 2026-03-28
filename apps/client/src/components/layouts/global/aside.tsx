@@ -8,6 +8,7 @@ import { TableOfContents } from "@/features/editor/components/table-of-contents/
 import { useAtomValue } from "jotai";
 import { pageEditorAtom } from "@/features/editor/atoms/editor-atoms.ts";
 import AiCreatorPanel from "@/ee/ai/components/ai-creator/ai-creator-panel";
+import AgentPanel from "@/ee/ai/components/agent-panel/agent-panel";
 
 export default function Aside() {
   const [{ tab }] = useAtom(asideStateAtom);
@@ -19,6 +20,15 @@ export default function Aside() {
     return (
       <Box style={{ height: "100%", display: "flex", flexDirection: "column" }}>
         <AiCreatorPanel />
+      </Box>
+    );
+  }
+
+  // Agent panel uses its own full-height layout
+  if (tab === "agent") {
+    return (
+      <Box style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <AgentPanel />
       </Box>
     );
   }

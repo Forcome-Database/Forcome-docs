@@ -13,6 +13,7 @@ import {
   IconTrash,
   IconWifiOff,
   IconSparkles,
+  IconBrain,
 } from "@tabler/icons-react";
 import React, { useEffect, useRef, useState } from "react";
 import useToggleAside from "@/hooks/use-toggle-aside.tsx";
@@ -86,6 +87,18 @@ export default function PageHeaderMenu({ readOnly }: PageHeaderMenuProps) {
             onClick={() => toggleAside("ai-creator")}
           >
             <IconSparkles size={20} stroke={2} />
+          </ActionIcon>
+        </Tooltip>
+      )}
+
+      {!readOnly && (
+        <Tooltip label={t("AI Agent")} openDelay={250} withArrow>
+          <ActionIcon
+            variant="subtle"
+            color="dark"
+            onClick={() => toggleAside("agent")}
+          >
+            <IconBrain size={20} stroke={2} />
           </ActionIcon>
         </Tooltip>
       )}
