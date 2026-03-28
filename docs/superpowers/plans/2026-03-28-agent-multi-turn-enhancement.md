@@ -985,7 +985,7 @@ _editing_agent: Agent[AgentDeps, str] | None = None
 _prepared_tools: list | None = None
 
 
-def _prepare_tools(extra_tools=None):
+def _prepare_tools():
     """Prepare tool wrappers once (cached at module level)."""
     global _prepared_tools
     if _prepared_tools is not None:
@@ -1000,14 +1000,12 @@ def _prepare_tools(extra_tools=None):
 
     from pydantic_ai import Tool
     _prepared_tools = [Tool(t, takes_ctx=True) for t in ALL_TOOLS]
-    if extra_tools:
-        _prepared_tools.extend([Tool(t, takes_ctx=True) for t in extra_tools])
     return _prepared_tools
 
 
-def create_agent(system_prompt: str, extra_tools=None) -> Agent[AgentDeps, str]:
+def create_agent(system_prompt: str) -> Agent[AgentDeps, str]:
     """Create an Agent instance with the given system prompt."""
-    tools = _prepare_tools(extra_tools)
+    tools = _prepare_tools()
     max_tokens = get_max_tokens_for_current_model()
     # ... (same model/settings logic as current create_agent)
     return Agent(
@@ -1080,13 +1078,30 @@ In `deps.py`, add after line 29 (`session_store`):
     page_content: str = ""
 ```
 
-- [ ] **Step 2: Modify runner.py — output classification + skill routing + page injection**
+- [ ] **Step 2: Modify runner.py — rewrite session load/save + add skill routing + page injection + output classification**
 
-Key changes to `run_agent()`:
+**Critical change: Replace the old `load_messages`/`save_turn` API with the new ConversationStore API.**
 
+Replace lines 56-61 (old load):
 ```python
-# At the top of run_agent(), after loading message_history:
+# OLD — remove these lines:
+# message_history = None
+# if deps.session_store:
+#     message_history = await deps.session_store.load_messages(deps.thread_id)
 
+# NEW — ConversationStore.load() requires user_id for security:
+message_history = None
+if deps.session_store:
+    try:
+        message_history = await deps.session_store.load(
+            thread_id=deps.thread_id, user_id=deps.user_id
+        )
+    except Exception as e:
+        logger.warning("Failed to load conversation for thread %s: %s", deps.thread_id, e)
+```
+
+After loading history, add skill routing + page injection:
+```python
 # 1. Select skill based on context
 from app.agent.skill_router import select_skill
 skill = select_skill(
@@ -1102,7 +1117,7 @@ if skill == "editing" and deps.page_content:
     truncated_note = "\n[Document truncated]" if len(deps.page_content) > PAGE_CONTENT_LIMIT else ""
     prompt = f"[CURRENT DOCUMENT]\n{page_text}{truncated_note}\n[/CURRENT DOCUMENT]\n\n{user_message}"
 elif skill == "editing" and deps.page_id:
-    # Fallback: read from database
+    # Fallback: read from database (NOTE: truncates at 8K chars vs 20K frontend cap)
     from app.agent.tools.read_page import read_page_impl
     try:
         page_data = await read_page_impl(deps.page_id)
@@ -1110,32 +1125,70 @@ elif skill == "editing" and deps.page_id:
             prompt = f"[CURRENT DOCUMENT]\n{page_data['content']}\n[/CURRENT DOCUMENT]\n\n{user_message}"
     except Exception:
         pass  # Proceed without page context
+```
 
-# After the streaming loop, before done event:
+In the streaming loop, capture `all_messages()` from `AgentRunResultEvent`:
+```python
+# Add this variable before the loop:
+all_messages_snapshot = None
 
+# Inside the AgentRunResultEvent handler (line ~106), add:
+if isinstance(event, AgentRunResultEvent):
+    if hasattr(event.result, "output"):
+        authoritative_output = event.result.output
+    # Capture full message history for conversation persistence
+    if hasattr(event.result, "all_messages"):
+        all_messages_snapshot = event.result.all_messages()
+    # ... rest of existing handler
+```
+
+After the streaming loop, before done event — add output classification:
+```python
 # 3. Output classification
-tool_has_markdown = any(c in final_output for c in ["# ", "## ", "| ", ":::"])
+has_markdown_structure = any(
+    marker in final_output for marker in ["# ", "## ", "| ", ":::"]
+)
 output_type = "document"
 if (
     tool_call_count == 0
     and deps.source_word_count == 0
     and not deps.uploaded_image_urls
     and len(final_output.strip()) < 200
-    and not tool_has_markdown
+    and not has_markdown_structure
+    and not deps.page_content  # editing with page context → always document
 ):
     output_type = "conversation"
 
-# 4. Conditional validation — skip for conversational output
+# 4. Conditional validation — skip entirely for conversational output
 if output_type == "document" and final_output:
-    validation = validate_agent_output(...)
-    # ... existing validation logic
-# else: skip validation entirely
+    validation = validate_agent_output(
+        final_output, deps.uploaded_image_urls,
+        source_word_count=deps.source_word_count,
+    )
+    if not validation.passed:
+        yield {"type": "warning", "issues": validation.issues, "score": validation.score}
+# else: no validation for conversational output
 
 # 5. Done event includes output_type
 yield {"type": "done", "final_content": final_output or "", "output_type": output_type}
+```
 
-# 6. Save conversation history (using PydanticAI's all_messages)
-# This replaces the old save_turn() pattern
+Replace lines 211-219 (old save_turn) with new save using all_messages:
+```python
+# OLD — remove these lines:
+# if deps.session_store and final_output:
+#     await deps.session_store.save_turn(thread_id, user_message, assistant_output)
+
+# NEW — save full PydanticAI message history:
+if deps.session_store and all_messages_snapshot:
+    try:
+        await deps.session_store.save(
+            thread_id=deps.thread_id,
+            user_id=deps.user_id,
+            messages=all_messages_snapshot,
+        )
+    except Exception as e:
+        logger.warning("Failed to save conversation for thread %s: %s", deps.thread_id, e)
 ```
 
 - [ ] **Step 3: Modify main.py — wire conversation store + page_content**
@@ -1143,23 +1196,27 @@ yield {"type": "done", "final_content": final_output or "", "output_type": outpu
 In the `run_agent_v2()` endpoint:
 
 ```python
-# After thread_id generation, before AgentDeps construction:
+# At module level (top of main.py, after settings initialization):
 
-# Initialize Redis conversation store
 from app.agent.conversation_store import ConversationStore
-conv_store = None
-if settings.redis_url:
-    import redis.asyncio as aioredis
-    redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
-    conv_store = ConversationStore(redis_client)
 
-# Parse page_content from request
+_conv_store: ConversationStore | None = None
+
+def _get_conv_store() -> ConversationStore | None:
+    """Get or create the module-level conversation store singleton."""
+    global _conv_store
+    if _conv_store is None and settings.redis_url:
+        import redis.asyncio as aioredis
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        _conv_store = ConversationStore(redis_client)
+    return _conv_store
+
+# Inside run_agent_v2():
 page_content = request.get("page_content", "")
 
-# Add to AgentDeps:
 deps = AgentDeps(
     ...,
-    session_store=conv_store,
+    session_store=_get_conv_store(),
     page_content=page_content,
 )
 ```
@@ -1338,7 +1395,18 @@ setOutputType(null);
 return { messages, status, threadId, lastOutput, outputType, submit, cancel, reset };
 ```
 
-**Note:** The `editor.getMarkdown()` or equivalent TipTap export method needs to be available. Check how `commitAiContent` works in `agent-panel.tsx` — the `editor` atom (`pageEditorAtom`) is already accessible. TipTap's `editor.storage.markdown.getMarkdown()` or a similar export may be used.
+**TipTap Markdown Export:** Docmost uses `@joplin/turndown` + GFM plugins for HTML→Markdown conversion. The concrete method chain is:
+
+```typescript
+import { htmlToMarkdown } from "@docmost/editor-ext";
+
+// In submit(), when threadId exists (follow-up turn):
+const editorContent = threadId && editor
+  ? htmlToMarkdown(editor.getHTML())
+  : undefined;
+```
+
+This uses the existing `htmlToMarkdown()` utility from `packages/editor-ext/src/lib/markdown/utils/turndown.utils.ts`, which handles callouts, tables, code blocks, and all TipTap-specific extensions. The `editor` atom is already accessible in the hook via `useAtomValue(pageEditorAtom)`.
 
 - [ ] **Step 4: Update agent-panel.tsx — conditional ActionBar**
 
