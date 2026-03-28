@@ -297,6 +297,18 @@ async def delete_draft(request: dict):
 
 from app.agent.runner import run_agent as _run_agent
 from app.agent.deps import AgentDeps
+from app.agent.conversation_store import ConversationStore
+
+_conv_store: ConversationStore | None = None
+
+
+def _get_conv_store() -> ConversationStore | None:
+    global _conv_store
+    if _conv_store is None and settings.redis_url:
+        import redis.asyncio as aioredis
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        _conv_store = ConversationStore(redis_client)
+    return _conv_store
 
 
 @app.post("/agent/v2/run", dependencies=[Depends(verify_internal_secret)])
@@ -324,6 +336,7 @@ async def run_agent_v2(request: dict):
     workspace_id = request.get("workspace_id", "")
     user_id = request.get("user_id", "")
     files_raw = request.get("files") or []
+    page_content = request.get("page_content", "")
 
     deps = AgentDeps(
         thread_id=thread_id,
@@ -333,6 +346,8 @@ async def run_agent_v2(request: dict):
         docmost_base_url=settings.effective_docmost_url,
         internal_secret=settings.agent_internal_secret,
         files=files_raw,  # 供工具使用
+        session_store=_get_conv_store(),
+        page_content=page_content,
     )
 
     # 构建多模态输入 — 仅图片直传 LLM（LLM 原生支持视觉理解）

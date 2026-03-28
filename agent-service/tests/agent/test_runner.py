@@ -5,6 +5,12 @@ from app.agent.runner import run_agent
 from app.agent.deps import AgentDeps
 
 
+# Common patch target — get_agent is now imported inside the function body
+_PATCH_GET_AGENT = "app.agent.agent.get_agent"
+# select_skill is also imported inside the function body
+_PATCH_SELECT_SKILL = "app.agent.skill_router.select_skill"
+
+
 @pytest.fixture
 def deps():
     return AgentDeps(
@@ -29,7 +35,8 @@ async def test_yields_done_event(deps):
         return
         yield  # 使其成为 async generator
 
-    with patch("app.agent.runner.get_agent") as mock_get:
+    with patch(_PATCH_SELECT_SKILL, return_value="creation"), \
+         patch(_PATCH_GET_AGENT) as mock_get:
         mock_agent = MagicMock()
         mock_agent.run_stream_events = mock_stream
         mock_get.return_value = mock_agent
@@ -46,7 +53,8 @@ async def test_yields_error_on_exception(deps):
         raise RuntimeError("LLM error")
         yield  # 使其成为 async generator
 
-    with patch("app.agent.runner.get_agent") as mock_get:
+    with patch(_PATCH_SELECT_SKILL, return_value="creation"), \
+         patch(_PATCH_GET_AGENT) as mock_get:
         mock_agent = MagicMock()
         mock_agent.run_stream_events = mock_stream
         mock_get.return_value = mock_agent
@@ -68,7 +76,8 @@ async def test_content_accumulated(deps):
         yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="Hello "))
         yield PartDeltaEvent(index=1, delta=TextPartDelta(content_delta="World"))
 
-    with patch("app.agent.runner.get_agent") as mock_get:
+    with patch(_PATCH_SELECT_SKILL, return_value="creation"), \
+         patch(_PATCH_GET_AGENT) as mock_get:
         mock_agent = MagicMock()
         mock_agent.run_stream_events = mock_stream
         mock_get.return_value = mock_agent
@@ -96,7 +105,8 @@ async def test_cancelled_stops_stream(deps):
         yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="content"))
 
     try:
-        with patch("app.agent.runner.get_agent") as mock_get:
+        with patch(_PATCH_SELECT_SKILL, return_value="creation"), \
+             patch(_PATCH_GET_AGENT) as mock_get:
             mock_agent = MagicMock()
             mock_agent.run_stream_events = mock_stream
             mock_get.return_value = mock_agent
@@ -133,7 +143,8 @@ async def test_thinking_phases_tracked(deps):
         yield FinalResultEvent(tool_name=None, tool_call_id=None)
         yield PartDeltaEvent(index=2, delta=TextPartDelta(content_delta="Result"))
 
-    with patch("app.agent.runner.get_agent") as mock_get:
+    with patch(_PATCH_SELECT_SKILL, return_value="creation"), \
+         patch(_PATCH_GET_AGENT) as mock_get:
         mock_agent = MagicMock()
         mock_agent.run_stream_events = mock_stream
         mock_get.return_value = mock_agent
@@ -167,7 +178,8 @@ async def test_warning_on_missing_image(deps):
         yield FinalResultEvent(tool_name=None, tool_call_id=None)
         yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="No images here " * 20))
 
-    with patch("app.agent.runner.get_agent") as mock_get:
+    with patch(_PATCH_SELECT_SKILL, return_value="creation"), \
+         patch(_PATCH_GET_AGENT) as mock_get:
         mock_agent = MagicMock()
         mock_agent.run_stream_events = mock_stream
         mock_get.return_value = mock_agent
@@ -176,3 +188,182 @@ async def test_warning_on_missing_image(deps):
 
     assert any(e.get("type") == "warning" for e in events)
     assert any(e["type"] == "done" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_done_event_includes_output_type(deps):
+    """done 事件应包含 output_type 字段。"""
+    async def mock_stream(*args, **kwargs):
+        return
+        yield
+
+    with patch(_PATCH_SELECT_SKILL, return_value="creation"), \
+         patch(_PATCH_GET_AGENT) as mock_get:
+        mock_agent = MagicMock()
+        mock_agent.run_stream_events = mock_stream
+        mock_get.return_value = mock_agent
+
+        events = await collect_events(run_agent("test prompt", deps))
+
+    done_events = [e for e in events if e["type"] == "done"]
+    assert len(done_events) == 1
+    assert "output_type" in done_events[0]
+
+
+@pytest.mark.asyncio
+async def test_short_output_classified_as_conversation(deps):
+    """短回复（无工具、无文件、无 markdown）应被分类为 conversation。"""
+    from pydantic_ai.messages import PartDeltaEvent, TextPartDelta, FinalResultEvent
+
+    async def mock_stream(*args, **kwargs):
+        yield FinalResultEvent(tool_name=None, tool_call_id=None)
+        yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="Sure, I can help!"))
+
+    with patch(_PATCH_SELECT_SKILL, return_value="creation"), \
+         patch(_PATCH_GET_AGENT) as mock_get:
+        mock_agent = MagicMock()
+        mock_agent.run_stream_events = mock_stream
+        mock_get.return_value = mock_agent
+
+        events = await collect_events(run_agent("hello", deps))
+
+    done = next(e for e in events if e["type"] == "done")
+    assert done["output_type"] == "conversation"
+
+
+@pytest.mark.asyncio
+async def test_long_output_classified_as_document(deps):
+    """长回复应被分类为 document。"""
+    from pydantic_ai.messages import PartDeltaEvent, TextPartDelta, FinalResultEvent
+
+    long_text = "# Report\n\n" + "This is detailed content. " * 50
+
+    async def mock_stream(*args, **kwargs):
+        yield FinalResultEvent(tool_name=None, tool_call_id=None)
+        yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta=long_text))
+
+    with patch(_PATCH_SELECT_SKILL, return_value="creation"), \
+         patch(_PATCH_GET_AGENT) as mock_get:
+        mock_agent = MagicMock()
+        mock_agent.run_stream_events = mock_stream
+        mock_get.return_value = mock_agent
+
+        events = await collect_events(run_agent("write a report", deps))
+
+    done = next(e for e in events if e["type"] == "done")
+    assert done["output_type"] == "document"
+
+
+@pytest.mark.asyncio
+async def test_conversation_output_skips_validation(deps):
+    """conversation 类型的输出应跳过验证，不产生 warning。"""
+    from pydantic_ai.messages import PartDeltaEvent, TextPartDelta, FinalResultEvent
+
+    async def mock_stream(*args, **kwargs):
+        yield FinalResultEvent(tool_name=None, tool_call_id=None)
+        yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="OK!"))
+
+    with patch(_PATCH_SELECT_SKILL, return_value="creation"), \
+         patch(_PATCH_GET_AGENT) as mock_get:
+        mock_agent = MagicMock()
+        mock_agent.run_stream_events = mock_stream
+        mock_get.return_value = mock_agent
+
+        events = await collect_events(run_agent("hi", deps))
+
+    # No warnings for conversational output
+    assert not any(e.get("type") == "warning" for e in events)
+    done = next(e for e in events if e["type"] == "done")
+    assert done["output_type"] == "conversation"
+
+
+@pytest.mark.asyncio
+async def test_skill_routing_with_message_history(deps):
+    """有对话历史且无文件时应选择 editing skill。"""
+    from pydantic_ai.messages import PartDeltaEvent, TextPartDelta, FinalResultEvent
+
+    mock_store = AsyncMock()
+    mock_store.load = AsyncMock(return_value=["fake_message"])
+    deps.session_store = mock_store
+
+    async def mock_stream(*args, **kwargs):
+        yield FinalResultEvent(tool_name=None, tool_call_id=None)
+        yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="# Edited doc"))
+
+    with patch(_PATCH_GET_AGENT) as mock_get:
+        mock_agent = MagicMock()
+        mock_agent.run_stream_events = mock_stream
+        mock_get.return_value = mock_agent
+
+        events = await collect_events(run_agent("update the intro", deps))
+
+    # select_skill is NOT mocked — it runs for real
+    # With message_history and no files → should call get_agent(skill="editing")
+    mock_get.assert_called_once_with(skill="editing")
+
+
+@pytest.mark.asyncio
+async def test_page_content_injected_in_editing_mode(deps):
+    """editing 模式下，page_content 应被注入到 prompt 中。"""
+    from pydantic_ai.messages import PartDeltaEvent, TextPartDelta, FinalResultEvent
+
+    mock_store = AsyncMock()
+    mock_store.load = AsyncMock(return_value=["fake_message"])
+    deps.session_store = mock_store
+    deps.page_content = "Existing page text here"
+
+    captured_prompts = []
+
+    async def mock_stream(prompt, **kwargs):
+        captured_prompts.append(prompt)
+        yield FinalResultEvent(tool_name=None, tool_call_id=None)
+        yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="Updated"))
+
+    with patch(_PATCH_GET_AGENT) as mock_get:
+        mock_agent = MagicMock()
+        mock_agent.run_stream_events = mock_stream
+        mock_get.return_value = mock_agent
+
+        events = await collect_events(run_agent("fix typos", deps))
+
+    assert len(captured_prompts) == 1
+    assert "[CURRENT DOCUMENT]" in captured_prompts[0]
+    assert "Existing page text here" in captured_prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_conversation_save_uses_all_messages(deps):
+    """对话保存应使用 all_messages_snapshot 而非简单文本。"""
+    from pydantic_ai.messages import PartDeltaEvent, TextPartDelta
+    from pydantic_ai import AgentRunResultEvent
+
+    mock_store = AsyncMock()
+    mock_store.load = AsyncMock(return_value=None)
+    mock_store.save = AsyncMock()
+    deps.session_store = mock_store
+
+    fake_messages = ["msg1", "msg2"]
+
+    async def mock_stream(*args, **kwargs):
+        # Simulate AgentRunResultEvent with all_messages
+        mock_result = MagicMock()
+        mock_result.output = "# Document output"
+        mock_result.all_messages = MagicMock(return_value=fake_messages)
+        mock_result.response = None
+        yield AgentRunResultEvent(result=mock_result)
+        yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="# Document output"))
+
+    with patch(_PATCH_SELECT_SKILL, return_value="creation"), \
+         patch(_PATCH_GET_AGENT) as mock_get:
+        mock_agent = MagicMock()
+        mock_agent.run_stream_events = mock_stream
+        mock_get.return_value = mock_agent
+
+        events = await collect_events(run_agent("write something", deps))
+
+    # Verify save was called with all_messages
+    mock_store.save.assert_called_once_with(
+        thread_id="t1",
+        user_id="u1",
+        messages=fake_messages,
+    )

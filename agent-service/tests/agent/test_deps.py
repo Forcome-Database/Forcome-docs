@@ -59,3 +59,22 @@ def test_deps_files_populated():
     )
     assert len(deps.files) == 1
     assert deps.files[0]["filename"] == "doc.pdf"
+
+
+def test_deps_page_content_default_empty():
+    """page_content 默认为空字符串。"""
+    deps = AgentDeps(
+        thread_id="t1", page_id=None, workspace_id="w", user_id="u",
+        docmost_base_url="http://x", internal_secret="s",
+    )
+    assert deps.page_content == ""
+
+
+def test_deps_page_content_populated():
+    """page_content 可以在创建时传入。"""
+    deps = AgentDeps(
+        thread_id="t1", page_id=None, workspace_id="w", user_id="u",
+        docmost_base_url="http://x", internal_secret="s",
+        page_content="# Hello World",
+    )
+    assert deps.page_content == "# Hello World"

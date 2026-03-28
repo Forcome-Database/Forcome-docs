@@ -28,6 +28,9 @@ class AgentDeps:
     # ConversationStore 实例，用于持久化多轮对话历史（可为 None）
     session_store: Any = None
 
+    # 当前页面内容（编辑模式使用，前端注入或后端 read_page 兜底）
+    page_content: str = ""
+
     # 用户上传的文件（由 API 端点填充，格式: list of {"content_b64", "filename", "mimetype"}）
     files: list[dict] = field(default_factory=list)
 

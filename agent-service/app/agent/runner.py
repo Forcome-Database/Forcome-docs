@@ -13,7 +13,6 @@ from typing import Any, AsyncIterator
 from pydantic_ai import AgentRunResultEvent
 from pydantic_ai.messages import FunctionToolCallEvent
 
-from app.agent.agent import get_agent
 from app.agent.deps import AgentDeps
 from app.agent.event_bridge import map_pydantic_event_to_sse
 from app.agent.validator import validate_agent_output
@@ -50,21 +49,53 @@ async def run_agent(
           - cancelled: 任务已取消
           - done: 所有内容流完成（E-01：在循环结束后发出）
     """
-    agent = get_agent()
-
     # 1. 加载对话历史
     message_history = None
     if deps.session_store:
         try:
-            message_history = await deps.session_store.load_messages(deps.thread_id)
+            message_history = await deps.session_store.load(
+                thread_id=deps.thread_id, user_id=deps.user_id
+            )
         except Exception as e:
-            logger.warning("Failed to load message history for thread %s: %s", deps.thread_id, e)
+            logger.warning("Failed to load conversation for thread %s: %s", deps.thread_id, e)
 
     # 2. 构建 prompt（文本 + multimodal）
     if multimodal_parts:
         prompt: Any = [user_message, *multimodal_parts]
     else:
         prompt = user_message
+
+    # Select skill based on context
+    from app.agent.skill_router import select_skill
+    from app.agent.agent import get_agent
+    skill = select_skill(
+        has_message_history=message_history is not None and len(message_history) > 0,
+        has_files=len(deps.files) > 0,
+    )
+    agent = get_agent(skill=skill)
+
+    # Inject page context for editing mode
+    PAGE_CONTENT_LIMIT = 20_000
+    if skill == "editing" and deps.page_content:
+        page_text = deps.page_content[:PAGE_CONTENT_LIMIT]
+        truncated_note = "\n[Document truncated]" if len(deps.page_content) > PAGE_CONTENT_LIMIT else ""
+        if multimodal_parts:
+            prompt = [f"[CURRENT DOCUMENT]\n{page_text}{truncated_note}\n[/CURRENT DOCUMENT]\n\n{user_message}", *multimodal_parts]
+        else:
+            prompt = f"[CURRENT DOCUMENT]\n{page_text}{truncated_note}\n[/CURRENT DOCUMENT]\n\n{user_message}"
+    elif skill == "editing" and deps.page_id:
+        # Fallback: read from database (NOTE: truncates at 8K chars)
+        from app.agent.tools.read_page import read_page_impl
+        try:
+            page_data = await read_page_impl(deps.page_id)
+            if page_data.get("status") == "success":
+                page_content = page_data["content"]
+                if multimodal_parts:
+                    prompt = [f"[CURRENT DOCUMENT]\n{page_content}\n[/CURRENT DOCUMENT]\n\n{user_message}", *multimodal_parts]
+                else:
+                    prompt = f"[CURRENT DOCUMENT]\n{page_content}\n[/CURRENT DOCUMENT]\n\n{user_message}"
+        except Exception:
+            pass  # Proceed without page context
 
     # 3. 流式执行 Agent
     # 流式 chunk 累积——仅作为 AgentRunResultEvent 缺失时的回退。
@@ -76,6 +107,7 @@ async def run_agent(
     authoritative_output: str | None = None
     tool_call_count = 0  # 工具调用计数器（安全阀）
     thinking_phase = 0  # 思考阶段计数器（多阶段可见性）
+    all_messages_snapshot = None  # 捕获完整消息历史用于对话持久化
     try:
         stream_kwargs: dict[str, Any] = {"deps": deps}
         if message_history:
@@ -106,6 +138,9 @@ async def run_agent(
             if isinstance(event, AgentRunResultEvent):
                 if hasattr(event.result, "output"):
                     authoritative_output = event.result.output
+                # Capture full message history for conversation persistence
+                if hasattr(event.result, "all_messages"):
+                    all_messages_snapshot = event.result.all_messages()
                 # Gemini truncation detection: MAX_TOKENS → PydanticAI 'length'
                 try:
                     resp = getattr(event.result, "response", None)
@@ -146,9 +181,26 @@ async def run_agent(
     # 选择最终输出：AgentRunResultEvent 优先，流式 chunks 回退
     final_output = authoritative_output if authoritative_output is not None else "".join(streamed_chunks)
 
-    # 4. 后验证（在循环结束后，使用最终完整输出）
+    # 4. Output classification
+    has_markdown_structure = any(
+        marker in final_output for marker in ["# ", "## ", "| ", ":::"]
+    ) if final_output else False
+
+    output_type = "document"
+    if (
+        final_output
+        and tool_call_count == 0
+        and deps.source_word_count == 0
+        and not deps.uploaded_image_urls
+        and len(final_output.strip()) < 200
+        and not has_markdown_structure
+        and not deps.page_content
+    ):
+        output_type = "conversation"
+
+    # Conditional validation — skip for conversational output
     validation = None
-    if final_output:
+    if output_type == "document" and final_output:
         try:
             validation = validate_agent_output(
                 final_output,
@@ -205,15 +257,15 @@ async def run_agent(
 
     # 5. 发出 done 事件，携带权威最终输出（不含中间轮叙述文本）
     # 前端用 final_content 做 "Apply to page"，而非累积的 streamed_chunks
-    yield {"type": "done", "final_content": final_output or ""}
+    yield {"type": "done", "final_content": final_output or "", "output_type": output_type}
 
     # 6. 保存对话历史
-    if deps.session_store and final_output:
+    if deps.session_store and all_messages_snapshot:
         try:
-            await deps.session_store.save_turn(
+            await deps.session_store.save(
                 thread_id=deps.thread_id,
-                user_message=user_message,
-                assistant_output=final_output,
+                user_id=deps.user_id,
+                messages=all_messages_snapshot,
             )
         except Exception as e:
-            logger.warning("Failed to save conversation history for thread %s: %s", deps.thread_id, e)
+            logger.warning("Failed to save conversation for thread %s: %s", deps.thread_id, e)
