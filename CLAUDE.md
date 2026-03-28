@@ -52,20 +52,40 @@ VitePress 知识库（`wiki/`）已深度集成 Docmost，作为公开只读前�
 
 ## AI Agent 智能体
 
-当前运行时是独立 Python 微服务（`agent-service/`），由 `DocumentTaskEngine` + `OrchestratorEngine` 组成，NestJS 通过 `/api/agent/*` 代理到 FastAPI。当前实现已经不是 LangGraph 图运行时。
+当前有两套 Agent 实现，共存于 `agent-service/` 中：
 
-建议按以下优先级阅读：
+### v2 Intelligent Agent（`feat/intelligent-agent` 分支，推荐）
 
-- **[当前架构说明](agent-service/ARCHITECTURE.md)**：当前 PydanticAI 编排器、工作流分支、事件协议、会话与草稿接口
-- **[历史开发记录](docs/ai-agent-refactor-details.md)**：2026-03-04 的 LangGraph 方案，仅保留开发背景和踩坑记录
-- **[历史架构设计](docs/plans/2026-03-03-ai-agent-architecture-design.md)**：当时的设计方案
+PydanticAI 双 Agent（Creation + Editing）+ 5 工具 + 选区编辑 + Redis 会话，端点 `POST /agent/v2/run`。
 
-当前已验证的关键约束：
+- **[v2 Agent 模块说明](agent-service/app/agent/README.md)**：架构、工具集、SSE 事件协议
+- **[Phase 1-3 实施总结](docs/superpowers/plans/2026-03-27-intelligent-agent-implementation-summary.md)**：核心 Agent + 前端 + 文档智能
+- **[多轮增强计划](docs/superpowers/plans/2026-03-28-agent-multi-turn-enhancement.md)**：Redis 会话 + Skill 拆分 + 输出分类
+- **[选区编辑设计](docs/superpowers/specs/2026-03-28-selection-editing-and-apply-safety.md)**：三模式编辑 + Apply 安全 + 全局审查
+- **[选区编辑计划](docs/superpowers/plans/2026-03-28-apply-safety-and-selection-editing.md)**：实施细节
+
+关键设计决策：
+- Skill 拆分：`skills/creation.py`（思考框架）+ `skills/editing.py`（保真框架 + `<document>` 标记）+ `skills/shared.py`（格式规则）
+- 双 Agent singleton：`skill_router.py` 基于 has_selection / has_message_history / has_files 路由
+- 选区快照存入 userMessage（不可变），Apply 从消息读取（不是实时 state）
+- REPLACE 模式 fail-closed（验证失败拒绝应用），INSERT 模式宽松（只检查范围）
+- `safe-apply.ts` 用 TipTap 原生命令替代服务端 API，快照回退
+- 输出分类：选区/插入模式强制 document，全文模式启发式判断
+- V2 取消链路：session 事件含 task_id，cancel 调用 /agent/stop
+
+### v1 Orchestrator（master 分支，旧架构）
+
+`DocumentTaskEngine` + `OrchestratorEngine` 多层编排，端点 `POST /agent/run`。
+
+- **[v1 架构说明](agent-service/ARCHITECTURE.md)**：工作流分支、事件协议、会话与草稿接口
+- **[历史开发记录](docs/ai-agent-refactor-details.md)**：LangGraph → PydanticAI 重构历史
+
+### 共享约束
 
 - NestJS 网关使用 `http.request` 代理 SSE，而不是 `fetch`
-- Agent 事件通过 `asyncio.Queue` 推送到 SSE 流
 - `agent-service/app/config.py` 会优先读取根目录 `../.env`
 - `AGENT_SERVICE_URL` 与 `DOCMOST_INTERNAL_URL` 支持从端口配置派生
+- `AGENT_MAX_TOOL_CALLS` 环境变量控制工具调用上限（默认 10）
 
 ## Docker 部署与环境管理
 
