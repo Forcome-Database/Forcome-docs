@@ -110,8 +110,9 @@ async def run_agent(
                     prompt = [f"[CURRENT DOCUMENT]\n{page_content}\n[/CURRENT DOCUMENT]\n\n{user_message}", *multimodal_parts]
                 else:
                     prompt = f"[CURRENT DOCUMENT]\n{page_content}\n[/CURRENT DOCUMENT]\n\n{user_message}"
-        except Exception:
-            pass  # Proceed without page context
+        except Exception as e:
+            logger.warning("Failed to read page for editing fallback, thread %s: %s", deps.thread_id, e)
+            yield {"type": "warning", "issues": ["无法读取当前页面内容作为编辑参考"]}
 
     # 3. 流式执行 Agent
     # 流式 chunk 累积——仅作为 AgentRunResultEvent 缺失时的回退。
@@ -253,6 +254,9 @@ async def run_agent(
             )
             retry_result = await agent.run(retry_prompt, deps=deps)
             retry_output = retry_result.output
+            # Update conversation history with retry result
+            if hasattr(retry_result, "all_messages"):
+                all_messages_snapshot = retry_result.all_messages()
             retry_validation = validate_agent_output(
                 retry_output,
                 deps.uploaded_image_urls,
@@ -282,7 +286,7 @@ async def run_agent(
     # 前端用 final_content 做 "Apply to page"，而非累积的 streamed_chunks
     yield {"type": "done", "final_content": final_output or "", "output_type": output_type}
 
-    # 6. 保存对话历史
+    # 7. 保存对话历史
     if deps.session_store and all_messages_snapshot:
         try:
             await deps.session_store.save(
