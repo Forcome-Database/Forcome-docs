@@ -10,8 +10,9 @@ export type AgentV2Event =
   | { type: "content_clear" }
   /** 最终完成事件。final_content 是后端权威输出（不含中间叙述），
    *  前端用于 "Apply to page"，而非使用流式累积的 content。
-   *  output_type 区分 "document"（可写回页面）与 "conversation"（仅展示）。 */
-  | { type: "done"; final_content?: string; output_type?: "document" | "conversation" }
+   *  output_type 区分 "document"（可写回页面）与 "conversation"（仅展示）。
+   *  edit_mode 区分 "replace"（替换选区）、"insert"（插入）与 "full"（整页替换）。 */
+  | { type: "done"; final_content?: string; output_type?: "document" | "conversation"; edit_mode?: "replace" | "insert" | "full" }
   | { type: "error"; message: string }
   | { type: "cancelled" };
 
@@ -50,7 +51,14 @@ export interface AgentSessionAPI {
   threadId: string | null;
   lastOutput: string | null;
   outputType: "document" | "conversation" | null;
-  submit: (prompt: string, files?: File[], pageContent?: string) => Promise<void>;
+  editMode: "replace" | "insert" | "full" | null;
+  submit: (prompt: string, files?: File[], pageContent?: string, selection?: {
+    editMode: string;
+    selectedText?: string;
+    contextBefore?: string;
+    contextAfter?: string;
+    documentOutline?: string;
+  }) => Promise<void>;
   cancel: () => void;
   reset: () => void;
 }
@@ -61,5 +69,10 @@ export interface AgentV2RunRequest {
   pageId?: string;
   threadId?: string;
   pageContent?: string;
+  editMode?: "replace" | "insert" | "full";
+  selectedText?: string;
+  contextBefore?: string;
+  contextAfter?: string;
+  documentOutline?: string;
   files?: Array<{ content_b64: string; filename: string; mimetype: string }>;
 }

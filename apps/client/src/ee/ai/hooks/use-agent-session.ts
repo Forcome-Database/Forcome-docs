@@ -16,6 +16,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [lastOutput, setLastOutput] = useState<string | null>(null);
   const [outputType, setOutputType] = useState<"document" | "conversation" | null>(null);
+  const [editMode, setEditMode] = useState<"replace" | "insert" | "full" | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const timelineRef = useRef<TimelineItem[]>([]);
@@ -154,6 +155,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
           const finalContent = event.final_content || "";
           setLastOutput(finalContent);
           setOutputType(event.output_type || "document");
+          setEditMode((event as any).edit_mode || "full");
           // 同步 content 字段（供 Apply to page 使用）
           updateLastAssistant(() => ({
             content: finalContent,
@@ -192,7 +194,13 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
   }, [editor]);
 
   const submit = useCallback(
-    async (prompt: string, files?: File[], pageContent?: string) => {
+    async (prompt: string, files?: File[], pageContent?: string, selection?: {
+      editMode: string;
+      selectedText?: string;
+      contextBefore?: string;
+      contextAfter?: string;
+      documentOutline?: string;
+    }) => {
       const userMsg: AgentMessage = {
         id: crypto.randomUUID(),
         role: "user",
@@ -219,7 +227,7 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
       lockEditor();
 
       abortRef.current = agentV2Run(
-        { prompt, pageId, threadId: threadId ?? undefined, pageContent, files },
+        { prompt, pageId, threadId: threadId ?? undefined, pageContent, files, selection },
         handleEvent,
         (error) => {
           setStatus("error");
@@ -250,9 +258,10 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
     setThreadId(null);
     setLastOutput(null);
     setOutputType(null);
+    setEditMode(null);
     timelineRef.current = [];
     assistantIdRef.current = "";
   }, []);
 
-  return { messages, status, threadId, lastOutput, outputType, submit, cancel, reset };
+  return { messages, status, threadId, lastOutput, outputType, editMode, submit, cancel, reset };
 }

@@ -48,6 +48,13 @@ export function agentV2Run(
     threadId?: string;
     pageContent?: string;
     files?: File[];
+    selection?: {
+      editMode: string;
+      selectedText?: string;
+      contextBefore?: string;
+      contextAfter?: string;
+      documentOutline?: string;
+    };
   },
   onEvent: (event: AgentV2Event) => void,
   onError: (error: string) => void,
@@ -71,6 +78,11 @@ export function agentV2Run(
         threadId: params.threadId,
         pageContent: params.pageContent,
         files: filePayloads.length > 0 ? filePayloads : undefined,
+        editMode: params.selection?.editMode as AgentV2RunRequest["editMode"],
+        selectedText: params.selection?.selectedText,
+        contextBefore: params.selection?.contextBefore,
+        contextAfter: params.selection?.contextAfter,
+        documentOutline: params.selection?.documentOutline,
       };
 
       const response = await fetch("/api/agent/v2/run", {
