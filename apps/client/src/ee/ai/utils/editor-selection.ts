@@ -183,16 +183,16 @@ export function captureEditorSelection(editor: any): EditorSelection {
       ? rangeToMarkdown(editor, afterRange.from, afterRange.to)
       : "";
 
-    // Text anchors
+    // Text anchors — use "\n" separator consistent with verifyAndRelocate
     const anchorBefore = doc.textBetween(
       Math.max(0, cursorPos - ANCHOR_LENGTH),
       cursorPos,
-      " ",
+      "\n",
     );
     const anchorAfter = doc.textBetween(
       cursorPos,
       Math.min(doc.content.size, cursorPos + ANCHOR_LENGTH),
-      " ",
+      "\n",
     );
 
     return {

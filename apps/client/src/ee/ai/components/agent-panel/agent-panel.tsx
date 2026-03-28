@@ -76,7 +76,6 @@ export default function AgentPanel() {
       const snapshot = lastUserMsg?.selectionSnapshot;
 
       if (!snapshot || snapshot.from == null) {
-        // No stored selection → REFUSE (fail-closed, not fallback to full)
         notifications.show({
           message: t("No selection data available. Please select text and try again."),
           color: "red",
@@ -84,30 +83,38 @@ export default function AgentPanel() {
         return;
       }
 
-      // Verify positions using text anchors (handles concurrent edits)
-      const relocated = verifyAndRelocate(editor, {
-        mode: snapshot.mode,
-        from: snapshot.from,
-        to: snapshot.to,
-        selectedText: snapshot.selectedText,
-        anchorBefore: snapshot.anchorBefore,
-        anchorAfter: snapshot.anchorAfter,
-        contextBefore: "",
-        contextAfter: "",
-        documentOutline: "",
-      });
-
-      if (!relocated) {
-        // Position verification failed → REFUSE (fail-closed)
-        notifications.show({
-          message: t("Cannot locate the original selection. Please select the text again and retry."),
-          color: "red",
+      if (applyMode === "insert") {
+        // INSERT mode: lenient verification — only check position is in valid range.
+        // Insert doesn't replace anything, so wrong position = content at wrong spot,
+        // not data loss. Much safer than REPLACE mode.
+        const docSize = editor.state.doc.content.size;
+        from = Math.min(snapshot.from, docSize);
+        to = from; // insert = from === to
+      } else {
+        // REPLACE mode: strict verification with text anchors (fail-closed).
+        const relocated = verifyAndRelocate(editor, {
+          mode: snapshot.mode,
+          from: snapshot.from,
+          to: snapshot.to,
+          selectedText: snapshot.selectedText,
+          anchorBefore: snapshot.anchorBefore,
+          anchorAfter: snapshot.anchorAfter,
+          contextBefore: "",
+          contextAfter: "",
+          documentOutline: "",
         });
-        return;
-      }
 
-      from = relocated.from;
-      to = relocated.to;
+        if (!relocated) {
+          notifications.show({
+            message: t("Cannot locate the original selection. Please select the text again and retry."),
+            color: "red",
+          });
+          return;
+        }
+
+        from = relocated.from;
+        to = relocated.to;
+      }
     }
 
     const result = await safeApply({
