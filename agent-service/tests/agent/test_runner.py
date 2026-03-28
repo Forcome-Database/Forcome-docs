@@ -1,8 +1,36 @@
 """测试 Agent Runner 的事件流行为。"""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from app.agent.runner import run_agent
+from app.agent.runner import run_agent, extract_document_content
 from app.agent.deps import AgentDeps
+
+
+# --- extract_document_content tests ---
+
+def test_extract_with_markers():
+    text = "好的，已修改。\n<document>\n# Title\ncontent\n</document>\n如果需要请告诉我。"
+    assert extract_document_content(text) == "# Title\ncontent"
+
+
+def test_extract_without_markers_returns_original():
+    text = "# Title\ncontent"
+    assert extract_document_content(text) == text
+
+
+def test_extract_with_only_opening_marker():
+    text = "<document>\n# Title\ncontent"
+    assert extract_document_content(text) == text  # No closing → fallback
+
+
+def test_extract_strips_whitespace():
+    text = "<document>\n\n# Title\n\n</document>"
+    assert extract_document_content(text) == "# Title"
+
+
+def test_extract_preserves_internal_structure():
+    doc = "# Title\n\n## Section\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n:::info\nNote\n:::"
+    text = f"说明文字\n<document>\n{doc}\n</document>\n建议文字"
+    assert extract_document_content(text) == doc
 
 
 # Common patch target — get_agent is now imported inside the function body

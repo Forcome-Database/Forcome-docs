@@ -25,6 +25,22 @@ MAX_TOOL_CALLS = int(os.environ.get("AGENT_MAX_TOOL_CALLS", "10"))
 
 logger = logging.getLogger(__name__)
 
+_DOC_START = "<document>"
+_DOC_END = "</document>"
+
+
+def extract_document_content(output: str) -> str:
+    """Extract content between <document> markers if present.
+
+    Used in editing mode to separate document content from conversational text.
+    If markers are absent, returns the original output unchanged (graceful fallback).
+    """
+    start = output.find(_DOC_START)
+    end = output.rfind(_DOC_END)
+    if start != -1 and end != -1 and end > start:
+        return output[start + len(_DOC_START):end].strip()
+    return output
+
 
 async def run_agent(
     user_message: str,
@@ -255,7 +271,14 @@ async def run_agent(
         except Exception as e:
             logger.warning("Retry failed for thread %s: %s", deps.thread_id, e)
 
-    # 5. 发出 done 事件，携带权威最终输出（不含中间轮叙述文本）
+    # 5. Extract document content from editing output (strip conversational framing)
+    if skill == "editing" and final_output:
+        extracted = extract_document_content(final_output)
+        if extracted != final_output:
+            logger.info("Extracted document content from <document> markers for thread %s", deps.thread_id)
+            final_output = extracted
+
+    # 6. 发出 done 事件，携带权威最终输出（不含中间轮叙述文本）
     # 前端用 final_content 做 "Apply to page"，而非累积的 streamed_chunks
     yield {"type": "done", "final_content": final_output or "", "output_type": output_type}
 

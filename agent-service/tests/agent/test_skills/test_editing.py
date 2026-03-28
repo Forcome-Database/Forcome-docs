@@ -55,9 +55,9 @@ def test_editing_skill_no_code_block_wrapping():
 
 
 def test_editing_skill_no_conversational_framing():
-    """Must warn against conversational framing in output."""
+    """Must warn against non-document content in output."""
     text = EDITING_SKILL.lower()
-    assert "conversational" in text or "framing" in text or "preamble" in text
+    assert "corrupt" in text or "conversational" in text or "framing" in text
 
 
 def test_editing_skill_preserve_unchanged():
@@ -110,11 +110,19 @@ def test_editing_skill_tiptap_output_format():
 
 def test_editing_skill_no_thinking_framework_steps():
     """Editing skill should NOT have the 6-step creation thinking framework."""
-    # The editing skill is concise; it should not include all 6 UNDERSTAND/COLLECT/ANALYZE steps
-    # that belong to the creation skill
-    # At most a lightweight edit framework, not the full 6-step creation framework
     creation_steps = ["COLLECT with Purpose", "ANALYZE Deeply", "PLAN the Output Structure"]
     found = [s for s in creation_steps if s in EDITING_SKILL]
     assert len(found) == 0, (
         f"Editing skill should not include creation-specific steps: {found}"
     )
+
+
+def test_editing_skill_has_document_markers():
+    """Editing skill must instruct agent to use <document> tags."""
+    assert "<document>" in EDITING_SKILL
+    assert "</document>" in EDITING_SKILL
+
+
+def test_editing_skill_has_corruption_warning():
+    """Editing skill must frame non-doc content as data corruption."""
+    assert "corrupt" in EDITING_SKILL.lower()

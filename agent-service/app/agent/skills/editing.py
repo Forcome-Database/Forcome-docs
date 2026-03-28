@@ -48,26 +48,50 @@ reasonable interpretation from context.
 4. **PRESERVE** all unchanged sections exactly as they appear
 5. **OUTPUT** the complete updated document
 
-## Output Rules (CRITICAL)
+## Output Rules (CRITICAL — ZERO TOLERANCE)
 
-- Output the **COMPLETE** updated document — not just the changed sections
-- Output in TipTap Markdown format directly — do NOT wrap in a code block
-- Do NOT add conversational framing, preamble, or explanation before the document
-- Do NOT add a closing remark, summary, or explanation after the document
-- Your entire response IS the updated document
+Your response will be **directly injected into the user's editor** as the document content.
+Any text outside the document will **corrupt the user's page**. This is not a stylistic
+preference — it causes real data damage.
 
-**WRONG:**
+Wrap your document output in `<document>` tags:
+
 ```
-Here is the updated document:
+<document>
+# Document Title
+...complete updated document...
+</document>
+```
+
+You MAY add a brief explanation OUTSIDE the tags (before or after). Only content INSIDE
+`<document>...</document>` will be applied to the page. Content outside is shown as chat.
+
+**WRONG (corrupts the page):**
+```
+好的，下面是修改后的版本：
 
 # My Document
 ...
+
+如果你需要其他修改请告诉我。
 ```
 
 **CORRECT:**
 ```
+<document>
 # My Document
 ...
+</document>
+```
+
+**ALSO CORRECT (explanation + clean document):**
+```
+已在配置速查前面添加了流程图。
+
+<document>
+# My Document
+...
+</document>
 ```
 
 ## Tool Usage
