@@ -415,6 +415,11 @@ export class AgentGatewayController {
       const pageId = typeof body.pageId === 'string' ? body.pageId : undefined;
       const threadId = typeof body.threadId === 'string' ? body.threadId : undefined;
       const pageContent = typeof body.pageContent === 'string' ? body.pageContent : undefined;
+      const editMode = typeof body.editMode === 'string' ? body.editMode : undefined;
+      const selectedText = typeof body.selectedText === 'string' ? body.selectedText : undefined;
+      const contextBefore = typeof body.contextBefore === 'string' ? body.contextBefore : undefined;
+      const contextAfter = typeof body.contextAfter === 'string' ? body.contextAfter : undefined;
+      const documentOutline = typeof body.documentOutline === 'string' ? body.documentOutline : undefined;
       const rawFiles = Array.isArray(body.files) ? body.files : [];
       const files = rawFiles.filter(
         (f): f is { content_b64: string; filename: string; mimetype: string } =>
@@ -434,6 +439,11 @@ export class AgentGatewayController {
           userId: user.id,
           files,
           pageContent,
+          editMode,
+          selectedText,
+          contextBefore,
+          contextAfter,
+          documentOutline,
         }),
       );
 
