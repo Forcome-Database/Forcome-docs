@@ -134,6 +134,32 @@ export function getPageId(documentName: string) {
   return documentName.split('.')[1];
 }
 
+/**
+ * Ensure all image nodes have attachmentId.
+ * V2 Agent content arrives as markdown → TipTap only sets src, not attachmentId.
+ * Extract UUID from src URL pattern: /api/files/{uuid}/filename
+ */
+export function ensureImageAttachmentIds(json: any): any {
+  if (!json || typeof json !== 'object') return json;
+
+  if (json.type === 'image' && json.attrs?.src && !json.attrs.attachmentId) {
+    const match = json.attrs.src.match(
+      /\/api\/files\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\//i,
+    );
+    if (match) {
+      json.attrs.attachmentId = match[1];
+    }
+  }
+
+  if (Array.isArray(json.content)) {
+    for (const child of json.content) {
+      ensureImageAttachmentIds(child);
+    }
+  }
+
+  return json;
+}
+
 function stripUnknownNodes(
   json: JSONContent,
   schema: Schema,
