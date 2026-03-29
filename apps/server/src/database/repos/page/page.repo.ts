@@ -127,10 +127,11 @@ export class PageRepo {
 
     let resolvedWorkspaceId = updatePageData.workspaceId;
     if (!resolvedWorkspaceId && pageIds.length > 0) {
+      const idColumn = pageIds.some((id) => !isValidUUID(id)) ? 'slugId' as const : 'id' as const;
       const page = await dbOrTx(this.db, trx)
         .selectFrom('pages')
         .select('workspaceId')
-        .where('id', '=', pageIds[0])
+        .where(idColumn, '=', pageIds[0])
         .executeTakeFirst();
       resolvedWorkspaceId = page?.workspaceId;
     }
