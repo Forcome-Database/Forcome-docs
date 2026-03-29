@@ -759,29 +759,32 @@ export class AiSearchService {
       'p',
     );
 
-    const results = await sql`
-      SELECT
-        pe."pageId",
-        p.title,
-        p.slug_id as "slugId",
-        p.text_content as "textContent",
-        s.slug as "spaceSlug",
-        pe."chunkIndex",
-        pe."chunkStart",
-        pe."chunkLength",
-        pe.metadata,
-        pe.embedding <=> ${embeddingStr}::vector AS distance
-      FROM page_embeddings pe
-      JOIN pages p ON p.id = pe."pageId"
-      JOIN spaces s ON s.id = pe."spaceId"
-      WHERE pe."workspaceId" = ${workspaceId}
-        AND p.deleted_at IS NULL
-        AND pe."deletedAt" IS NULL
-        AND (pe.embedding <=> ${embeddingStr}::vector) < ${distanceThreshold}
-        AND ${scopeCondition}
-      ORDER BY distance ASC
-      LIMIT ${limit}
-    `.execute(this.db);
+    const results = await this.db.transaction().execute(async (trx) => {
+      await sql`SET LOCAL hnsw.ef_search = 100`.execute(trx);
+      return sql`
+        SELECT
+          pe."pageId",
+          p.title,
+          p.slug_id as "slugId",
+          p.text_content as "textContent",
+          s.slug as "spaceSlug",
+          pe."chunkIndex",
+          pe."chunkStart",
+          pe."chunkLength",
+          pe.metadata,
+          pe.embedding <=> ${embeddingStr}::vector AS distance
+        FROM page_embeddings pe
+        JOIN pages p ON p.id = pe."pageId"
+        JOIN spaces s ON s.id = pe."spaceId"
+        WHERE pe."workspaceId" = ${workspaceId}
+          AND p.deleted_at IS NULL
+          AND pe."deletedAt" IS NULL
+          AND (pe.embedding <=> ${embeddingStr}::vector) < ${distanceThreshold}
+          AND ${scopeCondition}
+        ORDER BY distance ASC
+        LIMIT ${limit}
+      `.execute(trx);
+    });
 
     return (results.rows as any[]).map((row) => {
       let chunkText: string | undefined;
