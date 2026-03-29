@@ -12,6 +12,7 @@ import { DocumentTasksService } from './document-tasks/document-tasks.service';
 import { AgentGatewayService } from './agent-gateway/agent-gateway.service';
 import { InlineRewriteController } from './inline/inline-rewrite.controller';
 import { InlineRewriteService } from './inline/inline-rewrite.service';
+import { QueryUnderstandingService } from './services/query-understanding.service';
 import { PageModule } from '../../core/page/page.module';
 import { AttachmentModule } from '../../core/attachment/attachment.module';
 import { TokenModule } from '../../core/auth/token.module';
@@ -34,7 +35,8 @@ import { TokenModule } from '../../core/auth/token.module';
     DocumentTasksService,
     AgentGatewayService,
     InlineRewriteService,
+    QueryUnderstandingService,
   ],
-  exports: [AiService, AiSearchService, AiTemplateService],
+  exports: [AiService, AiSearchService, AiTemplateService, QueryUnderstandingService],
 })
 export class AiModule {}
