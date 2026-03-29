@@ -1164,6 +1164,88 @@ Example: ["如何配置SSL证书？","有没有自动化部署方案？","这个
     }
   }
 
+  // ==================== Agentic Search ====================
+
+  /**
+   * Decompose a complex query into 2-3 focused sub-questions.
+   * Only called for complexity=3 queries (Route D).
+   */
+  private async decomposeQuery(query: string): Promise<string[]> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { generateText } = require('ai');
+      const model = this.getLiteModel();
+      const { text } = await generateText({
+        model,
+        prompt: `Break this complex question into 2-3 focused sub-questions that together cover the full intent. Each sub-question should be independently searchable in a knowledge base.
+
+Question: ${query}
+
+Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
+        maxTokens: 200,
+        temperature: 0,
+        abortSignal: AbortSignal.timeout(3000),
+      });
+      const cleaned = text.replace(/```json?\s*/g, '').replace(/```\s*/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      if (Array.isArray(parsed) && parsed.length >= 2) {
+        return parsed.slice(0, 3).map(String);
+      }
+      return [query];
+    } catch {
+      return [query];
+    }
+  }
+
+  /**
+   * Agentic search: decompose → parallel retrieve → merge → rerank.
+   * Budget: max 1 decomposition + N parallel searches.
+   */
+  private async agenticSearch(
+    originalQuery: string,
+    rewrittenQuery: string,
+    workspaceId: string,
+    scope?: RetrievalScope,
+  ): Promise<PageResult[]> {
+    const subQueries = await this.decomposeQuery(rewrittenQuery);
+
+    // Parallel hybrid search for each sub-query
+    const allResults = await Promise.all(
+      subQueries.map((sq) =>
+        this.hybridSearch(sq, workspaceId, 10, undefined, scope),
+      ),
+    );
+
+    // Merge by pageId+chunkIndex to preserve multi-chunk evidence
+    const chunkKey = (r: PageResult) => `${r.pageId}:${r.metadata?.chunkIndex ?? 0}`;
+    const scoreMap = new Map<string, { result: PageResult; score: number }>();
+    for (const results of allResults) {
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        const key = chunkKey(r);
+        const existing = scoreMap.get(key);
+        const score = 1 / (60 + i);
+        if (existing) {
+          existing.score += score;
+          if (r.score > existing.result.score) {
+            existing.result = r;
+          }
+        } else {
+          scoreMap.set(key, { result: r, score });
+        }
+      }
+    }
+
+    // Sort by merged score descending, take top 10
+    const merged = Array.from(scoreMap.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+      .map((entry) => entry.result);
+
+    // Rerank the merged results
+    return this.rerank(rewrittenQuery, merged, 7);
+  }
+
   // ==================== Answer With Context ====================
 
   async *answerWithContext(
@@ -1230,44 +1312,56 @@ Example: ["如何配置SSL证书？","有没有自动化部署方案？","这个
     // ---- Retrieval (use rewritten query) ----
     const searchQuery = understanding.rewrittenQuery || input.query;
 
-    const hybridResults = await this.hybridSearch(
-      searchQuery,
-      input.workspaceId,
-      15,
-      undefined,
-      input.scope,
-    );
+    let finalReranked: PageResult[];
 
-    let finalReranked = await this.rerank(searchQuery, hybridResults, 5);
+    if (understanding.complexity === 3) {
+      // Route D: Agentic — decompose + parallel search + merge
+      finalReranked = await this.agenticSearch(
+        input.query,
+        searchQuery,
+        input.workspaceId,
+        input.scope,
+      );
+    } else {
+      // Route B/C: Standard + optional retry
+      const hybridResults = await this.hybridSearch(
+        searchQuery,
+        input.workspaceId,
+        15,
+        undefined,
+        input.scope,
+      );
+      finalReranked = await this.rerank(searchQuery, hybridResults, 5);
 
-    // For complex queries (complexity >= 2): retry with original query if weak results
-    if (
-      understanding.complexity >= 2 &&
-      searchQuery !== input.query &&
-      finalReranked.length > 0
-    ) {
-      const bestScore = Math.max(...finalReranked.map((r) => r.score));
-      // RRF top-1 score is ~0.0167; a best below 0.01 with few results indicates weakness
-      if (bestScore < 0.01 && finalReranked.length < 3) {
-        this.logger.debug(
-          `Weak results for rewritten query (bestScore=${bestScore.toFixed(4)}, count=${finalReranked.length}), retrying with original`,
-        );
-        const fallbackResults = await this.hybridSearch(
-          input.query,
-          input.workspaceId,
-          15,
-          undefined,
-          input.scope,
-        );
-        // Merge and deduplicate by pageId
-        const seen = new Set(finalReranked.map((r) => r.pageId));
-        for (const r of fallbackResults) {
-          if (!seen.has(r.pageId)) {
-            finalReranked.push(r);
-            seen.add(r.pageId);
+      // Route C enhancement for complexity >= 2: retry with original query if weak results
+      if (
+        understanding.complexity >= 2 &&
+        searchQuery !== input.query &&
+        finalReranked.length > 0
+      ) {
+        const bestScore = Math.max(...finalReranked.map((r) => r.score));
+        // RRF top-1 score is ~0.0167; a best below 0.01 with few results indicates weakness
+        if (bestScore < 0.01 && finalReranked.length < 3) {
+          this.logger.debug(
+            `Weak results for rewritten query (bestScore=${bestScore.toFixed(4)}, count=${finalReranked.length}), retrying with original`,
+          );
+          const fallbackResults = await this.hybridSearch(
+            input.query,
+            input.workspaceId,
+            15,
+            undefined,
+            input.scope,
+          );
+          // Merge and deduplicate by pageId
+          const seen = new Set(finalReranked.map((r) => r.pageId));
+          for (const r of fallbackResults) {
+            if (!seen.has(r.pageId)) {
+              finalReranked.push(r);
+              seen.add(r.pageId);
+            }
           }
+          finalReranked = await this.rerank(input.query, finalReranked, 7);
         }
-        finalReranked = await this.rerank(input.query, finalReranked, 7);
       }
     }
 
