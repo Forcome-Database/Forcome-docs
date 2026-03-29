@@ -248,16 +248,25 @@ export class AiSearchService {
     return `${this.environmentService.getAppUrl()}${rawUrl}`;
   }
 
-  private async buildResolvedAssetUrl(
+  /**
+   * Build a SHORT asset URL for LLM context (no JWT token).
+   * Use buildFullAssetUrl() for the actual public-facing URL with JWT.
+   */
+  private buildContextAssetUrl(
+    asset: Pick<DocumentAssetProjection, 'attachmentId' | 'rawUrl' | 'title'>,
+  ): string {
+    return this.buildAppAssetUrl(asset);
+  }
+
+  /**
+   * Build the FULL asset URL with JWT token for public wiki display.
+   */
+  private async buildFullAssetUrl(
     page: Pick<PageRecord, 'pageId' | 'workspaceId'>,
     asset: Pick<DocumentAssetProjection, 'attachmentId' | 'rawUrl' | 'title'>,
     scope?: RetrievalScope,
   ): Promise<string> {
-    if (!scope?.isPublicWiki) {
-      return this.buildAppAssetUrl(asset);
-    }
-
-    if (!this.tokenService) {
+    if (!scope?.isPublicWiki || !this.tokenService) {
       return this.buildAppAssetUrl(asset);
     }
 
@@ -270,6 +279,17 @@ export class AiSearchService {
     const rawUrl =
       asset.rawUrl || `/api/files/${asset.attachmentId}/${asset.title}`;
     return `${this.environmentService.getAppUrl()}${buildPublicAttachmentUrl(rawUrl, token)}`;
+  }
+
+  /**
+   * Legacy alias — kept for citation URL generation which needs full JWT URLs.
+   */
+  private async buildResolvedAssetUrl(
+    page: Pick<PageRecord, 'pageId' | 'workspaceId'>,
+    asset: Pick<DocumentAssetProjection, 'attachmentId' | 'rawUrl' | 'title'>,
+    scope?: RetrievalScope,
+  ): Promise<string> {
+    return this.buildFullAssetUrl(page, asset, scope);
   }
 
   private createPageCitation(page: PageRecord): AiCitation {
@@ -446,6 +466,7 @@ export class AiSearchService {
     page: PageRecord,
     scope: RetrievalScope | undefined,
     imageDescriptions?: Map<string, string>,
+    urlMap?: Map<string, { shortUrl: string; fullUrl: string }>,
   ) {
     if (!page.content) {
       return (page.textContent || '').trim();
@@ -456,10 +477,17 @@ export class AiSearchService {
     const resolvedUrlMap = new Map<string, string>();
 
     for (const asset of assets) {
-      resolvedUrlMap.set(
-        asset.attachmentId,
-        await this.buildResolvedAssetUrl(page, asset, scope),
-      );
+      // Use SHORT URLs in LLM context to save token budget
+      const shortUrl = this.buildContextAssetUrl(asset);
+      resolvedUrlMap.set(asset.attachmentId, shortUrl);
+
+      // Build full JWT URL for post-processing replacement
+      if (scope?.isPublicWiki && urlMap) {
+        const fullUrl = await this.buildFullAssetUrl(page, asset, scope);
+        if (fullUrl !== shortUrl) {
+          urlMap.set(shortUrl, { shortUrl, fullUrl });
+        }
+      }
     }
 
     const linkSummary = collectDocumentLinkProjections(document)
@@ -1145,6 +1173,8 @@ export class AiSearchService {
     const contextParts: string[] = [];
     const legacySources: LegacySourceItem[] = [];
     const citations: AiCitation[] = [];
+    // Map short URLs → full JWT URLs for post-processing LLM output
+    const assetUrlMap = new Map<string, { shortUrl: string; fullUrl: string }>();
     let sourceIndex = 1;
 
     if (currentPage) {
@@ -1154,11 +1184,12 @@ export class AiSearchService {
             currentPage,
             input.scope,
             imageDescriptions,
+            assetUrlMap,
           )
-        : (currentPage.textContent || '').slice(0, 8000);
+        : (currentPage.textContent || '').slice(0, 20000);
 
       contextParts.push(
-        `[${sourceIndex}] (Current page) ${currentPage.title}:\n${currentContext.slice(0, 8000)}`,
+        `[${sourceIndex}] (Current page) ${currentPage.title}:\n${currentContext.slice(0, 20000)}`,
       );
       legacySources.push({
         title: currentPage.title,
@@ -1233,8 +1264,8 @@ export class AiSearchService {
       : 'Answer strictly from the provided context. Prioritize the source marked as Current page. Only use download or preview URLs that already appear in the context. If the context does not provide a valid URL, say you do not know and do not invent one.';
 
     const normalizedSystemPrompt = isChinese
-      ? '请只根据给定上下文回答问题。优先参考标记为 Current page 的内容。如果上下文里已经出现明确的 URL、markdown 链接或 Explicit links 列表，直接返回精确链接，不要只说“点击下载”。引用下载、预览或图片地址时，只能使用上下文里已经给出的链接；如果上下文没有提供有效链接，就明确说不知道，不要猜测 URL。信息不足时直接说明。'
-      : 'Answer strictly from the provided context. Prioritize the source marked as Current page. If the context already contains a concrete URL, markdown link, or explicit link list, return the exact URL directly instead of only naming the link text. Only use links that already appear in the context. If the context does not provide a valid URL, say you do not know and do not invent one.';
+      ? '请只根据给定上下文回答问题。优先参考标记为 Current page 的内容。如果上下文里已经出现明确的 URL、markdown 链接或 Explicit links 列表，直接返回精确链接，不要只说”点击下载”。引用下载、预览或图片地址时，只能使用上下文里已经给出的链接；如果上下文没有提供有效链接，就明确说不知道，不要猜测 URL。当上下文中出现 ![...](url) 格式的图片时，请在回答中保持该 markdown 图片格式原样输出，不要把图片链接转为纯文本。信息不足时直接说明。'
+      : 'Answer strictly from the provided context. Prioritize the source marked as Current page. If the context already contains a concrete URL, markdown link, or explicit link list, return the exact URL directly instead of only naming the link text. Only use links that already appear in the context. If the context does not provide a valid URL, say you do not know and do not invent one. When the context contains images in ![...](url) format, preserve that exact markdown image syntax in your response — do not convert image links to plain text.';
 
     const messages: any[] = [
       {
@@ -1279,7 +1310,16 @@ export class AiSearchService {
 
     try {
       for await (const text of this.stripThinkBlocks(result.textStream)) {
-        yield JSON.stringify({ content: text });
+        // Replace short internal URLs with full JWT-signed URLs for public wiki
+        let processedText = text;
+        if (assetUrlMap.size > 0) {
+          for (const [shortUrl, { fullUrl }] of assetUrlMap) {
+            if (processedText.includes(shortUrl)) {
+              processedText = processedText.replaceAll(shortUrl, fullUrl);
+            }
+          }
+        }
+        yield JSON.stringify({ content: processedText });
       }
     } catch (streamError: any) {
       const message = streamError?.message || '';
