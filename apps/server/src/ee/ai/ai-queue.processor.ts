@@ -172,6 +172,11 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
     `.execute(this.db);
 
     await sql`
+      CREATE INDEX IF NOT EXISTS idx_page_embeddings_metadata_type_expr
+      ON page_embeddings ((metadata->>'type'))
+    `.execute(this.db);
+
+    await sql`
       CREATE INDEX IF NOT EXISTS idx_page_embeddings_hnsw
       ON page_embeddings USING hnsw (embedding vector_cosine_ops)
       WITH (m = 16, ef_construction = 64)
