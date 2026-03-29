@@ -1151,7 +1151,6 @@ Rules:
 Example: ["如何配置SSL证书？","有没有自动化部署方案？","这个和K8s部署有什么区别？"]`,
         maxTokens: 200,
         temperature: 0.7,
-        abortSignal: AbortSignal.timeout(3000),
       });
       const cleaned = text
         .replace(/```json?\s*/g, '')
@@ -1187,7 +1186,6 @@ Question: ${query}
 Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
         maxTokens: 200,
         temperature: 0,
-        abortSignal: AbortSignal.timeout(3000),
       });
       const cleaned = text.replace(/```json?\s*/g, '').replace(/```\s*/g, '').trim();
       const parsed = JSON.parse(cleaned);

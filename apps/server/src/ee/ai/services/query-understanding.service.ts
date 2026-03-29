@@ -88,13 +88,10 @@ Intent definitions:
         .filter(Boolean)
         .join('\n\n');
 
-      const abortSignal = AbortSignal.timeout(8000);
-
       const { text } = await generateText({
         model: liteModel,
         maxTokens: 300,
         temperature: 0,
-        abortSignal,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },

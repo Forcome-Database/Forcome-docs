@@ -54,7 +54,6 @@ export class AnswerVerifierService {
         prompt,
         maxTokens: 300,
         temperature: 0,
-        abortSignal: AbortSignal.timeout(5000),
       });
 
       const cleaned = text.replace(/```json?\s*/g, '').replace(/```\s*/g, '').trim();
