@@ -20,6 +20,7 @@ import type { ChatMessage, ChatMessageImage, StoredChatHistory, DocmostSidebarNo
 import { StorageKey } from '../types'
 import AIChatSources from './AIChatSources.vue'
 import AIChatWelcome from './AIChatWelcome.vue'
+import AISuggestedQuestions from './AISuggestedQuestions.vue'
 import { useAuth } from '../composables/useAuth'
 import CloseIcon from './icons/CloseIcon.vue'
 import TrashIcon from './icons/TrashIcon.vue'
@@ -201,7 +202,7 @@ const getCurrentPageSlugId = (): string | undefined => {
 }
 
 // ===== Markdown 渲染（含来源卡片） =====
-const renderAssistantMessage = (content: string, sources?: AiSource[], citations?: AiCitation[]) => {
+const renderAssistantMessage = (content: string, sources?: AiSource[], citations?: AiCitation[], suggestedQuestions?: string[]) => {
   const nodes: any[] = [
     h('div', {
       class: 'ai-chat-markdown',
@@ -210,6 +211,12 @@ const renderAssistantMessage = (content: string, sources?: AiSource[], citations
   ]
   if ((citations && citations.length > 0) || (sources && sources.length > 0)) {
     nodes.push(h(AIChatSources, { sources, citations }))
+  }
+  if (suggestedQuestions && suggestedQuestions.length > 0) {
+    nodes.push(h(AISuggestedQuestions, {
+      questions: suggestedQuestions,
+      onAsk: (question: string) => sendMessage(question),
+    }))
   }
   return h('div', nodes)
 }
@@ -241,7 +248,7 @@ const bubbleItems = computed(() => {
       loading: msg.isStreaming && !msg.content,
       typing: msg.isStreaming ? { step: 2, interval: 50 } : undefined,
       messageRender: msg.role === 'assistant'
-        ? (content: string) => renderAssistantMessage(content, msg.sources, msg.citations)
+        ? (content: string) => renderAssistantMessage(content, msg.sources, msg.citations, msg.suggestedQuestions)
         : hasImages
           ? renderUserMessage(msg.images!)
           : undefined,
@@ -403,6 +410,10 @@ const sendMessage = async (content: string) => {
         }
         if (event.error) {
           throw new Error(event.error)
+        }
+        if (event.suggestedQuestions) {
+          const currentMsg = messages.value[assistantIndex]
+          messages.value[assistantIndex] = { ...currentMsg, suggestedQuestions: event.suggestedQuestions }
         }
       }
       const currentMsg = messages.value[assistantIndex]
