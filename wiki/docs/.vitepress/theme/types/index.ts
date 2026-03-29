@@ -131,6 +131,8 @@ export interface ChatMessage {
   /** AI 来源引用（仅 assistant 消息） */
   sources?: AiSource[]
   citations?: AiCitation[]
+  /** AI 推荐的后续问题（仅 assistant 消息） */
+  suggestedQuestions?: string[]
 }
 
 /** AI 来源引用 */
@@ -387,6 +389,11 @@ export interface DocmostAiStreamEvent {
   citations?: AiCitation[]
   content?: string
   error?: string
+  // New fields from query understanding
+  intent?: string
+  complexity?: number
+  suggestedQuestions?: string[]
+  warning?: string
 }
 
 // ===== 组件 Props 类型 =====
