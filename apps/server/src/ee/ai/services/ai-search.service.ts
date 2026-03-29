@@ -759,7 +759,9 @@ export class AiSearchService {
 
     return (results.rows as any[]).map((row) => {
       let chunkText: string | undefined;
-      if (row.chunkLength > 0 && row.textContent) {
+      if (row.metadata?.chunkText) {
+        chunkText = row.metadata.chunkText;
+      } else if (row.chunkLength > 0 && row.textContent) {
         chunkText = row.textContent.slice(
           row.chunkStart,
           row.chunkStart + row.chunkLength,

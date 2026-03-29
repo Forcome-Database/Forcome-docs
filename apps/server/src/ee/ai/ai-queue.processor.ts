@@ -203,7 +203,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
 
     for (const page of pages) {
       try {
-        const text = `${page.title || ''}\n${page.textContent || ''}`.trim();
+        const text = (page.textContent || '').trim();
         if (!text) continue;
 
         await this.upsertPageEmbedding(page.id, workspaceId, text, page.title || 'Untitled', page.content);
@@ -253,7 +253,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
 
         if (!page) continue;
 
-        const text = `${page.title || ''}\n${page.textContent || ''}`.trim();
+        const text = (page.textContent || '').trim();
         if (!text) continue;
 
         await this.upsertPageEmbedding(page.id, workspaceId, text, page.title || 'Untitled', page.content);
@@ -301,7 +301,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
           VALUES (${pageId}, ${page.spaceId}, ${workspaceId}, ${page.directoryId ?? null}, ${page.topicId ?? null},
             ${modelName}, ${dimension}, ${embeddingStr}::vector,
             ${chunk.chunkIndex}, ${chunk.chunkStart}, ${chunk.chunkLength},
-            ${JSON.stringify({ type: 'text', contextPrefix })}::jsonb)
+            ${JSON.stringify({ type: 'text', contextPrefix, chunkText: chunk.text })}::jsonb)
         `.execute(this.db);
       } catch (err: any) {
         this.logger.warn(`Failed to embed chunk ${chunk.chunkIndex} of page ${pageId}: ${err?.message}`);
