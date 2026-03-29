@@ -344,7 +344,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
             VALUES (${pageId}, ${page.spaceId}, ${workspaceId}, ${page.directoryId ?? null}, ${page.topicId ?? null},
               ${modelName}, ${dimension}, ${embeddingStr}::vector,
               ${chunks.length}, 0, 0, ${diagram.attachmentId},
-              ${JSON.stringify({ type: 'diagram', diagramType: diagram.type, title: diagram.title || '' })}::jsonb)
+              ${JSON.stringify({ type: 'diagram', diagramType: diagram.type, title: diagram.title || '', chunkText: embText })}::jsonb)
           `.execute(this.db);
         } catch (err: any) {
           this.logger.warn(`Failed to extract diagram ${diagram.attachmentId}: ${err?.message}`);

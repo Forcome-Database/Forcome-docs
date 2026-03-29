@@ -761,6 +761,10 @@ export class AiSearchService {
       let chunkText: string | undefined;
       if (row.metadata?.chunkText) {
         chunkText = row.metadata.chunkText;
+      } else if (row.metadata?.type === 'image' && row.metadata?.description) {
+        chunkText = row.metadata.description;
+      } else if (row.metadata?.type === 'diagram' && row.metadata?.diagramType) {
+        chunkText = `${row.metadata.title || 'Diagram'}: (diagram content)`;
       } else if (row.chunkLength > 0 && row.textContent) {
         chunkText = row.textContent.slice(
           row.chunkStart,
