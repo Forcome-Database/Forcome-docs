@@ -369,6 +369,31 @@ export class AiSearchService {
     );
   }
 
+  /**
+   * Extract heading outline from ProseMirror content for query understanding.
+   * Returns a compact string like "下载地址与订阅链接 | PC端配置教程 | 安卓手机端配置教程"
+   */
+  private extractHeadingOutline(content: any): string | undefined {
+    try {
+      const doc = getProsemirrorContent(content);
+      if (!doc?.content || !Array.isArray(doc.content)) return undefined;
+      const headings: string[] = [];
+      for (const node of doc.content) {
+        if (node.type === 'heading' && node.content) {
+          const text = node.content
+            .filter((c: any) => c.type === 'text')
+            .map((c: any) => c.text || '')
+            .join('')
+            .trim();
+          if (text) headings.push(text);
+        }
+      }
+      return headings.length > 0 ? headings.join(' | ') : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async loadCurrentPage(
     input: AnswerWithContextInput,
   ): Promise<PageRecord | null> {
@@ -1281,11 +1306,16 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     if (this.queryUnderstanding) {
       try {
         const liteModel = this.getLiteModel();
+        // Extract page headings as outline for better query understanding
+        const pageOutline = currentPage?.content
+          ? this.extractHeadingOutline(currentPage.content)
+          : undefined;
         understanding = await this.queryUnderstanding.classifyAndRewrite(
           input.query,
           input.history || [],
           currentPage?.title,
           liteModel,
+          pageOutline,
         );
       } catch (err: any) {
         this.logger.warn(`Query understanding failed, using defaults: ${err?.message}`);
@@ -1303,33 +1333,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       complexity: understanding.complexity,
     });
 
-    // Route A: Out-of-scope — skip retrieval entirely
-    if (understanding.isOutOfScope) {
-      yield JSON.stringify({
-        content: isChinese
-          ? '抱歉，这个问题超出了本知识库的范围。请尝试问一些与文档内容相关的问题。'
-          : 'Sorry, this question is outside the scope of this knowledge base. Please try asking something related to the documentation.',
-      });
-      try {
-        const genericSuggestions = isChinese
-          ? ['有哪些功能模块？', '如何快速上手？', '有什么最新更新？']
-          : ['What features are available?', 'How do I get started?', 'What are the latest updates?'];
-        yield JSON.stringify({ suggestedQuestions: genericSuggestions });
-      } catch {
-        // non-blocking
-      }
-      return;
-    }
-
-    // Route B: Needs clarification — ask user to refine
-    if (understanding.needsClarification && understanding.clarificationQuestion) {
-      yield JSON.stringify({
-        content: understanding.clarificationQuestion,
-      });
-      return;
-    }
-
-    // ---- Retrieval (use rewritten query) ----
+    // ---- Retrieval (always runs — no short-circuits) ----
     const searchQuery = understanding.rewrittenQuery || input.query;
 
     let finalReranked: PageResult[];
@@ -1343,46 +1347,32 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
         input.scope,
       );
     } else {
-      // Route B/C: Standard + optional retry
-      const hybridResults = await this.hybridSearch(
-        searchQuery,
-        input.workspaceId,
-        15,
-        undefined,
-        input.scope,
-      );
-      finalReranked = await this.rerank(searchQuery, hybridResults, 5);
+      // Dual-path retrieval: search with both rewritten and original query
+      const searchPromises: Promise<PageResult[]>[] = [
+        this.hybridSearch(searchQuery, input.workspaceId, 15, undefined, input.scope),
+      ];
+      // If rewritten query differs from original, search both and merge
+      if (searchQuery !== input.query) {
+        searchPromises.push(
+          this.hybridSearch(input.query, input.workspaceId, 10, undefined, input.scope),
+        );
+      }
 
-      // Route C enhancement for complexity >= 2: retry with original query if weak results
-      if (
-        understanding.complexity >= 2 &&
-        searchQuery !== input.query &&
-        finalReranked.length > 0
-      ) {
-        const bestScore = Math.max(...finalReranked.map((r) => r.score));
-        // RRF top-1 score is ~0.0167; a best below 0.01 with few results indicates weakness
-        if (bestScore < 0.01 && finalReranked.length < 3) {
-          this.logger.debug(
-            `Weak results for rewritten query (bestScore=${bestScore.toFixed(4)}, count=${finalReranked.length}), retrying with original`,
-          );
-          const fallbackResults = await this.hybridSearch(
-            input.query,
-            input.workspaceId,
-            15,
-            undefined,
-            input.scope,
-          );
-          // Merge and deduplicate by pageId
-          const seen = new Set(finalReranked.map((r) => r.pageId));
-          for (const r of fallbackResults) {
-            if (!seen.has(r.pageId)) {
-              finalReranked.push(r);
-              seen.add(r.pageId);
-            }
+      const searchResults = await Promise.all(searchPromises);
+      let merged = searchResults[0];
+
+      // Merge second path results if present
+      if (searchResults.length > 1 && searchResults[1].length > 0) {
+        const seen = new Set(merged.map((r) => r.pageId));
+        for (const r of searchResults[1]) {
+          if (!seen.has(r.pageId)) {
+            merged.push(r);
+            seen.add(r.pageId);
           }
-          finalReranked = await this.rerank(input.query, finalReranked, 7);
         }
       }
+
+      finalReranked = await this.rerank(searchQuery, merged, 5);
     }
 
     // ---- Context Assembly ----
@@ -1564,8 +1554,8 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       throw streamError;
     }
 
-    // ---- Groundedness verification (non-blocking warning) ----
-    if (fullAnswer.length > 100) {
+    // ---- Groundedness verification (skip for simple queries, non-blocking) ----
+    if (fullAnswer.length > 100 && understanding.complexity >= 2) {
       try {
         const liteModel = this.getLiteModel();
         const verification = await this.answerVerifier?.verify(

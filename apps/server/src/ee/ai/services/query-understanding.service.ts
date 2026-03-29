@@ -29,6 +29,7 @@ export class QueryUnderstandingService {
     history: AiChatMessage[],
     currentPageTitle: string | undefined,
     liteModel: any,
+    pageOutline?: string,
   ): Promise<QueryUnderstandingResult> {
     const fallback: QueryUnderstandingResult = {
       intent: 'factual',
@@ -50,19 +51,20 @@ export class QueryUnderstandingService {
               .join('\n')
           : '';
 
-      const pageContext = currentPageTitle
-        ? `The user is currently viewing a page titled: "${currentPageTitle}".`
-        : '';
+      let pageContext = '';
+      if (currentPageTitle) {
+        pageContext = `The user is currently viewing a page titled: "${currentPageTitle}".`;
+        if (pageOutline) {
+          pageContext += `\nPage sections: ${pageOutline}`;
+        }
+      }
 
-      const systemPrompt = `You are a query understanding assistant for a knowledge base Q&A system. Analyze the user's query and return a JSON object.
+      const systemPrompt = `You are a query understanding assistant for a knowledge base Q&A system. Classify the user's query intent and rewrite it for optimal retrieval.
 
 Return ONLY a valid JSON object with these fields:
 - intent: one of "factual" | "procedural" | "conceptual" | "troubleshooting" | "comparison" | "follow_up"
 - complexity: integer 1 (simple lookup), 2 (moderate, needs synthesis), or 3 (complex, multi-step reasoning)
-- rewrittenQuery: a standalone, self-contained version of the query. If the query contains pronouns or references to prior conversation, rewrite it as a full question without such references.
-- needsClarification: boolean — true if the query is too vague to answer well
-- clarificationQuestion: string (only when needsClarification is true) — a focused question to ask the user
-- isOutOfScope: boolean — true if the query is unrelated to the knowledge base (e.g. weather, jokes, general trivia)
+- rewrittenQuery: a standalone, self-contained version of the query optimized for knowledge base search. Resolve pronouns using conversation history. If page sections are provided, use them to make the query more specific.
 
 Query rewriting rules:
 - Resolve pronouns and elliptical references using conversation history.
@@ -130,21 +132,12 @@ Intent definitions:
           ? parsed.rewrittenQuery.trim()
           : query;
 
-      const needsClarification = Boolean(parsed.needsClarification);
-      const clarificationQuestion =
-        needsClarification && typeof parsed.clarificationQuestion === 'string'
-          ? parsed.clarificationQuestion
-          : undefined;
-
-      const isOutOfScope = Boolean(parsed.isOutOfScope);
-
       return {
         intent,
         complexity,
         rewrittenQuery,
-        needsClarification,
-        clarificationQuestion,
-        isOutOfScope,
+        needsClarification: false,
+        isOutOfScope: false,
       };
     } catch (err: any) {
       this.logger.warn(
