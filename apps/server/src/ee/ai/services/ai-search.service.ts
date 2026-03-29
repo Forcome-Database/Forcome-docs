@@ -248,25 +248,16 @@ export class AiSearchService {
     return `${this.environmentService.getAppUrl()}${rawUrl}`;
   }
 
-  /**
-   * Build a SHORT asset URL for LLM context (no JWT token).
-   * Use buildFullAssetUrl() for the actual public-facing URL with JWT.
-   */
-  private buildContextAssetUrl(
-    asset: Pick<DocumentAssetProjection, 'attachmentId' | 'rawUrl' | 'title'>,
-  ): string {
-    return this.buildAppAssetUrl(asset);
-  }
-
-  /**
-   * Build the FULL asset URL with JWT token for public wiki display.
-   */
-  private async buildFullAssetUrl(
+  private async buildResolvedAssetUrl(
     page: Pick<PageRecord, 'pageId' | 'workspaceId'>,
     asset: Pick<DocumentAssetProjection, 'attachmentId' | 'rawUrl' | 'title'>,
     scope?: RetrievalScope,
   ): Promise<string> {
-    if (!scope?.isPublicWiki || !this.tokenService) {
+    if (!scope?.isPublicWiki) {
+      return this.buildAppAssetUrl(asset);
+    }
+
+    if (!this.tokenService) {
       return this.buildAppAssetUrl(asset);
     }
 
@@ -279,17 +270,6 @@ export class AiSearchService {
     const rawUrl =
       asset.rawUrl || `/api/files/${asset.attachmentId}/${asset.title}`;
     return `${this.environmentService.getAppUrl()}${buildPublicAttachmentUrl(rawUrl, token)}`;
-  }
-
-  /**
-   * Legacy alias — kept for citation URL generation which needs full JWT URLs.
-   */
-  private async buildResolvedAssetUrl(
-    page: Pick<PageRecord, 'pageId' | 'workspaceId'>,
-    asset: Pick<DocumentAssetProjection, 'attachmentId' | 'rawUrl' | 'title'>,
-    scope?: RetrievalScope,
-  ): Promise<string> {
-    return this.buildFullAssetUrl(page, asset, scope);
   }
 
   private createPageCitation(page: PageRecord): AiCitation {
@@ -466,7 +446,6 @@ export class AiSearchService {
     page: PageRecord,
     scope: RetrievalScope | undefined,
     imageDescriptions?: Map<string, string>,
-    urlMap?: Map<string, { shortUrl: string; fullUrl: string }>,
   ) {
     if (!page.content) {
       return (page.textContent || '').trim();
@@ -477,17 +456,10 @@ export class AiSearchService {
     const resolvedUrlMap = new Map<string, string>();
 
     for (const asset of assets) {
-      // Use SHORT URLs in LLM context to save token budget
-      const shortUrl = this.buildContextAssetUrl(asset);
-      resolvedUrlMap.set(asset.attachmentId, shortUrl);
-
-      // Build full JWT URL for post-processing replacement
-      if (scope?.isPublicWiki && urlMap) {
-        const fullUrl = await this.buildFullAssetUrl(page, asset, scope);
-        if (fullUrl !== shortUrl) {
-          urlMap.set(shortUrl, { shortUrl, fullUrl });
-        }
-      }
+      resolvedUrlMap.set(
+        asset.attachmentId,
+        await this.buildResolvedAssetUrl(page, asset, scope),
+      );
     }
 
     const linkSummary = collectDocumentLinkProjections(document)
@@ -1173,8 +1145,6 @@ export class AiSearchService {
     const contextParts: string[] = [];
     const legacySources: LegacySourceItem[] = [];
     const citations: AiCitation[] = [];
-    // Map short URLs → full JWT URLs for post-processing LLM output
-    const assetUrlMap = new Map<string, { shortUrl: string; fullUrl: string }>();
     let sourceIndex = 1;
 
     if (currentPage) {
@@ -1184,7 +1154,6 @@ export class AiSearchService {
             currentPage,
             input.scope,
             imageDescriptions,
-            assetUrlMap,
           )
         : (currentPage.textContent || '').slice(0, 20000);
 
@@ -1310,16 +1279,7 @@ export class AiSearchService {
 
     try {
       for await (const text of this.stripThinkBlocks(result.textStream)) {
-        // Replace short internal URLs with full JWT-signed URLs for public wiki
-        let processedText = text;
-        if (assetUrlMap.size > 0) {
-          for (const [shortUrl, { fullUrl }] of assetUrlMap) {
-            if (processedText.includes(shortUrl)) {
-              processedText = processedText.replaceAll(shortUrl, fullUrl);
-            }
-          }
-        }
-        yield JSON.stringify({ content: processedText });
+        yield JSON.stringify({ content: text });
       }
     } catch (streamError: any) {
       const message = streamError?.message || '';
