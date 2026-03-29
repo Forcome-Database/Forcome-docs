@@ -57,6 +57,7 @@ const modifierKey = getAIChatModifierKey()
 // ===== 状态 =====
 const messages = ref<ChatMessage[]>([])
 const conversationId = ref<string | null>(null)
+const sessionId = ref<string | null>(null)
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 const inputText = ref('')
@@ -310,6 +311,8 @@ const loadHistory = () => {
     messages.value = []
     conversationId.value = null
   }
+  // Reset server-side session ID on page navigation — each page gets a fresh session
+  sessionId.value = null
   error.value = null
 }
 
@@ -392,7 +395,11 @@ const sendMessage = async (content: string) => {
       }
 
       // Docmost AI 流式问答（多轮对话 + 图片 + 来源引用卡片化）
-      for await (const event of docmostService.aiAnswers(messageContent, getCurrentPageSlugId(), imagePayload, history)) {
+      for await (const event of docmostService.aiAnswers(messageContent, getCurrentPageSlugId(), imagePayload, history, sessionId.value ?? undefined)) {
+        // Capture server-side session ID from the first SSE event
+        if (event.sessionId) {
+          sessionId.value = event.sessionId
+        }
         if (event.sources) {
           const currentMsg = messages.value[assistantIndex]
           messages.value[assistantIndex] = { ...currentMsg, sources: event.sources }
@@ -470,6 +477,7 @@ const handleClearHistory = () => {
   if (confirm('确定要清空当前页面的对话历史吗？')) {
     messages.value = []
     conversationId.value = null
+    sessionId.value = null
     error.value = null
     storage.remove(getChatStorageKey())
   }
@@ -638,6 +646,7 @@ onMounted(() => {
   // 每次打开面板都是新对话（历史记录通过历史按钮访问）
   messages.value = []
   conversationId.value = null
+  sessionId.value = null
   error.value = null
   updatePageTitle()
   document.addEventListener('keydown', handleKeydown)

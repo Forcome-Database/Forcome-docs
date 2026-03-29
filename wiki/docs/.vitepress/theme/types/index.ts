@@ -394,6 +394,8 @@ export interface DocmostAiStreamEvent {
   complexity?: number
   suggestedQuestions?: string[]
   warning?: string
+  /** Server-side conversation session ID (emitted as the first SSE event) */
+  sessionId?: string
 }
 
 // ===== 组件 Props 类型 =====

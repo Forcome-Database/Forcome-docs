@@ -109,12 +109,14 @@ export class DocmostService {
    * @param pageSlugId 当前页面 slugId（可选，用于上下文定位）
    * @param images 附带的图片列表（可选，base64 编码）
    * @param history 多轮对话历史（可选）
+   * @param sessionId 服务端会话 ID（可选，用于 Redis 会话延续）
    */
   async *aiAnswers(
     query: string,
     pageSlugId?: string,
     images?: { data: string; mimeType: string }[],
     history?: AiHistoryMessage[],
+    sessionId?: string,
   ): AsyncGenerator<DocmostAiStreamEvent> {
     this.abort()
     this.abortController = new AbortController()
@@ -126,6 +128,7 @@ export class DocmostService {
       if (pageSlugId) body.pageSlugId = pageSlugId
       if (images?.length) body.images = images
       if (history && history.length > 0) body.history = history
+      if (sessionId) body.sessionId = sessionId
 
       response = await fetch(`${this.config.baseUrl}/ai/answers`, {
         method: 'POST',
