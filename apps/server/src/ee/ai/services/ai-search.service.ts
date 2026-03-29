@@ -919,11 +919,11 @@ export class AiSearchService {
       rank: number;
     }>
   > {
-    // Sanitize query: remove characters that are special in tsquery syntax
-    // Chinese quotes ""、parentheses ()（）、question marks ?？、colons :、exclamation !
+    // Sanitize: keep ONLY letters, digits, CJK chars, and spaces.
+    // Strips all tsquery-special chars, emoji, angle brackets, quotes, etc.
     const rawQuery = query
       .trim()
-      .replace(/["""()（）?？!！:：*&|<>\\]/g, ' ')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     if (!rawQuery) {
