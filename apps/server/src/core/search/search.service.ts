@@ -13,12 +13,27 @@ const tsquery = require('pg-tsquery')();
 
 @Injectable()
 export class SearchService {
+  private hasJieba: boolean | null = null;
+
   constructor(
     @InjectKysely() private readonly db: KyselyDB,
     private pageRepo: PageRepo,
     private shareRepo: ShareRepo,
     private spaceMemberRepo: SpaceMemberRepo,
   ) {}
+
+  private async checkJiebaAvailable(): Promise<boolean> {
+    if (this.hasJieba !== null) return this.hasJieba;
+    try {
+      const result = await sql<{ cnt: string }>`
+        SELECT COUNT(*)::text as cnt FROM pg_ts_config WHERE cfgname = 'jiebacfg'
+      `.execute(this.db);
+      this.hasJieba = result.rows.length > 0 && result.rows[0].cnt !== '0';
+    } catch {
+      this.hasJieba = false;
+    }
+    return this.hasJieba;
+  }
 
   async searchPage(
     searchParams: SearchDTO,
@@ -34,6 +49,11 @@ export class SearchService {
     }
     const rawQuery = query.trim();
     const searchQuery = tsquery(rawQuery + '*');
+    const useJieba = await this.checkJiebaAvailable();
+
+    const tsqueryExpr = useJieba
+      ? sql`(to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery}))`
+      : sql`to_tsquery('english', f_unaccent(${searchQuery}))`;
 
     let queryResults = this.db
       .selectFrom('pages')
@@ -46,9 +66,7 @@ export class SearchService {
         'creatorId',
         'createdAt',
         'updatedAt',
-        sql<number>`ts_rank(tsv, (to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery})))`.as(
-          'rank',
-        ),
+        sql<number>`ts_rank(tsv, ${tsqueryExpr})`.as('rank'),
         sql<string>`ts_headline('english', text_content, to_tsquery('english', f_unaccent(${searchQuery})),'MinWords=9, MaxWords=10, MaxFragments=3')`.as(
           'highlight',
         ),
@@ -56,7 +74,7 @@ export class SearchService {
       .where(
         'tsv',
         '@@',
-        sql<string>`(to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery}))`,
+        sql<string>`${tsqueryExpr}`,
       )
       .$if(Boolean(searchParams.creatorId), (qb) =>
         qb.where('creatorId', '=', searchParams.creatorId),

@@ -119,12 +119,26 @@ function getProsemirrorContent(content: any) {
 export class AiSearchService {
   private readonly logger = new Logger(AiSearchService.name);
   private embeddingCache = new Map<string, { embedding: number[]; expires: number }>();
+  private hasJieba: boolean | null = null;
 
   constructor(
     @InjectKysely() private readonly db: KyselyDB,
     private readonly environmentService: EnvironmentService,
     private readonly tokenService?: TokenService,
   ) {}
+
+  private async checkJiebaAvailable(): Promise<boolean> {
+    if (this.hasJieba !== null) return this.hasJieba;
+    try {
+      const result = await sql<{ cnt: string }>`
+        SELECT COUNT(*)::text as cnt FROM pg_ts_config WHERE cfgname = 'jiebacfg'
+      `.execute(this.db);
+      this.hasJieba = result.rows.length > 0 && result.rows[0].cnt !== '0';
+    } catch {
+      this.hasJieba = false;
+    }
+    return this.hasJieba;
+  }
 
   private buildInClause(values: string[]) {
     return sql.join(values.map((value) => sql`${value}`), sql`, `);
@@ -868,6 +882,11 @@ export class AiSearchService {
     const rawQuery = query.trim();
     const searchQuery = tsquery(rawQuery + '*');
     const scopeCondition = this.buildPageScopeCondition(scope, filters, 'p');
+    const useJieba = await this.checkJiebaAvailable();
+
+    const tsqueryExpr = useJieba
+      ? sql`(to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery}))`
+      : sql`to_tsquery('english', f_unaccent(${searchQuery}))`;
 
     const results = await sql`
       SELECT
@@ -876,12 +895,12 @@ export class AiSearchService {
         p.slug_id as "slugId",
         p.text_content as "textContent",
         s.slug as "spaceSlug",
-        ts_rank(p.tsv, (to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery}))) as rank
+        ts_rank(p.tsv, ${tsqueryExpr}) as rank
       FROM pages p
       JOIN spaces s ON s.id = p.space_id
       WHERE p.workspace_id = ${workspaceId}
         AND p.deleted_at IS NULL
-        AND p.tsv @@ (to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery}))
+        AND p.tsv @@ ${tsqueryExpr}
         AND ${scopeCondition}
       ORDER BY rank DESC
       LIMIT ${limit}
