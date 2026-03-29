@@ -91,11 +91,22 @@ function getNodeText(node: any): string {
   return node.content.map((child) => getNodeText(child)).join('');
 }
 
+/**
+ * Extract attachmentId from src URL when the attribute is missing.
+ * AI-created content often has src="/api/files/{uuid}/filename" without explicit attachmentId.
+ */
+function attachmentIdFromSrc(src: string): string | undefined {
+  if (!src) return undefined;
+  const match = src.match(/\/api\/files\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\//i);
+  return match?.[1];
+}
+
 function getAssetProjection(
   node: any,
   imageDescriptions?: Map<string, string>,
 ): DocumentAssetProjection | null {
-  const attachmentId = node?.attrs?.attachmentId;
+  const attachmentId = node?.attrs?.attachmentId
+    || attachmentIdFromSrc(node?.attrs?.src || node?.attrs?.url);
   if (!attachmentId) return null;
 
   if (node.type === 'attachment') {

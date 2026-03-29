@@ -34,16 +34,29 @@ function fileNameFromSrc(src: string): string | undefined {
   return last || undefined;
 }
 
+/**
+ * Extract attachmentId from src URL when the attribute is missing.
+ * Handles: /api/files/{uuid}/filename and http://host/api/files/{uuid}/filename
+ */
+function attachmentIdFromSrc(src: string): string | undefined {
+  if (!src) return undefined;
+  const match = src.match(/\/api\/files\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\//i);
+  return match?.[1];
+}
+
 export function extractImageNodes(prosemirrorJson: any): ImageNodeInfo[] {
   const results: ImageNodeInfo[] = [];
   traverseNodes(prosemirrorJson, (node) => {
-    if (node.type === 'image' && node.attrs?.attachmentId) {
-      results.push({
-        attachmentId: node.attrs.attachmentId,
-        src: node.attrs.src || '',
-        alt: node.attrs.alt || undefined,
-        fileName: fileNameFromSrc(node.attrs.src),
-      });
+    if (node.type === 'image') {
+      const attachmentId = node.attrs?.attachmentId || attachmentIdFromSrc(node.attrs?.src);
+      if (attachmentId) {
+        results.push({
+          attachmentId,
+          src: node.attrs.src || '',
+          alt: node.attrs.alt || undefined,
+          fileName: fileNameFromSrc(node.attrs.src),
+        });
+      }
     }
   });
   return results;
