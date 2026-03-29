@@ -61,6 +61,7 @@ const sessionId = ref<string | null>(null)
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 const inputText = ref('')
+const deepResearch = ref(false)
 
 // 服务实例
 let difyService = createDifyService()
@@ -395,7 +396,7 @@ const sendMessage = async (content: string) => {
       }
 
       // Docmost AI 流式问答（多轮对话 + 图片 + 来源引用卡片化）
-      for await (const event of docmostService.aiAnswers(messageContent, getCurrentPageSlugId(), imagePayload, history, sessionId.value ?? undefined)) {
+      for await (const event of docmostService.aiAnswers(messageContent, getCurrentPageSlugId(), imagePayload, history, sessionId.value ?? undefined, deepResearch.value)) {
         // Capture server-side session ID from the first SSE event
         if (event.sessionId) {
           sessionId.value = event.sessionId
@@ -818,27 +819,38 @@ onUnmounted(() => {
               @change="handleFileSelect"
             />
 
-            <Sender
-              v-model:value="inputText"
-              placeholder="输入你的问题..."
-              :loading="isLoading"
-              submit-type="enter"
-              class="ai-chat-sender"
-              @submit="handleSubmit"
-              @cancel="abort"
-            >
-              <template #prefix>
-                <button
-                  class="ai-chat-upload-btn"
-                  type="button"
-                  aria-label="上传图片"
-                  :disabled="pendingImages.length >= MAX_IMAGES"
-                  @click="fileInputRef?.click()"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                </button>
-              </template>
-            </Sender>
+            <div class="ai-chat-sender-row">
+              <button
+                class="deep-research-toggle"
+                :class="{ active: deepResearch }"
+                type="button"
+                @click="deepResearch = !deepResearch"
+                :title="deepResearch ? '深度研究模式已开启' : '开启深度研究模式'"
+              >
+                🔍
+              </button>
+              <Sender
+                v-model:value="inputText"
+                placeholder="输入你的问题..."
+                :loading="isLoading"
+                submit-type="enter"
+                class="ai-chat-sender"
+                @submit="handleSubmit"
+                @cancel="abort"
+              >
+                <template #prefix>
+                  <button
+                    class="ai-chat-upload-btn"
+                    type="button"
+                    aria-label="上传图片"
+                    :disabled="pendingImages.length >= MAX_IMAGES"
+                    @click="fileInputRef?.click()"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  </button>
+                </template>
+              </Sender>
+            </div>
             <p class="ai-chat-input-hint">
               <kbd>Enter</kbd> 发送 · <kbd>Shift+Enter</kbd> 换行 · <kbd>ESC</kbd> 关闭 · 可粘贴图片
             </p>

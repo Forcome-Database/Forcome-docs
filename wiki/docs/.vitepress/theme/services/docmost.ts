@@ -110,6 +110,7 @@ export class DocmostService {
    * @param images 附带的图片列表（可选，base64 编码）
    * @param history 多轮对话历史（可选）
    * @param sessionId 服务端会话 ID（可选，用于 Redis 会话延续）
+   * @param deepResearch 深度研究模式（可选，强制 complexity=3 + 扩展上下文）
    */
   async *aiAnswers(
     query: string,
@@ -117,6 +118,7 @@ export class DocmostService {
     images?: { data: string; mimeType: string }[],
     history?: AiHistoryMessage[],
     sessionId?: string,
+    deepResearch?: boolean,
   ): AsyncGenerator<DocmostAiStreamEvent> {
     this.abort()
     this.abortController = new AbortController()
@@ -129,6 +131,7 @@ export class DocmostService {
       if (images?.length) body.images = images
       if (history && history.length > 0) body.history = history
       if (sessionId) body.sessionId = sessionId
+      if (deepResearch) body.deepResearch = true
 
       response = await fetch(`${this.config.baseUrl}/ai/answers`, {
         method: 'POST',
