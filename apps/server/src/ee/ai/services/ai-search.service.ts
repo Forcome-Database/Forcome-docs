@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectKysely } from 'nestjs-kysely';
 import { KyselyDB } from '@docmost/db/types/kysely.types';
 import { EnvironmentService } from '../../../integrations/environment/environment.service';
@@ -11,7 +11,8 @@ import {
   type QueryIntent,
 } from './query-understanding.service';
 import { AnswerVerifierService } from './answer-verifier.service';
-import { getIntentSystemPrompt } from '../utils/intent-prompts';
+import { getIntentSystemPrompt, getLowConfidenceResponse } from '../utils/intent-prompts';
+import { RetrievalQualityService, type RetrievalQualityResult } from './retrieval-quality.service';
 import {
   collectDocumentAssetProjections,
   collectDocumentAssetSources,
@@ -135,6 +136,7 @@ export class AiSearchService {
     private readonly tokenService?: TokenService,
     private readonly queryUnderstanding?: QueryUnderstandingService,
     private readonly answerVerifier?: AnswerVerifierService,
+    @Optional() private readonly retrievalQuality?: RetrievalQualityService,
   ) {}
 
   private async checkJiebaAvailable(): Promise<boolean> {
@@ -1377,6 +1379,65 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       finalReranked = await this.rerank(searchQuery, merged, 5);
     }
 
+    // ---- Answerability Gate ----
+    let qualityResult: RetrievalQualityResult = {
+      confidence: 'medium',
+      isPublicTopic: false,
+    };
+
+    if (this.retrievalQuality) {
+      try {
+        qualityResult = await this.retrievalQuality.assess(
+          input.query,
+          understanding.intent,
+          finalReranked.map((r) => ({
+            pageTitle: r.title,
+            chunkText: r.chunkText || r.textContent?.slice(0, 300),
+            score: r.score,
+          })),
+          currentPage?.title,
+          this.getLiteModel(),
+        );
+        this.logger.debug(
+          `Retrieval quality: ${qualityResult.confidence}, isPublicTopic=${qualityResult.isPublicTopic}`,
+        );
+      } catch {
+        // Fail-open: continue with generation
+      }
+    }
+
+    // LOW confidence + private topic → honest refusal
+    if (qualityResult.confidence === 'low' && !qualityResult.isPublicTopic) {
+      yield JSON.stringify({
+        sources: this.dedupePageSources(
+          currentPage
+            ? [{ title: currentPage.title, slugId: currentPage.slugId, spaceSlug: currentPage.spaceSlug, distance: 0 }]
+            : [],
+        ),
+        citations: currentPage ? [this.createPageCitation(currentPage)] : [],
+      });
+      yield JSON.stringify({
+        content: getLowConfidenceResponse(input.query, isChinese, currentPage?.title),
+      });
+      try {
+        const suggestions = await this.generateSuggestedQuestions(
+          input.query, understanding.intent, '', currentPage?.title, isChinese,
+        );
+        if (suggestions.length > 0) {
+          yield JSON.stringify({ suggestedQuestions: suggestions });
+        }
+      } catch { /* non-blocking */ }
+      return;
+    }
+
+    // LOW confidence + public topic → cautionary hint for LLM (P1 will add external search here)
+    let confidenceHint = '';
+    if (qualityResult.confidence === 'low' && qualityResult.isPublicTopic) {
+      confidenceHint = isChinese
+        ? '\n\n⚠️ 注意：知识库中可能没有足够信息回答这个问题。如果你无法从上下文中找到答案，请明确说明"知识库中暂无此内容"，不要编造答案。'
+        : '\n\n⚠️ Warning: The knowledge base may not have sufficient information. If you cannot find the answer in the context, explicitly say "the knowledge base does not have this information" — do NOT fabricate.';
+    }
+
     // ---- Context Assembly ----
     const pageIds = Array.from(
       new Set(
@@ -1487,7 +1548,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       understanding.intent,
       isChinese,
       context,
-    );
+    ) + confidenceHint;
 
     const messages: any[] = [
       {
