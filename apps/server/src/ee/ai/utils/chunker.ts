@@ -104,6 +104,41 @@ function segmentByCodeBlocks(text: string): Segment[] {
   return segments;
 }
 
+function splitByHeadings(text: string): Array<{ text: string; start: number; heading: string }> {
+  // First, identify code block ranges to exclude
+  const codeBlockRanges: Array<[number, number]> = [];
+  const codePattern = /```[\s\S]*?```/g;
+  let codeMatch: RegExpExecArray | null;
+  while ((codeMatch = codePattern.exec(text)) !== null) {
+    codeBlockRanges.push([codeMatch.index, codeMatch.index + codeMatch[0].length]);
+  }
+
+  const isInsideCodeBlock = (pos: number): boolean =>
+    codeBlockRanges.some(([start, end]) => pos >= start && pos < end);
+
+  const sections: Array<{ text: string; start: number; heading: string }> = [];
+  const headingPattern = /^(#{1,6})\s+(.+)$/gm;
+  let lastEnd = 0;
+  let lastHeading = '';
+  let match: RegExpExecArray | null;
+
+  while ((match = headingPattern.exec(text)) !== null) {
+    if (isInsideCodeBlock(match.index)) continue;
+
+    if (match.index > lastEnd) {
+      sections.push({ text: text.slice(lastEnd, match.index), start: lastEnd, heading: lastHeading });
+    }
+    lastHeading = match[2].trim();
+    lastEnd = match.index;
+  }
+
+  if (lastEnd < text.length) {
+    sections.push({ text: text.slice(lastEnd), start: lastEnd, heading: lastHeading });
+  }
+
+  return sections.filter(s => s.text.trim().length > 0);
+}
+
 export function chunkText(
   text: string,
   maxChars = 1600,
@@ -113,7 +148,10 @@ export function chunkText(
     return [];
   }
 
-  if (text.length <= maxChars) {
+  const sections = splitByHeadings(text);
+
+  // Only short-circuit for small text without headings
+  if (text.length <= maxChars && sections.length <= 1) {
     return [
       {
         text,
@@ -123,26 +161,36 @@ export function chunkText(
       },
     ];
   }
-
-  const segments = segmentByCodeBlocks(text);
   const rawChunks: TextChunk[] = [];
 
-  for (const segment of segments) {
-    if (segment.splittable) {
-      const sub = splitBySentenceBoundary(
-        segment.text,
-        segment.start,
-        maxChars,
-        overlapRatio,
-      );
-      rawChunks.push(...sub);
-    } else {
+  for (const section of sections) {
+    if (section.text.length <= maxChars) {
       rawChunks.push({
-        text: segment.text,
+        text: section.text,
         chunkIndex: -1,
-        chunkStart: segment.start,
-        chunkLength: segment.text.length,
+        chunkStart: section.start,
+        chunkLength: section.text.length,
       });
+    } else {
+      const segments = segmentByCodeBlocks(section.text);
+      for (const segment of segments) {
+        if (segment.splittable) {
+          const sub = splitBySentenceBoundary(
+            segment.text,
+            section.start + segment.start,
+            maxChars,
+            overlapRatio,
+          );
+          rawChunks.push(...sub);
+        } else {
+          rawChunks.push({
+            text: segment.text,
+            chunkIndex: -1,
+            chunkStart: section.start + segment.start,
+            chunkLength: segment.text.length,
+          });
+        }
+      }
     }
   }
 
