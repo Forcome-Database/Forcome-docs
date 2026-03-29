@@ -770,7 +770,7 @@ export class AiSearchService {
     query: string,
     workspaceId: string,
     limit = 20,
-    distanceThreshold = 0.5,
+    distanceThreshold = 0.8,
     filters?: SearchFilters,
     scope?: RetrievalScope,
   ): Promise<ChunkResult[]> {
@@ -810,35 +810,43 @@ export class AiSearchService {
       `.execute(trx);
     });
 
-    return (results.rows as any[]).map((row) => {
-      let chunkText: string | undefined;
-      if (row.metadata?.chunkText) {
-        chunkText = row.metadata.chunkText;
-      } else if (row.metadata?.type === 'image' && row.metadata?.description) {
-        chunkText = row.metadata.description;
-      } else if (row.metadata?.type === 'diagram' && row.metadata?.diagramType) {
-        chunkText = `${row.metadata.title || 'Diagram'}: (diagram content)`;
-      } else if (row.chunkLength > 0 && row.textContent) {
-        chunkText = row.textContent.slice(
-          row.chunkStart,
-          row.chunkStart + row.chunkLength,
-        );
-      }
+    const rows = results.rows as any[];
+    if (rows.length === 0) return [];
 
-      return {
-        pageId: row.pageId,
-        title: row.title,
-        slugId: row.slugId,
-        spaceSlug: row.spaceSlug,
-        textContent: row.textContent,
-        distance: parseFloat(row.distance),
-        chunkIndex: row.chunkIndex,
-        chunkStart: row.chunkStart,
-        chunkLength: row.chunkLength,
-        chunkText,
-        metadata: row.metadata,
-      };
-    });
+    const bestDistance = parseFloat(rows[0].distance);
+    const adaptiveThreshold = Math.min(0.5, Math.max(0.3, bestDistance * 2.5));
+
+    return rows
+      .filter(row => parseFloat(row.distance) <= adaptiveThreshold)
+      .map((row) => {
+        let chunkText: string | undefined;
+        if (row.metadata?.chunkText) {
+          chunkText = row.metadata.chunkText;
+        } else if (row.metadata?.type === 'image' && row.metadata?.description) {
+          chunkText = row.metadata.description;
+        } else if (row.metadata?.type === 'diagram' && row.metadata?.diagramType) {
+          chunkText = `${row.metadata.title || 'Diagram'}: (diagram content)`;
+        } else if (row.chunkLength > 0 && row.textContent) {
+          chunkText = row.textContent.slice(
+            row.chunkStart,
+            row.chunkStart + row.chunkLength,
+          );
+        }
+
+        return {
+          pageId: row.pageId,
+          title: row.title,
+          slugId: row.slugId,
+          spaceSlug: row.spaceSlug,
+          textContent: row.textContent,
+          distance: parseFloat(row.distance),
+          chunkIndex: row.chunkIndex,
+          chunkStart: row.chunkStart,
+          chunkLength: row.chunkLength,
+          chunkText,
+          metadata: row.metadata,
+        };
+      });
   }
 
   async searchByBM25(
@@ -899,7 +907,7 @@ export class AiSearchService {
     const rrfK = 60;
 
     const [chunks, bm25Results] = await Promise.all([
-      this.searchSimilarChunks(query, workspaceId, 20, 0.5, filters, scope),
+      this.searchSimilarChunks(query, workspaceId, 20, 0.8, filters, scope),
       this.searchByBM25(query, workspaceId, 20, filters, scope),
     ]);
 
