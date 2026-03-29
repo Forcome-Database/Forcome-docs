@@ -170,8 +170,27 @@ Docker 文件结构：
 - `unaccent`：全文搜索去重音
 - `pg_trgm`：模糊搜索
 - `vector`（pgvector）：AI 语义搜索向量存储
+- `pg_jieba`（可选）：中文分词，安装后搜索和 RAG 自动启用双语 jiebacfg 分词
 
-如使用非标准安装的 PostgreSQL（如宝塔面板），需手动编译安装 contrib 和 pgvector，详见相关踩坑文档。
+如使用非标准安装的 PostgreSQL（如宝塔面板），需手动编译安装 contrib、pgvector 和 pg_jieba，详见相关踩坑文档。
+
+## RAG 向量检索架构（2026-03-29 优化后）
+
+混合检索管道：向量搜索 + BM25 全文搜索 + RRF 融合 + Reranking + 上下文组装 + LLM 流式回答。
+
+关键文件：
+- 分块：`apps/server/src/ee/ai/utils/chunker.ts`（Markdown 标题感知 + 1600 字符递归 + 20% overlap）
+- Embedding 管道：`apps/server/src/ee/ai/ai-queue.processor.ts`（BullMQ 异步，per-document context prefix）
+- 搜索服务：`apps/server/src/ee/ai/services/ai-search.service.ts`（混合搜索、自适应阈值、multi-chunk RRF、embedding 缓存）
+- 上下文投影：`apps/server/src/common/helpers/prosemirror/content-projection.ts`
+- 图片提取：`apps/server/src/ee/ai/utils/content-extractor.ts`
+
+关键约束：
+- `page_embeddings` 表通过 `ai-queue.processor.ts` 动态创建（非迁移文件）
+- HNSW 索引参数 m=16, ef_construction=200；查询时 SET LOCAL hnsw.ef_search=100（需在事务内）
+- 图片节点必须有 `attachmentId`：`persistence.extension.ts` 的 `ensureImageAttachmentIds()` 在保存时从 src URL 提取
+- jiebacfg 搜索通过 `checkJiebaAvailable()` 条件启用（pg_jieba 未安装时自动回退到 English-only）
+- Wiki 公共 AI 问答用完整 JWT 签名 URL（不可用短 URL 替代，LLM 不保证原样输出 URL）
 
 ## EE 模块关键约束
 
