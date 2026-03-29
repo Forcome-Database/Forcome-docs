@@ -415,6 +415,13 @@ const sendMessage = async (content: string) => {
           const currentMsg = messages.value[assistantIndex]
           messages.value[assistantIndex] = { ...currentMsg, suggestedQuestions: event.suggestedQuestions }
         }
+        if (event.warning) {
+          const currentMsg = messages.value[assistantIndex]
+          messages.value[assistantIndex] = {
+            ...currentMsg,
+            content: currentMsg.content + '\n\n' + event.warning
+          }
+        }
       }
       const currentMsg = messages.value[assistantIndex]
       messages.value[assistantIndex] = { ...currentMsg, isStreaming: false }

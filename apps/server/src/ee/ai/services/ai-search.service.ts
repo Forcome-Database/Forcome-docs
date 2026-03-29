@@ -10,6 +10,7 @@ import {
   type QueryUnderstandingResult,
   type QueryIntent,
 } from './query-understanding.service';
+import { AnswerVerifierService } from './answer-verifier.service';
 import { getIntentSystemPrompt } from '../utils/intent-prompts';
 import {
   collectDocumentAssetProjections,
@@ -132,6 +133,7 @@ export class AiSearchService {
     private readonly environmentService: EnvironmentService,
     private readonly tokenService?: TokenService,
     private readonly queryUnderstanding?: QueryUnderstandingService,
+    private readonly answerVerifier?: AnswerVerifierService,
   ) {}
 
   private async checkJiebaAvailable(): Promise<boolean> {
@@ -1541,6 +1543,26 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
         return;
       }
       throw streamError;
+    }
+
+    // ---- Groundedness verification (non-blocking warning) ----
+    if (fullAnswer.length > 100) {
+      try {
+        const liteModel = this.getLiteModel();
+        const verification = await this.answerVerifier?.verify(
+          fullAnswer,
+          context,
+          liteModel,
+        );
+        if (verification && !verification.isGrounded && verification.ungroundedClaims.length > 0) {
+          const warningMsg = isChinese
+            ? `⚠️ 以下内容可能未在知识库中找到充分依据：${verification.ungroundedClaims.slice(0, 3).join('、')}`
+            : `⚠️ These claims may not be fully supported: ${verification.ungroundedClaims.slice(0, 3).join(', ')}`;
+          yield JSON.stringify({ warning: warningMsg });
+        }
+      } catch {
+        // Non-blocking: silently skip verification failures
+      }
     }
 
     // ---- Suggested Follow-up Questions (non-blocking) ----
