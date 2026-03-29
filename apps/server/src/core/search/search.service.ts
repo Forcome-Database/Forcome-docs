@@ -32,7 +32,8 @@ export class SearchService {
     if (query.length < 1) {
       return { items: [] };
     }
-    const searchQuery = tsquery(query.trim() + '*');
+    const rawQuery = query.trim();
+    const searchQuery = tsquery(rawQuery + '*');
 
     let queryResults = this.db
       .selectFrom('pages')
@@ -45,7 +46,7 @@ export class SearchService {
         'creatorId',
         'createdAt',
         'updatedAt',
-        sql<number>`ts_rank(tsv, to_tsquery('english', f_unaccent(${searchQuery})))`.as(
+        sql<number>`ts_rank(tsv, (to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery})))`.as(
           'rank',
         ),
         sql<string>`ts_headline('english', text_content, to_tsquery('english', f_unaccent(${searchQuery})),'MinWords=9, MaxWords=10, MaxFragments=3')`.as(
@@ -55,7 +56,7 @@ export class SearchService {
       .where(
         'tsv',
         '@@',
-        sql<string>`to_tsquery('english', f_unaccent(${searchQuery}))`,
+        sql<string>`(to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery}))`,
       )
       .$if(Boolean(searchParams.creatorId), (qb) =>
         qb.where('creatorId', '=', searchParams.creatorId),

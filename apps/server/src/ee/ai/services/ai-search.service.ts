@@ -804,7 +804,8 @@ export class AiSearchService {
       rank: number;
     }>
   > {
-    const searchQuery = tsquery(query.trim() + '*');
+    const rawQuery = query.trim();
+    const searchQuery = tsquery(rawQuery + '*');
     const scopeCondition = this.buildPageScopeCondition(scope, filters, 'p');
 
     const results = await sql`
@@ -814,12 +815,12 @@ export class AiSearchService {
         p.slug_id as "slugId",
         p.text_content as "textContent",
         s.slug as "spaceSlug",
-        ts_rank(p.tsv, to_tsquery('english', f_unaccent(${searchQuery}))) as rank
+        ts_rank(p.tsv, (to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery}))) as rank
       FROM pages p
       JOIN spaces s ON s.id = p.space_id
       WHERE p.workspace_id = ${workspaceId}
         AND p.deleted_at IS NULL
-        AND p.tsv @@ to_tsquery('english', f_unaccent(${searchQuery}))
+        AND p.tsv @@ (to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery}))
         AND ${scopeCondition}
       ORDER BY rank DESC
       LIMIT ${limit}
