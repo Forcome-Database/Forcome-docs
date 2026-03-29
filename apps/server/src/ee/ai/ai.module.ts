@@ -13,6 +13,7 @@ import { AgentGatewayService } from './agent-gateway/agent-gateway.service';
 import { InlineRewriteController } from './inline/inline-rewrite.controller';
 import { InlineRewriteService } from './inline/inline-rewrite.service';
 import { QueryUnderstandingService } from './services/query-understanding.service';
+import { AnswerVerifierService } from './services/answer-verifier.service';
 import { PageModule } from '../../core/page/page.module';
 import { AttachmentModule } from '../../core/attachment/attachment.module';
 import { TokenModule } from '../../core/auth/token.module';
@@ -36,7 +37,8 @@ import { TokenModule } from '../../core/auth/token.module';
     AgentGatewayService,
     InlineRewriteService,
     QueryUnderstandingService,
+    AnswerVerifierService,
   ],
-  exports: [AiService, AiSearchService, AiTemplateService, QueryUnderstandingService],
+  exports: [AiService, AiSearchService, AiTemplateService, QueryUnderstandingService, AnswerVerifierService],
 })
 export class AiModule {}
