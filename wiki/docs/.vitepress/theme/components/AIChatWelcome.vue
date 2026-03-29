@@ -3,6 +3,7 @@
  * AI 问答欢迎页组件
  * 显示欢迎信息、服务状态提示和推荐问题
  */
+import { computed } from 'vue'
 
 const props = defineProps<{
   modifierKey: string
@@ -14,11 +15,23 @@ const emit = defineEmits<{
   (e: 'ask', question: string): void
 }>()
 
-const suggestions = [
-  '这个页面讲了什么？',
-  '帮我总结要点',
-  '有什么相关的文档？',
-]
+const suggestions = computed(() => {
+  if (props.pageTitle) {
+    const truncatedTitle = props.pageTitle.length > 15
+      ? props.pageTitle.slice(0, 15) + '...'
+      : props.pageTitle
+    return [
+      '这个页面讲了什么？',
+      `帮我总结「${truncatedTitle}」的要点`,
+      '有什么相关的文档？',
+    ]
+  }
+  return [
+    '帮我找一下最近更新的文档',
+    '有哪些常见问题和解决方案？',
+    '这个知识库包含哪些内容？',
+  ]
+})
 </script>
 
 <template>
