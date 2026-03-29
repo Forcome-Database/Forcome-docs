@@ -88,7 +88,7 @@ Intent definitions:
         .filter(Boolean)
         .join('\n\n');
 
-      const abortSignal = AbortSignal.timeout(2000);
+      const abortSignal = AbortSignal.timeout(8000);
 
       const { text } = await generateText({
         model: liteModel,
