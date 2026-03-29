@@ -293,6 +293,67 @@ async def delete_draft(request: dict):
     return {"status": "deleted" if ok else "not_found"}
 
 
+# ── Web Search Endpoint ──────────────────────────────────────────────
+
+@app.post("/agent/web-search", dependencies=[Depends(verify_internal_secret)])
+async def web_search(request: dict):
+    """Controlled web search for Wiki Q&A fallback.
+    Not an agent — just direct search + optional scrape.
+    Returns structured evidence, not free-form text.
+    """
+    query = request.get("query", "")
+    max_results = min(request.get("max_results", 3), 5)  # Hard cap at 5
+    scrape_top = min(request.get("scrape_top", 1), 2)    # Hard cap at 2
+
+    if not query or len(query) > 500:
+        return {"status": "error", "error": "Invalid query"}
+
+    from tavily import TavilyClient
+
+    if not settings.tavily_api_key:
+        return {"status": "error", "error": "Web search not configured (TAVILY_API_KEY missing)"}
+
+    # Step 1: Search using TavilyClient directly (structured JSON)
+    try:
+        client = TavilyClient(api_key=settings.tavily_api_key)
+        results = await asyncio.wait_for(
+            asyncio.to_thread(client.search, query=query, max_results=max_results),
+            timeout=15,
+        )
+    except asyncio.TimeoutError:
+        return {"status": "error", "query": query, "error": "Web search timed out"}
+    except Exception as e:
+        return {"status": "error", "query": query, "error": f"Search failed: {e}"}
+
+    # Step 2: Extract structured evidence from Tavily JSON response
+    evidence = []
+    for r in results.get("results", [])[:max_results]:
+        evidence.append({
+            "url": r.get("url", ""),
+            "title": r.get("title", ""),
+            "snippet": (r.get("content", "") or "")[:500],
+        })
+
+    # Step 3: Optionally scrape top results for richer content
+    if scrape_top > 0 and evidence:
+        from app.agent.tools.scrape_url import scrape_url_impl
+        for item in evidence[:scrape_top]:
+            try:
+                scrape_result = await scrape_url_impl(item["url"])
+                if scrape_result.get("status") == "success":
+                    item["content"] = scrape_result.get("content", "")[:3000]
+                    if scrape_result.get("title"):
+                        item["title"] = scrape_result["title"]
+            except Exception:
+                pass
+
+    return {
+        "status": "success" if evidence else "no_results",
+        "query": query,
+        "evidence": evidence,
+    }
+
+
 # ── Intelligent Agent v2 Endpoint ────────────────────────────────────
 
 from app.agent.runner import run_agent as _run_agent
