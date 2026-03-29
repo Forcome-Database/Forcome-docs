@@ -13,6 +13,7 @@ import {
 import { AnswerVerifierService } from './answer-verifier.service';
 import { getIntentSystemPrompt, getLowConfidenceResponse } from '../utils/intent-prompts';
 import { RetrievalQualityService, type RetrievalQualityResult } from './retrieval-quality.service';
+import { WebExplorerService, type WebEvidence } from './web-explorer.service';
 import {
   collectDocumentAssetProjections,
   collectDocumentAssetSources,
@@ -53,6 +54,7 @@ export interface AiCitation {
   snippet?: string;
   chunkId?: string;
   span?: { start: number; end: number };
+  origin?: string;
 }
 
 export interface AnswerWithContextInput {
@@ -137,6 +139,7 @@ export class AiSearchService {
     private readonly queryUnderstanding?: QueryUnderstandingService,
     private readonly answerVerifier?: AnswerVerifierService,
     @Optional() private readonly retrievalQuality?: RetrievalQualityService,
+    @Optional() private readonly webExplorer?: WebExplorerService,
   ) {}
 
   private async checkJiebaAvailable(): Promise<boolean> {
@@ -1430,12 +1433,55 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       return;
     }
 
-    // LOW confidence + public topic → cautionary hint for LLM (P1 will add external search here)
+    // LOW confidence + public topic → external web exploration
+    let webEvidence: WebEvidence[] = [];
     let confidenceHint = '';
     if (qualityResult.confidence === 'low' && qualityResult.isPublicTopic) {
-      confidenceHint = isChinese
-        ? '\n\n⚠️ 注意：知识库中可能没有足够信息回答这个问题。如果你无法从上下文中找到答案，请明确说明"知识库中暂无此内容"，不要编造答案。'
-        : '\n\n⚠️ Warning: The knowledge base may not have sufficient information. If you cannot find the answer in the context, explicitly say "the knowledge base does not have this information" — do NOT fabricate.';
+      if (this.webExplorer) {
+        try {
+          this.logger.debug(`KB confidence low for public topic, exploring web: "${input.query}"`);
+          webEvidence = await this.webExplorer.explore(
+            understanding.rewrittenQuery || input.query,
+          );
+          if (webEvidence.length === 0) {
+            // External search also found nothing → honest refusal
+            yield JSON.stringify({
+              sources: this.dedupePageSources(
+                currentPage
+                  ? [{ title: currentPage.title, slugId: currentPage.slugId, spaceSlug: currentPage.spaceSlug, distance: 0 }]
+                  : [],
+              ),
+              citations: currentPage ? [this.createPageCitation(currentPage)] : [],
+            });
+            yield JSON.stringify({
+              content: getLowConfidenceResponse(input.query, isChinese, currentPage?.title),
+            });
+            try {
+              const suggestions = await this.generateSuggestedQuestions(
+                input.query, understanding.intent, '', currentPage?.title, isChinese,
+              );
+              if (suggestions.length > 0) {
+                yield JSON.stringify({ suggestedQuestions: suggestions });
+              }
+            } catch { /* non-blocking */ }
+            return;
+          }
+          // Web evidence found — add hint about external sources
+          confidenceHint = isChinese
+            ? '\n\n注意：以下部分内容来自外部网络搜索（标记为 [Web]），可能不完全适用于你的具体环境。知识库原有内容标记为 [1][2] 等编号。'
+            : '\n\nNote: Some content below is from external web search (marked [Web]) and may not fully apply to your specific environment. Knowledge base content is marked with [1][2] etc.';
+        } catch {
+          // External search failed — use cautionary hint only
+          confidenceHint = isChinese
+            ? '\n\n⚠️ 知识库中可能没有足够信息。如果无法从上下文找到答案，请明确说明"知识库中暂无此内容"。'
+            : '\n\n⚠️ The knowledge base may not have sufficient information. If you cannot find the answer, say so explicitly.';
+        }
+      } else {
+        // WebExplorer not available — cautionary hint only
+        confidenceHint = isChinese
+          ? '\n\n⚠️ 知识库中可能没有足够信息。如果无法从上下文找到答案，请明确说明"知识库中暂无此内容"。'
+          : '\n\n⚠️ The knowledge base may not have sufficient information. If you cannot find the answer, say so explicitly.';
+      }
     }
 
     // ---- Context Assembly ----
@@ -1537,6 +1583,20 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       citations.push(this.createPageCitation(page));
       citations.push(...relevantAssets);
       sourceIndex++;
+    }
+
+    // Inject web evidence into context (clearly labeled as external)
+    for (const evidence of webEvidence) {
+      contextParts.push(
+        `[Web] (External: ${evidence.title || evidence.url}):\n${(evidence.content || evidence.snippet || '').slice(0, 2500)}`,
+      );
+      citations.push({
+        sourceType: 'page' as const,
+        title: evidence.title || evidence.url,
+        pageUrl: evidence.url,
+        snippet: evidence.snippet?.slice(0, 200),
+        origin: 'web',
+      });
     }
 
     const dedupedLegacySources = this.dedupePageSources(legacySources);
