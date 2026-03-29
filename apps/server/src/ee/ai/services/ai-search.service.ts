@@ -118,6 +118,7 @@ function getProsemirrorContent(content: any) {
 @Injectable()
 export class AiSearchService {
   private readonly logger = new Logger(AiSearchService.name);
+  private embeddingCache = new Map<string, { embedding: number[]; expires: number }>();
 
   constructor(
     @InjectKysely() private readonly db: KyselyDB,
@@ -677,9 +678,32 @@ export class AiSearchService {
 
   async generateEmbedding(text: string): Promise<number[]> {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const crypto = require('crypto');
+    const cacheKey = crypto.createHash('md5').update(text).digest('hex');
+
+    const cached = this.embeddingCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return cached.embedding;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { embed } = require('ai');
     const model = this.getEmbeddingModel();
     const { embedding } = await embed({ model, value: text });
+
+    this.embeddingCache.set(cacheKey, {
+      embedding,
+      expires: Date.now() + 3600_000, // 1 hour TTL
+    });
+
+    // Evict old entries if cache grows too large
+    if (this.embeddingCache.size > 1000) {
+      const now = Date.now();
+      for (const [key, val] of this.embeddingCache) {
+        if (val.expires < now) this.embeddingCache.delete(key);
+      }
+    }
+
     return embedding;
   }
 
