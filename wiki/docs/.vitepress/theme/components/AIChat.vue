@@ -805,9 +805,9 @@ onUnmounted(() => {
                 :class="{ active: deepResearch }"
                 type="button"
                 @click="deepResearch = !deepResearch"
-                :title="deepResearch ? '深度研究模式已开启' : '开启深度研究模式'"
+                :title="deepResearch ? '关闭深度研究' : '深度研究'"
               >
-                🧠
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2a5.5 5.5 0 0 0-4.94 7.9A4.5 4.5 0 0 0 5.5 18H6"/><path d="M14.5 2a5.5 5.5 0 0 1 4.94 7.9A4.5 4.5 0 0 1 18.5 18H18"/><path d="M12 2v8"/><path d="M8 8c0 2 2 3 4 3s4-1 4-3"/><path d="M6 13c0 2 2.5 3 6 3s6-1 6-3"/><path d="M10 18v4"/><path d="M14 18v4"/></svg>
               </button>
             </div>
 
