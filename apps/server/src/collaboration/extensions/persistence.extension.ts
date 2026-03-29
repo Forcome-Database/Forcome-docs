@@ -191,10 +191,11 @@ export class PersistenceExtension implements Extension {
         } as IPageMentionNotificationJob);
       }
 
-      await this.aiQueue.add(QueueJob.PAGE_CONTENT_UPDATED, {
-        pageIds: [pageId],
-        workspaceId: page.workspaceId,
-      });
+      await this.aiQueue.add(
+        QueueJob.PAGE_CONTENT_UPDATED,
+        { pageIds: [pageId], workspaceId: page.workspaceId },
+        { jobId: `embed-${pageId}` },
+      );
 
       await this.enqueuePageHistory(page);
     }
