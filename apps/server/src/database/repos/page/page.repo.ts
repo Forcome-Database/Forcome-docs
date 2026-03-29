@@ -125,9 +125,19 @@ export class PageRepo {
       )
       .executeTakeFirst();
 
+    let resolvedWorkspaceId = updatePageData.workspaceId;
+    if (!resolvedWorkspaceId && pageIds.length > 0) {
+      const page = await dbOrTx(this.db, trx)
+        .selectFrom('pages')
+        .select('workspaceId')
+        .where('id', '=', pageIds[0])
+        .executeTakeFirst();
+      resolvedWorkspaceId = page?.workspaceId;
+    }
+
     this.eventEmitter.emit(EventName.PAGE_UPDATED, {
       pageIds: pageIds,
-      workspaceId: updatePageData.workspaceId,
+      workspaceId: resolvedWorkspaceId,
     });
 
     return result;
