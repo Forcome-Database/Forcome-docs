@@ -683,6 +683,10 @@ export class AiSearchService {
     return embedding;
   }
 
+  /**
+   * @deprecated Use generateDocumentContext instead — per-chunk LLM calls are
+   * replaced by a single per-document call.
+   */
   async generateContextPrefix(
     pageTitle: string,
     fullText: string,
@@ -711,6 +715,28 @@ export class AiSearchService {
         `Context prefix generation failed, using fallback: ${err?.message}`,
       );
       return `This chunk comes from "${pageTitle}".`;
+    }
+  }
+
+  async generateDocumentContext(pageTitle: string, fullText: string): Promise<string> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { generateText } = require('ai');
+      const model = this.getLiteModel();
+      const docSnippet = fullText.slice(0, 2000);
+
+      const { text } = await generateText({
+        model,
+        maxTokens: 100,
+        messages: [{
+          role: 'user',
+          content: `Summarize this document in one sentence for search context.\n\nTitle: ${pageTitle}\nContent: ${docSnippet}`,
+        }],
+      });
+
+      return text?.trim() || `From document "${pageTitle}".`;
+    } catch {
+      return `From document "${pageTitle}".`;
     }
   }
 

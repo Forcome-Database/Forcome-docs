@@ -293,9 +293,10 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
 
     // === Text chunking + contextual embedding ===
     const chunks = chunkText(text);
+    const docContext = await this.aiSearchService.generateDocumentContext(pageTitle, text);
     for (const chunk of chunks) {
       try {
-        const contextPrefix = await this.aiSearchService.generateContextPrefix(pageTitle, text, chunk.text);
+        const contextPrefix = `${pageTitle}. ${docContext}`;
         const embeddingText = `${contextPrefix}\n${chunk.text}`;
         const embedding = await this.aiSearchService.generateEmbedding(embeddingText);
         const embeddingStr = `[${embedding.join(',')}]`;
