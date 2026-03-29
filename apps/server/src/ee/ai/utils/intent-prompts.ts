@@ -78,3 +78,19 @@ export function getIntentSystemPrompt(
 
   return `${intentInstruction}\n\n${baseConstraints}\n\nContext:\n${contextSection}`;
 }
+
+/**
+ * Generate an honest refusal response when retrieval confidence is low.
+ */
+export function getLowConfidenceResponse(
+  query: string,
+  isChinese: boolean,
+  currentPageTitle?: string,
+): string {
+  if (isChinese) {
+    const pageHint = currentPageTitle ? `当前页面「${currentPageTitle}」` : '知识库';
+    return `抱歉，${pageHint}中暂未找到关于"${query.slice(0, 50)}"的相关内容。\n\n您可以尝试：\n- 换一种方式描述您的问题\n- 查看其他相关页面\n- 联系管理员确认文档是否已更新`;
+  }
+  const pageHint = currentPageTitle ? `the page "${currentPageTitle}"` : 'the knowledge base';
+  return `Sorry, ${pageHint} doesn't contain information about "${query.slice(0, 50)}".\n\nYou can try:\n- Rephrasing your question\n- Checking other related pages\n- Contacting an admin to confirm if the documentation has been updated`;
+}
