@@ -6,6 +6,12 @@ import { sql } from 'kysely';
 import { streamText } from 'ai';
 import { TokenService } from '../../../core/auth/services/token.service';
 import {
+  QueryUnderstandingService,
+  type QueryUnderstandingResult,
+  type QueryIntent,
+} from './query-understanding.service';
+import { getIntentSystemPrompt } from '../utils/intent-prompts';
+import {
   collectDocumentAssetProjections,
   collectDocumentAssetSources,
   collectDocumentLinkProjections,
@@ -125,6 +131,7 @@ export class AiSearchService {
     @InjectKysely() private readonly db: KyselyDB,
     private readonly environmentService: EnvironmentService,
     private readonly tokenService?: TokenService,
+    private readonly queryUnderstanding?: QueryUnderstandingService,
   ) {}
 
   private async checkJiebaAvailable(): Promise<boolean> {
@@ -1109,24 +1116,165 @@ export class AiSearchService {
     }
   }
 
+  // ==================== Suggested Questions ====================
+
+  private async generateSuggestedQuestions(
+    query: string,
+    intent: QueryIntent,
+    answerPreview: string,
+    currentPageTitle?: string,
+    isChinese = true,
+  ): Promise<string[]> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { generateText } = require('ai');
+      const model = this.getLiteModel();
+      const lang = isChinese ? '中文' : 'English';
+      const { text } = await generateText({
+        model,
+        prompt: `Based on this Q&A interaction, suggest exactly 3 natural follow-up questions a user might ask next.
+
+Question: ${query}
+Intent type: ${intent}
+Answer preview: ${answerPreview.slice(0, 500)}
+${currentPageTitle ? `Current page: ${currentPageTitle}` : ''}
+
+Rules:
+- Questions must be in ${lang}
+- Each question should explore a different angle (deeper detail, related topic, practical application)
+- Keep each question under 30 characters
+- Return ONLY a JSON array of 3 strings, no markdown
+
+Example: ["如何配置SSL证书？","有没有自动化部署方案？","这个和K8s部署有什么区别？"]`,
+        maxTokens: 200,
+        temperature: 0.7,
+        abortSignal: AbortSignal.timeout(3000),
+      });
+      const cleaned = text
+        .replace(/```json?\s*/g, '')
+        .replace(/```\s*/g, '')
+        .trim();
+      const parsed = JSON.parse(cleaned);
+      if (Array.isArray(parsed) && parsed.length >= 1) {
+        return parsed.slice(0, 3).map(String);
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
   // ==================== Answer With Context ====================
 
   async *answerWithContext(
     input: AnswerWithContextInput,
   ): AsyncGenerator<string> {
+    const isChinese = /[\u4e00-\u9fa5]/.test(input.query);
     const currentPage = await this.loadCurrentPage(input);
+
+    // ---- Query Understanding (non-blocking) ----
+    let understanding: QueryUnderstandingResult = {
+      intent: 'factual',
+      complexity: 1,
+      rewrittenQuery: input.query,
+      needsClarification: false,
+      isOutOfScope: false,
+    };
+
+    if (this.queryUnderstanding) {
+      try {
+        const liteModel = this.getLiteModel();
+        understanding = await this.queryUnderstanding.classifyAndRewrite(
+          input.query,
+          input.history || [],
+          currentPage?.title,
+          liteModel,
+        );
+      } catch (err: any) {
+        this.logger.warn(`Query understanding failed, using defaults: ${err?.message}`);
+      }
+    }
+
+    // Emit intent metadata as first SSE event
+    yield JSON.stringify({
+      intent: understanding.intent,
+      complexity: understanding.complexity,
+    });
+
+    // Route A: Out-of-scope — skip retrieval entirely
+    if (understanding.isOutOfScope) {
+      yield JSON.stringify({
+        content: isChinese
+          ? '抱歉，这个问题超出了本知识库的范围。请尝试问一些与文档内容相关的问题。'
+          : 'Sorry, this question is outside the scope of this knowledge base. Please try asking something related to the documentation.',
+      });
+      try {
+        const genericSuggestions = isChinese
+          ? ['有哪些功能模块？', '如何快速上手？', '有什么最新更新？']
+          : ['What features are available?', 'How do I get started?', 'What are the latest updates?'];
+        yield JSON.stringify({ suggestedQuestions: genericSuggestions });
+      } catch {
+        // non-blocking
+      }
+      return;
+    }
+
+    // Route B: Needs clarification — ask user to refine
+    if (understanding.needsClarification && understanding.clarificationQuestion) {
+      yield JSON.stringify({
+        content: understanding.clarificationQuestion,
+      });
+      return;
+    }
+
+    // ---- Retrieval (use rewritten query) ----
+    const searchQuery = understanding.rewrittenQuery || input.query;
+
     const hybridResults = await this.hybridSearch(
-      input.query,
+      searchQuery,
       input.workspaceId,
       15,
       undefined,
       input.scope,
     );
-    const reranked = await this.rerank(input.query, hybridResults, 5);
 
+    let finalReranked = await this.rerank(searchQuery, hybridResults, 5);
+
+    // For complex queries (complexity >= 2): retry with original query if weak results
+    if (
+      understanding.complexity >= 2 &&
+      searchQuery !== input.query &&
+      finalReranked.length > 0
+    ) {
+      const bestScore = Math.max(...finalReranked.map((r) => r.score));
+      // RRF top-1 score is ~0.0167; a best below 0.01 with few results indicates weakness
+      if (bestScore < 0.01 && finalReranked.length < 3) {
+        this.logger.debug(
+          `Weak results for rewritten query (bestScore=${bestScore.toFixed(4)}, count=${finalReranked.length}), retrying with original`,
+        );
+        const fallbackResults = await this.hybridSearch(
+          input.query,
+          input.workspaceId,
+          15,
+          undefined,
+          input.scope,
+        );
+        // Merge and deduplicate by pageId
+        const seen = new Set(finalReranked.map((r) => r.pageId));
+        for (const r of fallbackResults) {
+          if (!seen.has(r.pageId)) {
+            finalReranked.push(r);
+            seen.add(r.pageId);
+          }
+        }
+        finalReranked = await this.rerank(input.query, finalReranked, 7);
+      }
+    }
+
+    // ---- Context Assembly ----
     const pageIds = Array.from(
       new Set(
-        [currentPage?.pageId, ...reranked.map((result) => result.pageId)].filter(
+        [currentPage?.pageId, ...finalReranked.map((result) => result.pageId)].filter(
           Boolean,
         ) as string[],
       ),
@@ -1177,7 +1325,7 @@ export class AiSearchService {
       sourceIndex++;
     }
 
-    for (const result of reranked) {
+    for (const result of finalReranked) {
       const page = pageRecords.get(result.pageId);
       if (!page) {
         continue;
@@ -1189,7 +1337,7 @@ export class AiSearchService {
       const imageDescriptions = imageDescriptionMaps.get(page.pageId);
       const relevantAssets = await this.selectRelevantAssetCitations(
         page,
-        input.query,
+        searchQuery,
         result,
         input.scope,
         imageDescriptions,
@@ -1227,19 +1375,17 @@ export class AiSearchService {
     const dedupedCitations = this.dedupeCitations(citations);
     const context = contextParts.join('\n\n').trim();
 
-    const isChinese = /[\u4e00-\u9fa5]/.test(input.query);
-    const systemPrompt = isChinese
-      ? '请只根据给定上下文回答问题。优先参考标记为 Current page 的内容。引用下载、预览或图片地址时，只能使用上下文里已经给出的链接；如果上下文没有提供有效链接，就明确说不知道，不要猜测 URL。信息不足时直接说明。'
-      : 'Answer strictly from the provided context. Prioritize the source marked as Current page. Only use download or preview URLs that already appear in the context. If the context does not provide a valid URL, say you do not know and do not invent one.';
-
-    const normalizedSystemPrompt = isChinese
-      ? '请只根据给定上下文回答问题。优先参考标记为 Current page 的内容。如果上下文里已经出现明确的 URL、markdown 链接或 Explicit links 列表，直接返回精确链接，不要只说”点击下载”。引用下载、预览或图片地址时，只能使用上下文里已经给出的链接；如果上下文没有提供有效链接，就明确说不知道，不要猜测 URL。当上下文中出现 ![...](url) 格式的图片时，请在回答中保持该 markdown 图片格式原样输出，不要把图片链接转为纯文本。信息不足时直接说明。'
-      : 'Answer strictly from the provided context. Prioritize the source marked as Current page. If the context already contains a concrete URL, markdown link, or explicit link list, return the exact URL directly instead of only naming the link text. Only use links that already appear in the context. If the context does not provide a valid URL, say you do not know and do not invent one. When the context contains images in ![...](url) format, preserve that exact markdown image syntax in your response — do not convert image links to plain text.';
+    // ---- Intent-aware System Prompt ----
+    const systemPromptText = getIntentSystemPrompt(
+      understanding.intent,
+      isChinese,
+      context,
+    );
 
     const messages: any[] = [
       {
         role: 'system',
-        content: `${normalizedSystemPrompt}\n\nContext:\n${context || 'No relevant context available.'}`,
+        content: systemPromptText,
       },
     ];
 
@@ -1252,6 +1398,7 @@ export class AiSearchService {
       }
     }
 
+    // ---- LLM Generation ----
     const model = this.getCompletionModel();
     let result: any;
     if (input.images?.length) {
@@ -1277,8 +1424,11 @@ export class AiSearchService {
       citations: dedupedCitations,
     });
 
+    let fullAnswer = '';
+
     try {
       for await (const text of this.stripThinkBlocks(result.textStream)) {
+        fullAnswer += text;
         yield JSON.stringify({ content: text });
       }
     } catch (streamError: any) {
@@ -1297,6 +1447,22 @@ export class AiSearchService {
         return;
       }
       throw streamError;
+    }
+
+    // ---- Suggested Follow-up Questions (non-blocking) ----
+    try {
+      const suggestedQuestions = await this.generateSuggestedQuestions(
+        input.query,
+        understanding.intent,
+        fullAnswer,
+        currentPage?.title,
+        isChinese,
+      );
+      if (suggestedQuestions.length > 0) {
+        yield JSON.stringify({ suggestedQuestions });
+      }
+    } catch {
+      // non-blocking — do not fail the response
     }
   }
 
