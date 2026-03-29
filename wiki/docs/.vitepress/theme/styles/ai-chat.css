@@ -674,6 +674,7 @@
   text-decoration: none;
   color: var(--c-text-2);
   font-size: var(--font-size-xs);
+  overflow: hidden;
   transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 
@@ -1000,4 +1001,21 @@
   border-color: var(--c-brand);
   color: var(--c-brand);
   background: var(--c-bg);
+}
+
+/* Citation snippet display */
+.ai-chat-source-card .source-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.ai-chat-source-card .source-snippet {
+  font-size: 11px;
+  color: var(--c-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

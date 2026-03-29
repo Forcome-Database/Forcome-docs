@@ -45,6 +45,7 @@ const normalizedItems = computed(() => {
         title: citation.title || 'Untitled',
         href,
         icon,
+        snippet: citation.snippet || '',
       }
     })
   }
@@ -54,6 +55,7 @@ const normalizedItems = computed(() => {
     title: source.title || 'Untitled',
     href: getPageUrl(source),
     icon: '📄',
+    snippet: '',
   }))
 })
 </script>
@@ -77,7 +79,10 @@ const normalizedItems = computed(() => {
         class="ai-chat-source-card"
       >
         <span class="source-icon">{{ item.icon }}</span>
-        <span class="source-title">{{ item.title }}</span>
+        <div class="source-content">
+          <span class="source-title">{{ item.title }}</span>
+          <span v-if="item.snippet" class="source-snippet">{{ item.snippet }}</span>
+        </div>
       </a>
     </div>
   </div>
