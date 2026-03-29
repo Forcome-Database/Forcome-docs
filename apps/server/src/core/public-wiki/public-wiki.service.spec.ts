@@ -88,6 +88,10 @@ describe('PublicWikiService.aiAnswers', () => {
     const redisServiceMock = {
       getOrThrow: jest.fn().mockReturnValue(redisMock),
     };
+    const conversationStoreMock = {
+      load: jest.fn().mockResolvedValue(null),
+      save: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new PublicWikiService(
       db as any,
@@ -98,6 +102,7 @@ describe('PublicWikiService.aiAnswers', () => {
       { searchPage: jest.fn() } as any,
       { get: jest.fn().mockReturnValue(aiSearchService) } as any,
       redisServiceMock as any,
+      conversationStoreMock as any,
     );
 
     return {
