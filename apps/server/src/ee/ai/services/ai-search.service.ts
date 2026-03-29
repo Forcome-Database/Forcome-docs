@@ -889,7 +889,16 @@ export class AiSearchService {
       rank: number;
     }>
   > {
-    const rawQuery = query.trim();
+    // Sanitize query: remove characters that are special in tsquery syntax
+    // Chinese quotes ""、parentheses ()（）、question marks ?？、colons :、exclamation !
+    const rawQuery = query
+      .trim()
+      .replace(/["""()（）?？!！:：*&|<>\\]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!rawQuery) {
+      return [];
+    }
     const searchQuery = tsquery(rawQuery + '*');
     const scopeCondition = this.buildPageScopeCondition(scope, filters, 'p');
     const useJieba = await this.checkJiebaAvailable();
@@ -898,32 +907,37 @@ export class AiSearchService {
       ? sql`(to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery}))`
       : sql`to_tsquery('english', f_unaccent(${searchQuery}))`;
 
-    const results = await sql`
-      SELECT
-        p.id as "pageId",
-        p.title,
-        p.slug_id as "slugId",
-        p.text_content as "textContent",
-        s.slug as "spaceSlug",
-        ts_rank(p.tsv, ${tsqueryExpr}) as rank
-      FROM pages p
-      JOIN spaces s ON s.id = p.space_id
-      WHERE p.workspace_id = ${workspaceId}
-        AND p.deleted_at IS NULL
-        AND p.tsv @@ ${tsqueryExpr}
-        AND ${scopeCondition}
-      ORDER BY rank DESC
-      LIMIT ${limit}
-    `.execute(this.db);
+    try {
+      const results = await sql`
+        SELECT
+          p.id as "pageId",
+          p.title,
+          p.slug_id as "slugId",
+          p.text_content as "textContent",
+          s.slug as "spaceSlug",
+          ts_rank(p.tsv, ${tsqueryExpr}) as rank
+        FROM pages p
+        JOIN spaces s ON s.id = p.space_id
+        WHERE p.workspace_id = ${workspaceId}
+          AND p.deleted_at IS NULL
+          AND p.tsv @@ ${tsqueryExpr}
+          AND ${scopeCondition}
+        ORDER BY rank DESC
+        LIMIT ${limit}
+      `.execute(this.db);
 
-    return (results.rows as any[]).map((row) => ({
-      pageId: row.pageId,
-      title: row.title,
-      slugId: row.slugId,
-      spaceSlug: row.spaceSlug,
-      textContent: row.textContent,
-      rank: parseFloat(row.rank),
-    }));
+      return (results.rows as any[]).map((row) => ({
+        pageId: row.pageId,
+        title: row.title,
+        slugId: row.slugId,
+        spaceSlug: row.spaceSlug,
+        textContent: row.textContent,
+        rank: parseFloat(row.rank),
+      }));
+    } catch (err: any) {
+      this.logger.warn(`BM25 search failed (non-blocking, vector search still active): ${err?.message}`);
+      return [];
+    }
   }
 
   async hybridSearch(
