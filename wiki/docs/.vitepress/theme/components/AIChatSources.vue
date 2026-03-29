@@ -25,18 +25,6 @@ const getPageUrl = (source: { spaceSlug?: string; pageSlugId?: string; slugId?: 
 
 const normalizedItems = computed(() => {
   if (props.citations && props.citations.length > 0) {
-    const pageCitations = props.citations.filter((citation) => citation.sourceType === 'page')
-    if (pageCitations.length > 0) {
-      return pageCitations.map((citation, index) => {
-        return {
-          key: `${citation.sourceType}-${citation.attachmentId || citation.pageSlugId || citation.slugId || index}`,
-          title: citation.title || 'Untitled',
-          href: getPageUrl(citation),
-          icon: '馃搫',
-        }
-      })
-    }
-
     return props.citations.map((citation, index) => {
       const href =
         citation.sourceType === 'page'

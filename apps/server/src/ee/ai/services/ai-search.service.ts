@@ -118,6 +118,7 @@ function getProsemirrorContent(content: any) {
 @Injectable()
 export class AiSearchService {
   private readonly logger = new Logger(AiSearchService.name);
+  private embeddingCache = new Map<string, { embedding: number[]; expires: number }>();
 
   constructor(
     @InjectKysely() private readonly db: KyselyDB,
@@ -677,12 +678,39 @@ export class AiSearchService {
 
   async generateEmbedding(text: string): Promise<number[]> {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const crypto = require('crypto');
+    const cacheKey = crypto.createHash('md5').update(text).digest('hex');
+
+    const cached = this.embeddingCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return cached.embedding;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { embed } = require('ai');
     const model = this.getEmbeddingModel();
     const { embedding } = await embed({ model, value: text });
+
+    this.embeddingCache.set(cacheKey, {
+      embedding,
+      expires: Date.now() + 3600_000, // 1 hour TTL
+    });
+
+    // Evict old entries if cache grows too large
+    if (this.embeddingCache.size > 1000) {
+      const now = Date.now();
+      for (const [key, val] of this.embeddingCache) {
+        if (val.expires < now) this.embeddingCache.delete(key);
+      }
+    }
+
     return embedding;
   }
 
+  /**
+   * @deprecated Use generateDocumentContext instead — per-chunk LLM calls are
+   * replaced by a single per-document call.
+   */
   async generateContextPrefix(
     pageTitle: string,
     fullText: string,
@@ -714,13 +742,35 @@ export class AiSearchService {
     }
   }
 
+  async generateDocumentContext(pageTitle: string, fullText: string): Promise<string> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { generateText } = require('ai');
+      const model = this.getLiteModel();
+      const docSnippet = fullText.slice(0, 2000);
+
+      const { text } = await generateText({
+        model,
+        maxTokens: 100,
+        messages: [{
+          role: 'user',
+          content: `Summarize this document in one sentence for search context.\n\nTitle: ${pageTitle}\nContent: ${docSnippet}`,
+        }],
+      });
+
+      return text?.trim() || `From document "${pageTitle}".`;
+    } catch {
+      return `From document "${pageTitle}".`;
+    }
+  }
+
   // ==================== Retrieval ====================
 
   async searchSimilarChunks(
     query: string,
     workspaceId: string,
     limit = 20,
-    distanceThreshold = 0.5,
+    distanceThreshold = 0.8,
     filters?: SearchFilters,
     scope?: RetrievalScope,
   ): Promise<ChunkResult[]> {
@@ -733,53 +783,70 @@ export class AiSearchService {
       'p',
     );
 
-    const results = await sql`
-      SELECT
-        pe."pageId",
-        p.title,
-        p.slug_id as "slugId",
-        p.text_content as "textContent",
-        s.slug as "spaceSlug",
-        pe."chunkIndex",
-        pe."chunkStart",
-        pe."chunkLength",
-        pe.metadata,
-        pe.embedding <=> ${embeddingStr}::vector AS distance
-      FROM page_embeddings pe
-      JOIN pages p ON p.id = pe."pageId"
-      JOIN spaces s ON s.id = pe."spaceId"
-      WHERE pe."workspaceId" = ${workspaceId}
-        AND p.deleted_at IS NULL
-        AND pe."deletedAt" IS NULL
-        AND (pe.embedding <=> ${embeddingStr}::vector) < ${distanceThreshold}
-        AND ${scopeCondition}
-      ORDER BY distance ASC
-      LIMIT ${limit}
-    `.execute(this.db);
-
-    return (results.rows as any[]).map((row) => {
-      let chunkText: string | undefined;
-      if (row.chunkLength > 0 && row.textContent) {
-        chunkText = row.textContent.slice(
-          row.chunkStart,
-          row.chunkStart + row.chunkLength,
-        );
-      }
-
-      return {
-        pageId: row.pageId,
-        title: row.title,
-        slugId: row.slugId,
-        spaceSlug: row.spaceSlug,
-        textContent: row.textContent,
-        distance: parseFloat(row.distance),
-        chunkIndex: row.chunkIndex,
-        chunkStart: row.chunkStart,
-        chunkLength: row.chunkLength,
-        chunkText,
-        metadata: row.metadata,
-      };
+    const results = await this.db.transaction().execute(async (trx) => {
+      await sql`SET LOCAL hnsw.ef_search = 100`.execute(trx);
+      return sql`
+        SELECT
+          pe."pageId",
+          p.title,
+          p.slug_id as "slugId",
+          p.text_content as "textContent",
+          s.slug as "spaceSlug",
+          pe."chunkIndex",
+          pe."chunkStart",
+          pe."chunkLength",
+          pe.metadata,
+          pe.embedding <=> ${embeddingStr}::vector AS distance
+        FROM page_embeddings pe
+        JOIN pages p ON p.id = pe."pageId"
+        JOIN spaces s ON s.id = pe."spaceId"
+        WHERE pe."workspaceId" = ${workspaceId}
+          AND p.deleted_at IS NULL
+          AND pe."deletedAt" IS NULL
+          AND (pe.embedding <=> ${embeddingStr}::vector) < ${distanceThreshold}
+          AND ${scopeCondition}
+        ORDER BY distance ASC
+        LIMIT ${limit}
+      `.execute(trx);
     });
+
+    const rows = results.rows as any[];
+    if (rows.length === 0) return [];
+
+    const bestDistance = parseFloat(rows[0].distance);
+    const adaptiveThreshold = Math.min(0.5, Math.max(0.3, bestDistance * 2.5));
+
+    return rows
+      .filter(row => parseFloat(row.distance) <= adaptiveThreshold)
+      .map((row) => {
+        let chunkText: string | undefined;
+        if (row.metadata?.chunkText) {
+          chunkText = row.metadata.chunkText;
+        } else if (row.metadata?.type === 'image' && row.metadata?.description) {
+          chunkText = row.metadata.description;
+        } else if (row.metadata?.type === 'diagram' && row.metadata?.diagramType) {
+          chunkText = `${row.metadata.title || 'Diagram'}: (diagram content)`;
+        } else if (row.chunkLength > 0 && row.textContent) {
+          chunkText = row.textContent.slice(
+            row.chunkStart,
+            row.chunkStart + row.chunkLength,
+          );
+        }
+
+        return {
+          pageId: row.pageId,
+          title: row.title,
+          slugId: row.slugId,
+          spaceSlug: row.spaceSlug,
+          textContent: row.textContent,
+          distance: parseFloat(row.distance),
+          chunkIndex: row.chunkIndex,
+          chunkStart: row.chunkStart,
+          chunkLength: row.chunkLength,
+          chunkText,
+          metadata: row.metadata,
+        };
+      });
   }
 
   async searchByBM25(
@@ -798,7 +865,8 @@ export class AiSearchService {
       rank: number;
     }>
   > {
-    const searchQuery = tsquery(query.trim() + '*');
+    const rawQuery = query.trim();
+    const searchQuery = tsquery(rawQuery + '*');
     const scopeCondition = this.buildPageScopeCondition(scope, filters, 'p');
 
     const results = await sql`
@@ -808,12 +876,12 @@ export class AiSearchService {
         p.slug_id as "slugId",
         p.text_content as "textContent",
         s.slug as "spaceSlug",
-        ts_rank(p.tsv, to_tsquery('english', f_unaccent(${searchQuery}))) as rank
+        ts_rank(p.tsv, (to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery}))) as rank
       FROM pages p
       JOIN spaces s ON s.id = p.space_id
       WHERE p.workspace_id = ${workspaceId}
         AND p.deleted_at IS NULL
-        AND p.tsv @@ to_tsquery('english', f_unaccent(${searchQuery}))
+        AND p.tsv @@ (to_tsquery('english', f_unaccent(${searchQuery})) || plainto_tsquery('jiebacfg', ${rawQuery}))
         AND ${scopeCondition}
       ORDER BY rank DESC
       LIMIT ${limit}
@@ -839,32 +907,35 @@ export class AiSearchService {
     const rrfK = 60;
 
     const [chunks, bm25Results] = await Promise.all([
-      this.searchSimilarChunks(query, workspaceId, 20, 0.5, filters, scope),
+      this.searchSimilarChunks(query, workspaceId, 20, 0.8, filters, scope),
       this.searchByBM25(query, workspaceId, 20, filters, scope),
     ]);
 
-    const scoreMap = new Map<string, PageResult>();
-    const vectorPages: string[] = [];
+    const scoreMap = new Map<string, PageResult & { _bestDistance?: number }>();
 
-    for (const chunk of chunks) {
-      if (!scoreMap.has(chunk.pageId)) {
-        vectorPages.push(chunk.pageId);
+    for (let index = 0; index < chunks.length; index++) {
+      const chunk = chunks[index];
+      const existing = scoreMap.get(chunk.pageId);
+      if (existing) {
+        existing.score += 1 / (rrfK + index);
+        if (chunk.distance < (existing._bestDistance ?? Infinity)) {
+          existing.chunkText = chunk.chunkText;
+          existing.metadata = chunk.metadata;
+          existing._bestDistance = chunk.distance;
+        }
+      } else {
         scoreMap.set(chunk.pageId, {
           pageId: chunk.pageId,
           title: chunk.title,
           slugId: chunk.slugId,
           spaceSlug: chunk.spaceSlug,
           textContent: chunk.textContent,
-          score: 0,
+          score: 1 / (rrfK + index),
           chunkText: chunk.chunkText,
           metadata: chunk.metadata,
+          _bestDistance: chunk.distance,
         });
       }
-    }
-
-    for (let index = 0; index < vectorPages.length; index++) {
-      const entry = scoreMap.get(vectorPages[index])!;
-      entry.score += 1 / (rrfK + index);
     }
 
     for (let index = 0; index < bm25Results.length; index++) {

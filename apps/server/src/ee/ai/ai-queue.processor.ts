@@ -172,9 +172,14 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
     `.execute(this.db);
 
     await sql`
+      CREATE INDEX IF NOT EXISTS idx_page_embeddings_metadata_type_expr
+      ON page_embeddings ((metadata->>'type'))
+    `.execute(this.db);
+
+    await sql`
       CREATE INDEX IF NOT EXISTS idx_page_embeddings_hnsw
       ON page_embeddings USING hnsw (embedding vector_cosine_ops)
-      WITH (m = 16, ef_construction = 64)
+      WITH (m = 16, ef_construction = 200)
     `.execute(this.db);
 
     this.logger.log('page_embeddings table created successfully');
@@ -203,7 +208,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
 
     for (const page of pages) {
       try {
-        const text = `${page.title || ''}\n${page.textContent || ''}`.trim();
+        const text = (page.textContent || '').trim();
         if (!text) continue;
 
         await this.upsertPageEmbedding(page.id, workspaceId, text, page.title || 'Untitled', page.content);
@@ -253,7 +258,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
 
         if (!page) continue;
 
-        const text = `${page.title || ''}\n${page.textContent || ''}`.trim();
+        const text = (page.textContent || '').trim();
         if (!text) continue;
 
         await this.upsertPageEmbedding(page.id, workspaceId, text, page.title || 'Untitled', page.content);
@@ -288,9 +293,10 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
 
     // === Text chunking + contextual embedding ===
     const chunks = chunkText(text);
+    const docContext = await this.aiSearchService.generateDocumentContext(pageTitle, text);
     for (const chunk of chunks) {
       try {
-        const contextPrefix = await this.aiSearchService.generateContextPrefix(pageTitle, text, chunk.text);
+        const contextPrefix = `${pageTitle}. ${docContext}`;
         const embeddingText = `${contextPrefix}\n${chunk.text}`;
         const embedding = await this.aiSearchService.generateEmbedding(embeddingText);
         const embeddingStr = `[${embedding.join(',')}]`;
@@ -301,7 +307,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
           VALUES (${pageId}, ${page.spaceId}, ${workspaceId}, ${page.directoryId ?? null}, ${page.topicId ?? null},
             ${modelName}, ${dimension}, ${embeddingStr}::vector,
             ${chunk.chunkIndex}, ${chunk.chunkStart}, ${chunk.chunkLength},
-            ${JSON.stringify({ type: 'text', contextPrefix })}::jsonb)
+            ${JSON.stringify({ type: 'text', contextPrefix, chunkText: chunk.text })}::jsonb)
         `.execute(this.db);
       } catch (err: any) {
         this.logger.warn(`Failed to embed chunk ${chunk.chunkIndex} of page ${pageId}: ${err?.message}`);
@@ -344,7 +350,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
             VALUES (${pageId}, ${page.spaceId}, ${workspaceId}, ${page.directoryId ?? null}, ${page.topicId ?? null},
               ${modelName}, ${dimension}, ${embeddingStr}::vector,
               ${chunks.length}, 0, 0, ${diagram.attachmentId},
-              ${JSON.stringify({ type: 'diagram', diagramType: diagram.type, title: diagram.title || '' })}::jsonb)
+              ${JSON.stringify({ type: 'diagram', diagramType: diagram.type, title: diagram.title || '', chunkText: embText })}::jsonb)
           `.execute(this.db);
         } catch (err: any) {
           this.logger.warn(`Failed to extract diagram ${diagram.attachmentId}: ${err?.message}`);

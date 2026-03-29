@@ -35,9 +35,15 @@ export class PageListener {
 
   @OnEvent(EventName.PAGE_UPDATED)
   async handlePageUpdated(event: PageEvent) {
-    const { pageIds } = event;
-
+    const { pageIds, workspaceId } = event;
     await this.searchQueue.add(QueueJob.PAGE_UPDATED, { pageIds });
+    if (workspaceId) {
+      await this.aiQueue.add(
+        QueueJob.PAGE_CONTENT_UPDATED,
+        { pageIds, workspaceId },
+        { jobId: `embed-${pageIds[0]}` },
+      );
+    }
   }
 
   @OnEvent(EventName.PAGE_DELETED)
