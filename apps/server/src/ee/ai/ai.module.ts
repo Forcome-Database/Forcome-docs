@@ -15,6 +15,7 @@ import { InlineRewriteService } from './inline/inline-rewrite.service';
 import { QueryUnderstandingService } from './services/query-understanding.service';
 import { AnswerVerifierService } from './services/answer-verifier.service';
 import { RetrievalQualityService } from './services/retrieval-quality.service';
+import { WebExplorerService } from './services/web-explorer.service';
 import { PageModule } from '../../core/page/page.module';
 import { AttachmentModule } from '../../core/attachment/attachment.module';
 import { TokenModule } from '../../core/auth/token.module';
@@ -40,7 +41,8 @@ import { TokenModule } from '../../core/auth/token.module';
     QueryUnderstandingService,
     AnswerVerifierService,
     RetrievalQualityService,
+    WebExplorerService,
   ],
-  exports: [AiService, AiSearchService, AiTemplateService, QueryUnderstandingService, AnswerVerifierService, RetrievalQualityService],
+  exports: [AiService, AiSearchService, AiTemplateService, QueryUnderstandingService, AnswerVerifierService, RetrievalQualityService, WebExplorerService],
 })
 export class AiModule {}
