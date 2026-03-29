@@ -743,6 +743,7 @@ onUnmounted(() => {
               v-if="!hasMessages"
               :modifier-key="modifierKey"
               :is-configured="isConfigured"
+              :page-title="pageTitle"
               @ask="handleSubmit"
             />
 

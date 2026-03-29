@@ -5,6 +5,8 @@ import {
   IsString,
   IsArray,
   IsBoolean,
+  MaxLength,
+  Matches,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -80,6 +82,8 @@ export class PublicAiAnswerDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(64)
+  @Matches(/^[a-f0-9-]{36}$/, { message: 'sessionId must be a valid UUID format' })
   sessionId?: string;
 
   @IsOptional()
