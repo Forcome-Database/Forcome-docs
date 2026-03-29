@@ -1305,7 +1305,9 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
 
     if (this.queryUnderstanding) {
       try {
-        const liteModel = this.getLiteModel();
+        // Use completion model for intent classification — this is the critical
+        // first decision that determines the entire pipeline behavior
+        const classifyModel = this.getCompletionModel();
         // Extract page headings as outline for better query understanding
         const pageOutline = currentPage?.content
           ? this.extractHeadingOutline(currentPage.content)
@@ -1314,7 +1316,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
           input.query,
           input.history || [],
           currentPage?.title,
-          liteModel,
+          classifyModel,
           pageOutline,
         );
       } catch (err: any) {
