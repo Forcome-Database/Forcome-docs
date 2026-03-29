@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   IsArray,
+  IsBoolean,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -92,4 +93,8 @@ export class PublicAiAnswerDto {
   @ValidateNested({ each: true })
   @Type(() => AiHistoryMessageDto)
   history?: AiHistoryMessageDto[];
+
+  @IsOptional()
+  @IsBoolean()
+  deepResearch?: boolean;
 }

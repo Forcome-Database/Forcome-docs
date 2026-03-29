@@ -133,6 +133,7 @@ export class PublicWikiController {
         history: dto.history,
         requesterKey,
         sessionId: dto.sessionId,
+        deepResearch: dto.deepResearch,
       })) {
         res.raw.write(`data: ${chunk}\n\n`);
       }

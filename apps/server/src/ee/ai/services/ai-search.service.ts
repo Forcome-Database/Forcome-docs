@@ -61,6 +61,7 @@ export interface AnswerWithContextInput {
   images?: AiImagePayload[];
   history?: AiChatMessage[];
   scope?: RetrievalScope;
+  deepResearch?: boolean;
 }
 
 interface SearchFilters {
@@ -1279,6 +1280,11 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       }
     }
 
+    // Deep Research mode forces agentic retrieval
+    if (input.deepResearch) {
+      understanding = { ...understanding, complexity: 3 as const };
+    }
+
     // Emit intent metadata as first SSE event
     yield JSON.stringify({
       intent: understanding.intent,
@@ -1453,8 +1459,9 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
             ? '(Diagram)'
             : '(Page)';
 
+      const chunkLimit = input.deepResearch ? 5000 : 2500;
       contextParts.push(
-        `[${sourceIndex}] ${label} ${page.title}:\n${(result.chunkText || result.textContent || '').slice(0, 2500)}${assetHints}`,
+        `[${sourceIndex}] ${label} ${page.title}:\n${(result.chunkText || result.textContent || '').slice(0, chunkLimit)}${assetHints}`,
       );
       legacySources.push({
         title: page.title,

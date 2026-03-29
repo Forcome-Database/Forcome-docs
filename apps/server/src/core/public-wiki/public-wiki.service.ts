@@ -37,6 +37,7 @@ interface PublicWikiAiAnswerInput {
   history?: AiChatMessage[];
   requesterKey?: string;
   sessionId?: string;
+  deepResearch?: boolean;
 }
 
 interface PublicSpaceScopeEntry {
@@ -720,6 +721,7 @@ export class PublicWikiService {
       images: input.images,
       history,
       scope,
+      deepResearch: input.deepResearch,
     })) {
       // Accumulate content chunks for conversation saving
       try {
