@@ -24,6 +24,10 @@ import type {
   AiImagePayload,
   RetrievalScope,
 } from '../../ee/ai/services/ai-search.service';
+import {
+  WikiConversationStore,
+  WikiConversationMessage,
+} from './wiki-conversation.store';
 
 interface PublicWikiAiAnswerInput {
   query: string;
@@ -32,6 +36,7 @@ interface PublicWikiAiAnswerInput {
   images?: AiImagePayload[];
   history?: AiChatMessage[];
   requesterKey?: string;
+  sessionId?: string;
 }
 
 interface PublicSpaceScopeEntry {
@@ -60,6 +65,7 @@ export class PublicWikiService {
     private readonly searchService: SearchService,
     private readonly moduleRef: ModuleRef,
     private readonly redisService: RedisService,
+    private readonly conversationStore: WikiConversationStore,
   ) {
     this.redis = this.redisService.getOrThrow();
   }
@@ -670,6 +676,19 @@ export class PublicWikiService {
     this.enforcePublicAiLimits(input);
     await this.enforcePublicAiRateLimit(input.workspaceId, input.requesterKey);
 
+    // Resolve or generate session ID
+    const sessionId = input.sessionId || crypto.randomUUID();
+
+    // Yield session ID as the first SSE event so the client can persist it
+    yield JSON.stringify({ sessionId });
+
+    // Load server-side history; server history takes precedence over client-provided
+    let history: AiChatMessage[] = input.history || [];
+    const serverHistory = await this.conversationStore.load(sessionId);
+    if (serverHistory && serverHistory.length > 0) {
+      history = serverHistory as AiChatMessage[];
+    }
+
     const { page, scope } = await this.resolvePublicPageScope(
       input.workspaceId,
       input.pageSlugId,
@@ -689,18 +708,41 @@ export class PublicWikiService {
     }
 
     this.logger.log(
-      `Public wiki AI request workspace=${input.workspaceId} page=${page?.slugId || '-'} requester=${input.requesterKey || 'anonymous'}`,
+      `Public wiki AI request workspace=${input.workspaceId} page=${page?.slugId || '-'} requester=${input.requesterKey || 'anonymous'} session=${sessionId}`,
     );
 
+    // Collect the full answer for saving to Redis after streaming
+    let fullAnswer = '';
     for await (const chunk of AiSearchService.answerWithContext({
       query: input.query,
       workspaceId: input.workspaceId,
       pageSlugId: page?.slugId,
       images: input.images,
-      history: input.history,
+      history,
       scope,
     })) {
+      // Accumulate content chunks for conversation saving
+      try {
+        const parsed = JSON.parse(chunk);
+        if (parsed.content) {
+          fullAnswer += parsed.content;
+        }
+      } catch {
+        // non-JSON chunk, ignore for accumulation
+      }
       yield chunk;
+    }
+
+    // Save the conversation turn to Redis
+    if (fullAnswer) {
+      const updatedHistory: WikiConversationMessage[] = [
+        ...history.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+        { role: 'user', content: input.query },
+        { role: 'assistant', content: fullAnswer },
+      ];
+      await this.conversationStore.save(sessionId, updatedHistory).catch((err) => {
+        this.logger.warn(`Failed to save wiki conversation to Redis: ${err?.message}`);
+      });
     }
   }
 

@@ -78,6 +78,10 @@ export class PublicAiAnswerDto {
   pageSlugId?: string;
 
   @IsOptional()
+  @IsString()
+  sessionId?: string;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => AiImageDto)

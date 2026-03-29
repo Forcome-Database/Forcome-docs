@@ -132,6 +132,7 @@ export class PublicWikiController {
         images: dto.images,
         history: dto.history,
         requesterKey,
+        sessionId: dto.sessionId,
       })) {
         res.raw.write(`data: ${chunk}\n\n`);
       }
