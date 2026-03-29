@@ -154,6 +154,7 @@ export interface AiCitation {
   pageUrl?: string
   publicAssetUrl?: string
   snippet?: string
+  origin?: 'kb' | 'web'
 }
 
 /** 发送给后端的历史消息 */

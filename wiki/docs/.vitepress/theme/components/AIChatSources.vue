@@ -26,19 +26,25 @@ const getPageUrl = (source: { spaceSlug?: string; pageSlugId?: string; slugId?: 
 const normalizedItems = computed(() => {
   if (props.citations && props.citations.length > 0) {
     return props.citations.map((citation, index) => {
-      const href =
-        citation.sourceType === 'page'
-          ? getPageUrl(citation)
-          : citation.publicAssetUrl || getPageUrl(citation)
+      const isExternal = (citation as any).origin === 'web'
 
       const icon =
-        citation.sourceType === 'attachment'
-          ? '📎'
-          : citation.sourceType === 'image'
-            ? '🖼️'
-            : citation.sourceType === 'diagram'
-              ? '📐'
-              : '📄'
+        isExternal
+          ? '🌐'
+          : citation.sourceType === 'attachment'
+            ? '📎'
+            : citation.sourceType === 'image'
+              ? '🖼️'
+              : citation.sourceType === 'diagram'
+                ? '📐'
+                : '📄'
+
+      // For external sources, use pageUrl directly
+      const href = isExternal
+        ? citation.pageUrl || '#'
+        : citation.sourceType === 'page'
+          ? getPageUrl(citation)
+          : citation.publicAssetUrl || getPageUrl(citation)
 
       return {
         key: `${citation.sourceType}-${citation.attachmentId || citation.pageSlugId || citation.slugId || index}`,
