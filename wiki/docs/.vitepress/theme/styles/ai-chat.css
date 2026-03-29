@@ -724,14 +724,21 @@
   border-color: var(--c-accent);
 }
 
-/* ===== 当前页面上下文标签 ===== */
+/* ===== 上下文标签行（标签 + 深度研究按钮） ===== */
+.ai-chat-context-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: var(--spacing-2);
+}
+
 .ai-chat-context-tag {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: 100%;
+  max-width: calc(100% - 40px);
   padding: 2px 8px;
-  margin-bottom: var(--spacing-2);
   font-size: 11px;
   line-height: 1.4;
   color: var(--c-text-3);
@@ -1034,26 +1041,28 @@
 
 /* ===== 深度研究模式开关 ===== */
 .deep-research-toggle {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  border: 1px solid var(--c-border);
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 14px;
   transition: all 0.15s;
   flex-shrink: 0;
-  margin-bottom: 4px;
+  opacity: 0.5;
 }
 
 .deep-research-toggle:hover {
+  opacity: 0.8;
   background: var(--c-bg-soft);
 }
 
 .deep-research-toggle.active {
+  opacity: 1;
   background: var(--c-brand-soft);
   border-color: var(--c-brand);
 }
