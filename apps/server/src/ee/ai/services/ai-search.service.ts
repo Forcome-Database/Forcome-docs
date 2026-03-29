@@ -911,28 +911,31 @@ export class AiSearchService {
       this.searchByBM25(query, workspaceId, 20, filters, scope),
     ]);
 
-    const scoreMap = new Map<string, PageResult>();
-    const vectorPages: string[] = [];
+    const scoreMap = new Map<string, PageResult & { _bestDistance?: number }>();
 
-    for (const chunk of chunks) {
-      if (!scoreMap.has(chunk.pageId)) {
-        vectorPages.push(chunk.pageId);
+    for (let index = 0; index < chunks.length; index++) {
+      const chunk = chunks[index];
+      const existing = scoreMap.get(chunk.pageId);
+      if (existing) {
+        existing.score += 1 / (rrfK + index);
+        if (chunk.distance < (existing._bestDistance ?? Infinity)) {
+          existing.chunkText = chunk.chunkText;
+          existing.metadata = chunk.metadata;
+          existing._bestDistance = chunk.distance;
+        }
+      } else {
         scoreMap.set(chunk.pageId, {
           pageId: chunk.pageId,
           title: chunk.title,
           slugId: chunk.slugId,
           spaceSlug: chunk.spaceSlug,
           textContent: chunk.textContent,
-          score: 0,
+          score: 1 / (rrfK + index),
           chunkText: chunk.chunkText,
           metadata: chunk.metadata,
+          _bestDistance: chunk.distance,
         });
       }
-    }
-
-    for (let index = 0; index < vectorPages.length; index++) {
-      const entry = scoreMap.get(vectorPages[index])!;
-      entry.score += 1 / (rrfK + index);
     }
 
     for (let index = 0; index < bm25Results.length; index++) {
