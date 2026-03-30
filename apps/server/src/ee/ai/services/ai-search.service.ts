@@ -1361,6 +1361,31 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     }
   }
 
+  private async annotateChunkRelevance(
+    query: string,
+    entities: string[],
+    chunks: Array<{ title: string; preview: string }>,
+    liteModel: any,
+  ): Promise<string[]> {
+    try {
+      const { generateText } = require('ai');
+      const chunkList = chunks
+        .map((c, i) => `[${i + 1}] ${c.title}: ${c.preview.slice(0, 200)}`)
+        .join('\n');
+      const { text } = await generateText({
+        model: liteModel,
+        prompt: `用户问题：${query}\n关键实体：${entities.join(', ')}\n\n以下是检索到的文档片段。对每个片段用一句话说明它与用户问题的关系：\n${chunkList}\n\n返回 JSON 数组：["片段1的关系描述", "片段2的关系描述", ...]`,
+        maxTokens: 300,
+        temperature: 0,
+      });
+      const cleaned = text.replace(/```json?\s*/g, '').replace(/```\s*/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+
   // ==================== Answer With Context ====================
 
   async *answerWithContext(
@@ -1752,7 +1777,27 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       sourceIndex++;
     }
 
+    // Conditional annotation: only for partial/tangential confidence
+    let annotations: string[] = [];
+    if (['partial', 'tangential'].includes(qualityResult.confidence)) {
+      try {
+        let annoModel: any;
+        try { annoModel = this.getLiteModel(); } catch { annoModel = this.getCompletionModel(); }
+        annotations = await this.annotateChunkRelevance(
+          input.query,
+          understanding.entities || [],
+          finalReranked.map(r => ({
+            title: r.title,
+            preview: r.chunkText || r.textContent?.slice(0, 200) || '',
+          })),
+          annoModel,
+        );
+      } catch { /* non-blocking */ }
+    }
+
+    let rerankedIdx = -1;
     for (const result of finalReranked) {
+      rerankedIdx++;
       const page = pageRecords.get(result.pageId);
       if (!page) {
         continue;
@@ -1799,8 +1844,10 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
         chunkContent = (result.textContent || '').slice(0, budget?.perChunk || 2500);
       }
 
+      const annotation = annotations[rerankedIdx] || '';
+      const annotationLine = annotation ? `\n关系：${annotation}` : '';
       contextParts.push(
-        `[${sourceIndex}] ${label} ${page.title}:\n${chunkContent.slice(0, budget?.perChunk || 2500)}${assetHints}`,
+        `[${sourceIndex}] ${label} ${page.title}${annotationLine}\n---\n${chunkContent.slice(0, budget?.perChunk || 2500)}${assetHints}`,
       );
       legacySources.push({
         title: page.title,
