@@ -1671,17 +1671,22 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     let fullAnswer = '';
 
     try {
-      for await (let text of this.stripThinkBlocks(result.textStream)) {
-        // Post-process: replace short asset URLs with full JWT-signed URLs
-        if (this._assetUrlMap?.size) {
-          for (const [shortUrl, fullUrl] of this._assetUrlMap) {
-            if (text.includes(shortUrl)) {
-              text = text.replaceAll(shortUrl, fullUrl);
-            }
-          }
-        }
+      for await (const text of this.stripThinkBlocks(result.textStream)) {
         fullAnswer += text;
         yield JSON.stringify({ content: text });
+      }
+
+      // Post-process: replace short asset URLs with full JWT-signed URLs
+      // Done on accumulated fullAnswer because URLs span multiple streaming chunks
+      if (this._assetUrlMap?.size && fullAnswer) {
+        let corrected = fullAnswer;
+        for (const [shortUrl, fullUrl] of this._assetUrlMap) {
+          corrected = corrected.replaceAll(shortUrl, fullUrl);
+        }
+        if (corrected !== fullAnswer) {
+          fullAnswer = corrected;
+          yield JSON.stringify({ content_replace: corrected });
+        }
       }
     } catch (streamError: any) {
       const message = streamError?.message || '';

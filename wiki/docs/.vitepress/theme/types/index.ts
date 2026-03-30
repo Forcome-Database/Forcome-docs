@@ -395,6 +395,8 @@ export interface DocmostAiStreamEvent {
   complexity?: number
   suggestedQuestions?: string[]
   warning?: string
+  /** Full content replacement after post-processing (e.g., URL resolution) */
+  content_replace?: string
   /** Server-side conversation session ID (emitted as the first SSE event) */
   sessionId?: string
 }

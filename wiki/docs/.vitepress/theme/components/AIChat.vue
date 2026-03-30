@@ -409,7 +409,14 @@ const sendMessage = async (content: string) => {
           const currentMsg = messages.value[assistantIndex]
           messages.value[assistantIndex] = { ...currentMsg, citations: event.citations }
         }
-        if (event.content) {
+        if (event.content_replace) {
+          // Full content replacement (e.g., after short URL → JWT URL post-processing)
+          const currentMsg = messages.value[assistantIndex]
+          messages.value[assistantIndex] = {
+            ...currentMsg,
+            content: event.content_replace
+          }
+        } else if (event.content) {
           const currentMsg = messages.value[assistantIndex]
           messages.value[assistantIndex] = {
             ...currentMsg,
