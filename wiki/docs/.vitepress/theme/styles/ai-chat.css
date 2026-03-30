@@ -1078,3 +1078,15 @@
   opacity: 0.45;
   order: 1;
 }
+
+/* ===== 引用标记上标 ===== */
+.ai-citation-ref {
+  font-size: 0.7em;
+  vertical-align: super;
+  line-height: 0;
+  color: var(--vp-c-brand-1);
+  cursor: default;
+  margin: 0 1px;
+  font-weight: 500;
+  opacity: 0.75;
+}

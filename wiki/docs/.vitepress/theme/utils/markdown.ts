@@ -133,7 +133,13 @@ md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
 export function renderMarkdownToHtml(content: string): string {
   if (!content) return ''
   const raw = md.render(content)
-  return DOMPurify.sanitize(raw, {
+  // Transform [N] citation markers to superscript badges.
+  // Negative lookahead (?!\() avoids matching markdown links [text](url).
+  const withCitations = raw.replace(
+    /\[(\d+)\](?!\()/g,
+    '<sup class="ai-citation-ref">$1</sup>',
+  )
+  return DOMPurify.sanitize(withCitations, {
     ADD_ATTR: ['data-code'],
   })
 }
