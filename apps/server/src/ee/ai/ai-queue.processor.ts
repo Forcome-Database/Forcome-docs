@@ -16,6 +16,20 @@ import {
   extractExcalidrawText,
 } from './utils/content-extractor';
 
+function buildStructuralContext(
+  spaceName: string,
+  pageTitle: string,
+  sectionHeading: string | null,
+  docSummary: string,
+): string {
+  const parts = [`本段来自「${spaceName}」的《${pageTitle}》`];
+  if (sectionHeading) {
+    parts.push(`，章节「${sectionHeading}」`);
+  }
+  parts.push(`。${docSummary}`);
+  return parts.join('');
+}
+
 @Processor(QueueName.AI_QUEUE)
 export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
   private readonly logger = new Logger(AiQueueProcessor.name);
@@ -288,6 +302,13 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
 
     if (!page) return;
 
+    const space = await this.db
+      .selectFrom('spaces')
+      .select(['name'])
+      .where('id', '=', page.spaceId)
+      .executeTakeFirst();
+    const spaceName = space?.name || '';
+
     // Delete existing embeddings for this page
     await sql`DELETE FROM page_embeddings WHERE "pageId" = ${pageId}`.execute(this.db);
 
@@ -296,7 +317,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
     const docContext = await this.aiSearchService.generateDocumentContext(pageTitle, text);
     for (const chunk of chunks) {
       try {
-        const contextPrefix = `${pageTitle}. ${docContext}`;
+        const contextPrefix = buildStructuralContext(spaceName, pageTitle, chunk.sectionHeading || null, docContext);
         const embeddingText = `${contextPrefix}\n${chunk.text}`;
         const embedding = await this.aiSearchService.generateEmbedding(embeddingText);
         const embeddingStr = `[${embedding.join(',')}]`;
@@ -307,7 +328,7 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
           VALUES (${pageId}, ${page.spaceId}, ${workspaceId}, ${page.directoryId ?? null}, ${page.topicId ?? null},
             ${modelName}, ${dimension}, ${embeddingStr}::vector,
             ${chunk.chunkIndex}, ${chunk.chunkStart}, ${chunk.chunkLength},
-            ${JSON.stringify({ type: 'text', contextPrefix, chunkText: chunk.text })}::jsonb)
+            ${JSON.stringify({ type: 'text', contextPrefix, chunkText: chunk.text, sectionHeading: chunk.sectionHeading || null })}::jsonb)
         `.execute(this.db);
       } catch (err: any) {
         this.logger.warn(`Failed to embed chunk ${chunk.chunkIndex} of page ${pageId}: ${err?.message}`);
