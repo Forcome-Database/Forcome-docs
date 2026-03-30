@@ -475,9 +475,25 @@ const sendMessage = async (content: string) => {
     saveHistory()
   } catch (e) {
     const errorMessage = e instanceof Error ? e.message : '发送失败，请重试'
-    error.value = errorMessage
-    if (messages.value.length > 0 && messages.value[messages.value.length - 1].role === 'assistant') {
-      messages.value.pop()
+    const lastMsg = messages.value[messages.value.length - 1]
+
+    if (lastMsg?.role === 'assistant' && lastMsg.content && lastMsg.content.length > 0) {
+      // Partial answer received — keep it but mark as incomplete
+      const isZh = route.path.startsWith('/zh')
+      messages.value[messages.value.length - 1] = {
+        ...lastMsg,
+        isStreaming: false,
+        content: lastMsg.content + (isZh
+          ? '\n\n⚠️ 回答可能不完整（连接中断）'
+          : '\n\n⚠️ Answer may be incomplete (connection interrupted)'),
+      }
+      saveHistory()
+    } else {
+      // No content at all — remove placeholder and show error
+      error.value = errorMessage
+      if (lastMsg?.role === 'assistant') {
+        messages.value.pop()
+      }
     }
     console.error('[AIChat] 发送消息失败:', e)
   } finally {
