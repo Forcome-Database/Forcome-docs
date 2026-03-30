@@ -22,6 +22,7 @@ import {
   projectProsemirrorToContextText,
 } from '../../../common/helpers/prosemirror/content-projection';
 import { buildPublicAttachmentUrl } from '../../../core/share/share.util';
+import { allocateTokenBudget } from '../utils/token-budget';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const tsquery = require('pg-tsquery')();
@@ -1305,6 +1306,9 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     input: AnswerWithContextInput,
   ): AsyncGenerator<string> {
     const isChinese = /[\u4e00-\u9fa5]/.test(input.query);
+    const pipelineStart = Date.now();
+    const metrics: Record<string, number> = {};
+    let t0 = Date.now();
     const currentPage = await this.loadCurrentPage(input);
 
     // ---- Query Understanding (non-blocking) ----
@@ -1354,6 +1358,9 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       complexity: understanding.complexity,
     });
 
+    metrics.queryUnderstanding = Date.now() - t0;
+    t0 = Date.now();
+
     // ---- Retrieval (always runs — no short-circuits) ----
     const searchQuery = understanding.rewrittenQuery || input.query;
 
@@ -1395,6 +1402,9 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
 
       finalReranked = await this.rerank(searchQuery, merged, 5);
     }
+
+    metrics.retrieval = Date.now() - t0;
+    t0 = Date.now();
 
     // ---- Answerability Gate ----
     let qualityResult: RetrievalQualityResult = {
@@ -1498,6 +1508,9 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       }
     }
 
+    metrics.answerabilityGate = Date.now() - t0;
+    t0 = Date.now();
+
     // ---- Context Assembly ----
     const pageIds = Array.from(
       new Set(
@@ -1516,6 +1529,16 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       pageRecords.set(currentPage.pageId, currentPage);
     }
 
+    // TODO: make configurable via AI_MODEL_CONTEXT_TOKENS env var
+    const budget = allocateTokenBudget(
+      128000,
+      4096,
+      1500, // base system prompt (intent ~200 + constraints ~800 + margin)
+      finalReranked.length,
+      webEvidence.length,
+      (input.history?.length ?? 0) > 0,
+    );
+
     const imageDescriptionMaps = await this.loadImageDescriptionMaps(pageIds);
     const contextParts: string[] = [];
     const legacySources: LegacySourceItem[] = [];
@@ -1530,10 +1553,10 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
             input.scope,
             imageDescriptions,
           )
-        : (currentPage.textContent || '').slice(0, 20000);
+        : (currentPage.textContent || '').slice(0, budget.currentPage);
 
       contextParts.push(
-        `[${sourceIndex}] (Current page) ${currentPage.title}:\n${currentContext.slice(0, 20000)}`,
+        `[${sourceIndex}] (Current page) ${currentPage.title}:\n${currentContext.slice(0, budget.currentPage)}`,
       );
       legacySources.push({
         title: currentPage.title,
@@ -1616,6 +1639,8 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     const dedupedLegacySources = this.dedupePageSources(legacySources);
     const dedupedCitations = this.dedupeCitations(citations);
     const context = contextParts.join('\n\n').trim();
+
+    metrics.contextAssembly = Date.now() - t0;
 
     // ---- Intent-aware System Prompt ----
     const systemPromptText = getIntentSystemPrompt(
@@ -1727,6 +1752,14 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     } catch {
       // non-blocking — do not fail the response
     }
+
+    metrics.total = Date.now() - pipelineStart;
+    this.logger.log(
+      `[Pipeline] intent=${understanding.intent} ` +
+      `complexity=${understanding.complexity} confidence=${qualityResult.confidence} ` +
+      `sources=${finalReranked.length} answerLen=${fullAnswer.length} ` +
+      `timing=${JSON.stringify(metrics)}ms`,
+    );
   }
 
   /**
