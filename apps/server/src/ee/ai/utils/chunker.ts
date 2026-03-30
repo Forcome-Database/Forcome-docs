@@ -3,6 +3,7 @@ export interface TextChunk {
   chunkIndex: number;
   chunkStart: number;
   chunkLength: number;
+  sectionHeading: string;
 }
 
 interface Segment {
@@ -16,6 +17,7 @@ function splitBySentenceBoundary(
   offset: number,
   maxChars: number,
   overlapRatio: number,
+  sectionHeading: string = '',
 ): TextChunk[] {
   const chunks: TextChunk[] = [];
   const overlap = Math.floor(maxChars * overlapRatio);
@@ -29,6 +31,7 @@ function splitBySentenceBoundary(
         chunkIndex: -1,
         chunkStart: offset + pos,
         chunkLength: remaining,
+        sectionHeading,
       });
       break;
     }
@@ -62,6 +65,7 @@ function splitBySentenceBoundary(
       chunkIndex: -1,
       chunkStart: offset + pos,
       chunkLength: splitAt,
+      sectionHeading,
     });
 
     pos += splitAt - overlap;
@@ -158,6 +162,7 @@ export function chunkText(
         chunkIndex: 0,
         chunkStart: 0,
         chunkLength: text.length,
+        sectionHeading: sections[0]?.heading || '',
       },
     ];
   }
@@ -170,6 +175,7 @@ export function chunkText(
         chunkIndex: -1,
         chunkStart: section.start,
         chunkLength: section.text.length,
+        sectionHeading: section.heading,
       });
     } else {
       const segments = segmentByCodeBlocks(section.text);
@@ -180,6 +186,7 @@ export function chunkText(
             section.start + segment.start,
             maxChars,
             overlapRatio,
+            section.heading,
           );
           rawChunks.push(...sub);
         } else {
@@ -188,6 +195,7 @@ export function chunkText(
             chunkIndex: -1,
             chunkStart: section.start + segment.start,
             chunkLength: segment.text.length,
+            sectionHeading: section.heading,
           });
         }
       }
