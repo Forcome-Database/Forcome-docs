@@ -1643,6 +1643,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     // ---- LLM Generation ----
     const model = this.getCompletionModel();
     let result: any;
+    const wrappedQuery = `<user_query>${input.query}</user_query>`;
     if (input.images?.length) {
       messages.push({
         role: 'user',
@@ -1652,12 +1653,12 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
             image: Buffer.from(image.data, 'base64'),
             mimeType: image.mimeType,
           })),
-          { type: 'text' as const, text: input.query },
+          { type: 'text' as const, text: wrappedQuery },
         ],
       });
       result = streamText({ model, messages });
     } else {
-      messages.push({ role: 'user', content: input.query });
+      messages.push({ role: 'user', content: wrappedQuery });
       result = streamText({ model, messages });
     }
 
