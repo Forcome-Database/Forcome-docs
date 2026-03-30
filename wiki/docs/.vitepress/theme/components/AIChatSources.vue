@@ -25,41 +25,36 @@ const getPageUrl = (source: { spaceSlug?: string; pageSlugId?: string; slugId?: 
 
 const normalizedItems = computed(() => {
   if (props.citations && props.citations.length > 0) {
-    return props.citations.map((citation, index) => {
-      const isExternal = (citation as any).origin === 'web'
+    return props.citations
+      .filter(c => c.sourceType !== 'image' && c.sourceType !== 'diagram')
+      .map((citation, index) => {
+        const isExternal = (citation as any).origin === 'web'
 
-      const icon =
-        isExternal
-          ? '🌐'
-          : citation.sourceType === 'attachment'
-            ? '📎'
-            : citation.sourceType === 'image'
-              ? '🖼️'
-              : citation.sourceType === 'diagram'
-                ? '📐'
-                : '📄'
+        const icon = isExternal ? '🌐' : '📄'
 
-      // For external sources, use pageUrl directly
-      const href = isExternal
-        ? citation.pageUrl || '#'
-        : citation.sourceType === 'page'
-          ? getPageUrl(citation)
-          : citation.publicAssetUrl || getPageUrl(citation)
+        // For external sources, use pageUrl directly
+        const href = isExternal
+          ? citation.pageUrl || '#'
+          : citation.sourceType === 'page'
+            ? getPageUrl(citation)
+            : citation.publicAssetUrl || getPageUrl(citation)
 
-      return {
-        key: `${citation.sourceType}-${citation.attachmentId || citation.pageSlugId || citation.slugId || index}`,
-        title: citation.title || 'Untitled',
-        href,
-        icon,
-        snippet: citation.snippet || '',
-        cited: citation.cited,
-      }
-    })
+        return {
+          key: `${citation.sourceType}-${citation.attachmentId || citation.pageSlugId || citation.slugId || index}`,
+          title: citation.title || 'Untitled',
+          spaceName: citation.spaceName || '',
+          href,
+          icon,
+          snippet: citation.snippet || '',
+          cited: citation.cited,
+        }
+      })
   }
 
   return (props.sources || []).map((source) => ({
     key: `${source.spaceSlug}-${source.slugId}`,
     title: source.title || 'Untitled',
+    spaceName: '',
     href: getPageUrl(source),
     icon: '📄',
     snippet: '',
@@ -89,6 +84,7 @@ const normalizedItems = computed(() => {
       >
         <span class="source-icon">{{ item.icon }}</span>
         <div class="source-content">
+          <span v-if="item.spaceName" class="source-breadcrumb">{{ item.spaceName }} ›</span>
           <span class="source-title">{{ item.title }}</span>
           <span v-if="item.snippet" class="source-snippet">{{ item.snippet }}</span>
         </div>
@@ -96,3 +92,11 @@ const normalizedItems = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.source-breadcrumb {
+  font-size: 12px;
+  color: var(--vp-c-text-2);
+  margin-right: 4px;
+}
+</style>

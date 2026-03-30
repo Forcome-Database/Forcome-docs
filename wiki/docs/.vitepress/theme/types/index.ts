@@ -155,6 +155,7 @@ export interface AiCitation {
   pageSlugId?: string
   slugId?: string
   spaceSlug?: string
+  spaceName?: string
   attachmentId?: string
   pageUrl?: string
   publicAssetUrl?: string

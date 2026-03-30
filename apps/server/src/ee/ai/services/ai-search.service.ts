@@ -117,6 +117,7 @@ interface PageRecord {
   title: string;
   slugId: string;
   spaceSlug: string;
+  spaceName?: string;
   textContent: string;
   content?: any;
 }
@@ -297,6 +298,7 @@ export class AiSearchService {
       title: page.title,
       pageSlugId: page.slugId,
       spaceSlug: page.spaceSlug,
+      spaceName: page.spaceName,
       pageUrl: this.createPageUrl(page),
     };
   }
@@ -351,6 +353,7 @@ export class AiSearchService {
         p.title,
         p.slug_id as "slugId",
         s.slug as "spaceSlug",
+        s.name as "spaceName",
         p.text_content as "textContent",
         p.content
       FROM pages p
@@ -371,6 +374,7 @@ export class AiSearchService {
           title: row.title,
           slugId: row.slugId,
           spaceSlug: row.spaceSlug,
+          spaceName: row.spaceName,
           textContent: row.textContent,
           content: row.content,
         } satisfies PageRecord,
