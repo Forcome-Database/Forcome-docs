@@ -142,6 +142,7 @@ export interface AiSource {
   title: string
   slugId: string
   spaceSlug: string
+  cited?: boolean
 }
 
 export type AiSourceType = 'page' | 'attachment' | 'image' | 'diagram'
@@ -157,6 +158,7 @@ export interface AiCitation {
   publicAssetUrl?: string
   snippet?: string
   origin?: 'kb' | 'web'
+  cited?: boolean
 }
 
 /** 发送给后端的历史消息 */

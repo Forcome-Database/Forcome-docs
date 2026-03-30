@@ -1736,6 +1736,27 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       }
     }
 
+    // ---- Mark actually-cited sources ----
+    const usedIndices = new Set<number>();
+    const citationRegex = /\[(\d+)\]/g;
+    let citMatch: RegExpExecArray | null;
+    while ((citMatch = citationRegex.exec(fullAnswer)) !== null) {
+      usedIndices.add(parseInt(citMatch[1], 10));
+    }
+    const hasWebRef = fullAnswer.includes('[Web]');
+
+    if (usedIndices.size > 0 || hasWebRef) {
+      const markedCitations = dedupedCitations.map((c, idx) => ({
+        ...c,
+        cited: c.origin === 'web' ? hasWebRef : usedIndices.has(idx + 1),
+      }));
+      const markedSources = dedupedLegacySources.map((s, idx) => ({
+        ...s,
+        cited: usedIndices.has(idx + 1),
+      }));
+      yield JSON.stringify({ sources: markedSources, citations: markedCitations });
+    }
+
     // ---- Suggested Follow-up Questions (non-blocking) ----
     try {
       const suggestedQuestions = await this.generateSuggestedQuestions(

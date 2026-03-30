@@ -1073,3 +1073,8 @@
   width: 15px;
   height: 15px;
 }
+
+.ai-chat-source-card.uncited {
+  opacity: 0.45;
+  order: 1;
+}

@@ -52,6 +52,7 @@ const normalizedItems = computed(() => {
         href,
         icon,
         snippet: citation.snippet || '',
+        cited: citation.cited,
       }
     })
   }
@@ -62,6 +63,7 @@ const normalizedItems = computed(() => {
     href: getPageUrl(source),
     icon: '📄',
     snippet: '',
+    cited: source.cited,
   }))
 })
 </script>
@@ -83,6 +85,7 @@ const normalizedItems = computed(() => {
         target="_blank"
         rel="noopener noreferrer"
         class="ai-chat-source-card"
+        :class="{ 'uncited': item.cited === false }"
       >
         <span class="source-icon">{{ item.icon }}</span>
         <div class="source-content">
