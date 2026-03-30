@@ -1877,12 +1877,21 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
         imageDescriptions,
       );
 
-      const assetHints =
-        relevantAssets.length > 0
-          ? `\nRelevant assets:\n${relevantAssets
-              .map((asset) => this.formatCitationHint(asset))
-              .join('\n')}`
-          : '';
+      // Build inline image context: ![description](url) for LLM to intelligently select
+      const imageContext = relevantAssets
+        .filter(asset => asset.sourceType === 'image' || asset.sourceType === 'diagram')
+        .map(asset => {
+          const url = asset.publicAssetUrl || `${this.environmentService.getAppUrl()}/api/files/${asset.attachmentId}/${asset.title}`;
+          const desc = asset.snippet || asset.title;
+          return `![${desc}](${url})`;
+        })
+        .join('\n');
+
+      const nonImageAssets = relevantAssets
+        .filter(asset => asset.sourceType !== 'image' && asset.sourceType !== 'diagram');
+      const attachmentHints = nonImageAssets.length > 0
+        ? `\nAttachments:\n${nonImageAssets.map(a => this.formatCitationHint(a)).join('\n')}`
+        : '';
 
       const label =
         result.metadata?.type === 'image'
@@ -1909,7 +1918,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       const annotation = annotations[rerankedIdx] || '';
       const annotationLine = annotation ? `\n关系：${annotation}` : '';
       contextParts.push(
-        `[${sourceIndex}] ${label} ${page.title}${annotationLine}\n---\n${chunkContent.slice(0, budget?.perChunk || 2500)}${assetHints}`,
+        `[${sourceIndex}] ${label} ${page.title}${annotationLine}\n---\n${chunkContent.slice(0, budget?.perChunk || 2500)}${imageContext ? '\n' + imageContext : ''}${attachmentHints}`,
       );
       legacySources.push({
         title: page.title,
