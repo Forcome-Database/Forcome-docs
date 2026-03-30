@@ -97,6 +97,8 @@ interface PageResult {
   score: number;
   chunkText?: string;
   metadata?: any;
+  chunkStart?: number;
+  chunkLength?: number;
 }
 
 interface LegacySourceItem {
@@ -1003,6 +1005,8 @@ export class AiSearchService {
         if (chunk.distance < (existing._bestDistance ?? Infinity)) {
           existing.chunkText = chunk.chunkText;
           existing.metadata = chunk.metadata;
+          existing.chunkStart = chunk.chunkStart;
+          existing.chunkLength = chunk.chunkLength;
           existing._bestDistance = chunk.distance;
         }
       } else {
@@ -1015,6 +1019,8 @@ export class AiSearchService {
           score: 1 / (rrfK + index),
           chunkText: chunk.chunkText,
           metadata: chunk.metadata,
+          chunkStart: chunk.chunkStart,
+          chunkLength: chunk.chunkLength,
           _bestDistance: chunk.distance,
         });
       }
@@ -1634,8 +1640,23 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
             ? '(Diagram)'
             : '(Page)';
 
+      // Expand chunk context: if chunk is short, include surrounding text from the page
+      let chunkContent = result.chunkText || '';
+      if (chunkContent.length < 800 && result.chunkStart != null && page.textContent) {
+        const expandChars = Math.floor(((budget?.perChunk || 2500) - chunkContent.length) / 2);
+        const start = Math.max(0, result.chunkStart - expandChars);
+        const end = Math.min(
+          page.textContent.length,
+          result.chunkStart + (result.chunkLength || chunkContent.length) + expandChars,
+        );
+        chunkContent = page.textContent.slice(start, end);
+      }
+      if (!chunkContent) {
+        chunkContent = (result.textContent || '').slice(0, budget?.perChunk || 2500);
+      }
+
       contextParts.push(
-        `[${sourceIndex}] ${label} ${page.title}:\n${(result.chunkText || result.textContent || '').slice(0, budget.perChunk)}${assetHints}`,
+        `[${sourceIndex}] ${label} ${page.title}:\n${chunkContent.slice(0, budget?.perChunk || 2500)}${assetHints}`,
       );
       legacySources.push({
         title: page.title,
