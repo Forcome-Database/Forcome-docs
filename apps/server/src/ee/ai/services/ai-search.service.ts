@@ -12,7 +12,7 @@ import {
 } from './query-understanding.service';
 import { AnswerVerifierService } from './answer-verifier.service';
 import { getIntentSystemPrompt, getLowConfidenceResponse } from '../utils/intent-prompts';
-import { RetrievalQualityService, type RetrievalQualityResult } from './retrieval-quality.service';
+import { RetrievalQualityService, type RetrievalQualityResult, computeEntityCoverage } from './retrieval-quality.service';
 import { WebExplorerService, type WebEvidence } from './web-explorer.service';
 import {
   collectDocumentAssetProjections,
@@ -1479,9 +1479,15 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
 
     // ---- Answerability Gate ----
     let qualityResult: RetrievalQualityResult = {
-      confidence: 'medium',
+      confidence: 'partial',
       isPublicTopic: false,
     };
+
+    const entityCoverage = computeEntityCoverage(
+      understanding.entities || [],
+      understanding.searchFacets || [],
+      finalReranked.map(r => ({ chunkText: r.chunkText, textContent: r.textContent })),
+    );
 
     if (this.retrievalQuality) {
       try {
@@ -1495,6 +1501,8 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
           })),
           currentPage?.title,
           this.getLiteModel(),
+          entityCoverage,
+          normalizedTopScore,
         );
         this.logger.debug(
           `Retrieval quality: ${qualityResult.confidence}, isPublicTopic=${qualityResult.isPublicTopic}`,
@@ -1504,8 +1512,8 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       }
     }
 
-    // LOW confidence + private topic → honest refusal
-    if (qualityResult.confidence === 'low' && !qualityResult.isPublicTopic) {
+    // NONE confidence + private topic → honest refusal
+    if (qualityResult.confidence === 'none' && !qualityResult.isPublicTopic) {
       yield JSON.stringify({
         sources: this.dedupePageSources(
           currentPage
@@ -1528,10 +1536,10 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       return;
     }
 
-    // LOW confidence + public topic → external web exploration
+    // TANGENTIAL/NONE confidence + public topic → external web exploration
     let webEvidence: WebEvidence[] = [];
     let confidenceHint = '';
-    if (qualityResult.confidence === 'low' && qualityResult.isPublicTopic) {
+    if ((qualityResult.confidence === 'tangential' || qualityResult.confidence === 'none') && qualityResult.isPublicTopic) {
       if (this.webExplorer) {
         try {
           this.logger.debug(`KB confidence low for public topic, exploring web: "${input.query}"`);
@@ -1577,6 +1585,13 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
           ? '\n\n⚠️ 知识库中可能没有足够信息。如果无法从上下文找到答案，请明确说明"知识库中暂无此内容"。'
           : '\n\n⚠️ The knowledge base may not have sufficient information. If you cannot find the answer, say so explicitly.';
       }
+    }
+
+    // Partial/tangential confidence (not already handled by web exploration) → cautionary hint
+    if (!confidenceHint && (qualityResult.confidence === 'partial' || qualityResult.confidence === 'tangential')) {
+      confidenceHint = isChinese
+        ? '\n\n⚠️ 知识库中可能没有足够信息。如果无法从上下文找到答案，请明确说明"知识库中暂无此内容"。'
+        : '\n\n⚠️ The knowledge base may not have sufficient information. If you cannot find the answer, say so explicitly.';
     }
 
     metrics.answerabilityGate = Date.now() - t0;
