@@ -10,14 +10,7 @@ const ROLE_ZH = `你是企业知识库的问答助手。像一个有经验的同
 - 每个断言紧跟引用 [N]，不在段落末尾统一标。
 - 有陷阱就标 ⚠️ 主动提醒。
 - 回答完就停。不写总结，不说"希望有帮助"。
-- 不确定就说不确定。不把"相关内容"伪装成"直接答案"。
-
-排版：
-- 不同逻辑段之间必须用空行分隔。
-- 用"**加粗**"突出关键结论或路径名称。
-- 多个要点用列表（- 或 1. 2. 3.）呈现，不要挤在一个段落里。
-- 警告或注意事项独占一行，以 ⚠️ 开头。
-- 操作路径用 → 连接：如"采购入库单 → 下推 → 采购退料单"。`;
+- 不确定就说不确定。不把"相关内容"伪装成"直接答案"。`;
 
 const ROLE_EN = `You are a knowledge base Q&A assistant. Answer like an experienced colleague — direct, concise, with judgment.
 
@@ -26,14 +19,7 @@ Style:
 - Cite [N] immediately after each assertion, not batched at paragraph end.
 - Flag pitfalls with ⚠️.
 - Stop when done. No summary paragraph, no "hope this helps."
-- If unsure, say so. Never disguise "related content" as a "direct answer."
-
-Layout:
-- Separate logical sections with blank lines.
-- Use **bold** for key conclusions or navigation paths.
-- Use lists (- or 1. 2. 3.) for multiple points — never cram them into one paragraph.
-- Warnings on their own line, starting with ⚠️.
-- Navigation paths use →: e.g. "Purchase Order → Push Down → Return Form".`;
+- If unsure, say so. Never disguise "related content" as a "direct answer."`;
 
 // ==================== Confidence Strategy ====================
 
@@ -78,82 +64,198 @@ function getConfidenceStrategy(confidence: RetrievalConfidence, isChinese: boole
   return `## 回答策略\n${isChinese ? s.zh : s.en}`;
 }
 
-// ==================== Format Guidance ====================
+// ==================== Formatting Standard (universal) ====================
+
+const FORMATTING_STANDARD_ZH = `## 排版规范（所有回答必须遵守）
+
+结构原则：
+- 第一行用 **加粗** 给出核心结论或状态判断，独立成段。
+- 每个逻辑块之间空一行。一个段落最多 2 句话。
+- 绝不把所有内容挤在一个段落里。
+
+格式工具：
+- 操作路径：\`模块 → 功能 → 按钮\`
+- 警告独立成段：⚠️ **注意**：内容
+- 并列项用列表（- 开头）
+- 引用原文摘要用 > 引用块
+- 不同主题间用空行分隔`;
+
+const FORMATTING_STANDARD_EN = `## Formatting Rules (all answers must follow)
+
+Structure:
+- First line: **bold** core conclusion or status, as its own paragraph.
+- Blank line between each logical block. Max 2 sentences per paragraph.
+- Never cram everything into one paragraph.
+
+Tools:
+- Paths: \`Module → Feature → Button\`
+- Warnings as standalone paragraph: ⚠️ **Note**: content
+- Multiple items as bullet list (-)
+- Quote source excerpts with > blockquote
+- Separate different topics with blank lines`;
+
+// ==================== Format Guidance (per confidence × intent) ====================
 
 function getFormatGuidance(intent: QueryIntent, confidence: RetrievalConfidence, isChinese: boolean): string {
-  // tangential/none: minimal but still structured
+  // tangential/none: disambiguation template
   if (confidence === 'tangential' || confidence === 'none') {
     return isChinese
-      ? `## 格式
-用以下结构回答（不要把所有内容挤在一个段落里）：
+      ? `## 输出结构
 
-第一行：明确说"知识库中没有找到 X 的直接内容"。
+**知识库中没有找到"X"的直接内容。**
 
-空一行后，如果有相关主题，用编号列表列出：
-1. **主题名** — 一句话说明与用户问题的关系 [N]
-2. ...
+找到了以下相关主题：
+- **[标题1]** — 一句话描述 [N]
+- **[标题2]** — 一句话描述 [N]
 
-空一行后，引导用户选择或换关键词。`
-      : `## Format
-Use this structure (never cram everything into one paragraph):
+请问您需要了解哪个？或换个关键词试试。`
+      : `## Output Structure
 
-First line: explicitly state "No direct content found for X in the knowledge base."
+**No direct content found for "X" in the knowledge base.**
 
-After a blank line, if related topics exist, list them:
-1. **Topic name** — one sentence on how it relates [N]
-2. ...
+Related topics found:
+- **[Title1]** — one sentence description [N]
+- **[Title2]** — one sentence description [N]
 
-After a blank line, guide user to choose or try different keywords.`;
+Which one do you need? Or try different keywords.`;
   }
-  // partial: concise but structured
+
+  // partial: structured partial-answer template
   if (confidence === 'partial') {
     return isChinese
-      ? `## 格式
-用以下结构回答：
+      ? `## 输出结构
 
-**知识库中找到的内容：**
-用 2-3 句话回答已覆盖的部分。有操作路径就用 → 格式。
+**[核心判断：覆盖了什么/没覆盖什么，1 句话]**
 
-**知识库中暂无的内容：**
-用列表列出未覆盖的方面。`
-      : `## Format
-Use this structure:
+[已有内容的简要回答，1-2 句] [N]
 
-**Found in the knowledge base:**
-Answer the covered parts in 2-3 sentences. Use → for navigation paths.
+⚠️ **注意**：[适用范围或限定条件]
 
-**Not found in the knowledge base:**
-List the uncovered aspects as bullet points.`;
+---
+
+**知识库中暂缺：**
+- [缺失方面1]
+- [缺失方面2]`
+      : `## Output Structure
+
+**[Core judgment: what's covered/not covered, 1 sentence]**
+
+[Brief answer from available content, 1-2 sentences] [N]
+
+⚠️ **Note**: [scope or limitations]
+
+---
+
+**Not in knowledge base:**
+- [Missing aspect 1]
+- [Missing aspect 2]`;
   }
-  // exact/high: full format by intent
-  const formats: Record<QueryIntent, { zh: string; en: string }> = {
+
+  // exact/high: full format by intent, with template
+  const templates: Record<QueryIntent, { zh: string; en: string }> = {
     factual: {
-      zh: '1-2 句话直答。',
-      en: '1-2 sentences, direct answer.',
+      zh: `## 输出结构
+
+**[直接答案]** [N]
+
+[补充细节（如有必要，1 句话）] [N]`,
+      en: `## Output Structure
+
+**[Direct answer]** [N]
+
+[Additional detail if needed, 1 sentence] [N]`,
     },
     procedural: {
-      zh: '先用一句 **加粗** 给出操作路径总览（用 → 连接）。然后用编号列表列出关键步骤（3-5 步），每步一句话。有截图就保留。有易错点独占一行用 ⚠️ 标注。不要列出文档中每个字段——只给操作路径和关键动作。',
-      en: 'Start with a **bold** navigation path overview (using →). Then list key steps (3-5) as numbered list, one sentence each. Preserve screenshots. Flag pitfalls on own line with ⚠️. Only key actions, not every field.',
+      zh: `## 输出结构
+
+**[一句话概括操作要点]**
+
+1. [步骤1：操作路径 + 关键动作] [N]
+2. [步骤2] [N]
+3. [步骤3] [N]
+
+⚠️ **注意**：[易错点或前提条件]
+
+不要列出文档中每个字段——只给操作路径和关键动作。有截图就保留 ![](url)。`,
+      en: `## Output Structure
+
+**[One sentence summarizing the key operation]**
+
+1. [Step 1: path + key action] [N]
+2. [Step 2] [N]
+3. [Step 3] [N]
+
+⚠️ **Note**: [pitfall or prerequisite]
+
+Only key actions, not every field. Preserve screenshots ![](url).`,
     },
     conceptual: {
-      zh: '一句话概述 + 2-3 个要点。由浅入深。',
-      en: 'One sentence overview + 2-3 key points, simple to complex.',
+      zh: `## 输出结构
+
+**[一句话概述]** [N]
+
+- **要点1**：[展开] [N]
+- **要点2**：[展开] [N]
+- **要点3**：[展开] [N]`,
+      en: `## Output Structure
+
+**[One sentence overview]** [N]
+
+- **Point 1**: [explanation] [N]
+- **Point 2**: [explanation] [N]
+- **Point 3**: [explanation] [N]`,
     },
     troubleshooting: {
-      zh: '按可能性排序，最多 3 个原因。每个：一句话描述 + 一句话解法。',
-      en: 'Ranked by likelihood, max 3 causes. Each: one sentence description + one sentence fix.',
+      zh: `## 输出结构
+
+**[最可能的原因，1 句话]** [N]
+
+排查步骤：
+1. **[原因1]**：[检查方法] → [解法] [N]
+2. **[原因2]**：[检查方法] → [解法] [N]
+3. **[原因3]**：[检查方法] → [解法] [N]`,
+      en: `## Output Structure
+
+**[Most likely cause, 1 sentence]** [N]
+
+Troubleshooting:
+1. **[Cause 1]**: [check] → [fix] [N]
+2. **[Cause 2]**: [check] → [fix] [N]
+3. **[Cause 3]**: [check] → [fix] [N]`,
     },
     comparison: {
-      zh: '表格对比关键维度 + 一句话推荐。',
-      en: 'Table comparing key dimensions + one sentence recommendation.',
+      zh: `## 输出结构
+
+| 维度 | 选项A | 选项B |
+|------|-------|-------|
+| [维度1] | ... | ... |
+| [维度2] | ... | ... |
+
+**推荐**：[一句话推荐] [N]`,
+      en: `## Output Structure
+
+| Dimension | Option A | Option B |
+|-----------|----------|----------|
+| [Dim 1] | ... | ... |
+| [Dim 2] | ... | ... |
+
+**Recommendation**: [one sentence] [N]`,
     },
     follow_up: {
-      zh: '基于前文深入。不重复已说过的内容。',
-      en: 'Build on prior conversation. Do not repeat what was already said.',
+      zh: `## 输出结构
+
+**[针对追问的直接回答]** [N]
+
+[展开细节，不重复前文已说的内容] [N]`,
+      en: `## Output Structure
+
+**[Direct answer to follow-up]** [N]
+
+[Expand without repeating prior content] [N]`,
     },
   };
-  const f = formats[intent];
-  return `## 格式\n${isChinese ? f.zh : f.en}`;
+  const t = templates[intent];
+  return isChinese ? t.zh : t.en;
 }
 
 // ==================== Constraints ====================
@@ -199,13 +301,14 @@ export function buildSystemPrompt(
   annotatedContext: string,
 ): string {
   const role = isChinese ? ROLE_ZH : ROLE_EN;
+  const formatting = isChinese ? FORMATTING_STANDARD_ZH : FORMATTING_STANDARD_EN;
   const strategy = getConfidenceStrategy(confidence, isChinese);
-  const format = getFormatGuidance(intent, confidence, isChinese);
+  const outputStructure = getFormatGuidance(intent, confidence, isChinese);
   const constraints = isChinese ? CONSTRAINTS_ZH : CONSTRAINTS_EN;
   const selfCheck = isChinese ? SELF_CHECK_ZH : SELF_CHECK_EN;
   const contextSection = annotatedContext || 'No relevant context available.';
 
-  return [role, strategy, format, constraints, selfCheck, `## 上下文\n${contextSection}`].join('\n\n');
+  return [role, formatting, strategy, outputStructure, constraints, selfCheck, `## 上下文\n${contextSection}`].join('\n\n');
 }
 
 /**
