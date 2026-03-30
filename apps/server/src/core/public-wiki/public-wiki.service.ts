@@ -685,7 +685,7 @@ export class PublicWikiService {
 
     // Load server-side history; server history takes precedence over client-provided
     let history: AiChatMessage[] = input.history || [];
-    const serverHistory = await this.conversationStore.load(sessionId);
+    const serverHistory = await this.conversationStore.load(sessionId, input.requesterKey);
     if (serverHistory && serverHistory.length > 0) {
       history = serverHistory as AiChatMessage[];
     }
@@ -742,7 +742,7 @@ export class PublicWikiService {
         { role: 'user', content: input.query },
         { role: 'assistant', content: fullAnswer },
       ];
-      await this.conversationStore.save(sessionId, updatedHistory).catch((err) => {
+      await this.conversationStore.save(sessionId, updatedHistory, input.requesterKey).catch((err) => {
         this.logger.warn(`Failed to save wiki conversation to Redis: ${err?.message}`);
       });
     }
