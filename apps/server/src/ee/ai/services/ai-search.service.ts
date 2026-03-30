@@ -1607,9 +1607,8 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
             ? '(Diagram)'
             : '(Page)';
 
-      const chunkLimit = input.deepResearch ? 5000 : 2500;
       contextParts.push(
-        `[${sourceIndex}] ${label} ${page.title}:\n${(result.chunkText || result.textContent || '').slice(0, chunkLimit)}${assetHints}`,
+        `[${sourceIndex}] ${label} ${page.title}:\n${(result.chunkText || result.textContent || '').slice(0, budget.perChunk)}${assetHints}`,
       );
       legacySources.push({
         title: page.title,
@@ -1625,7 +1624,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     // Inject web evidence into context (clearly labeled as external)
     for (const evidence of webEvidence) {
       contextParts.push(
-        `[Web] (External: ${evidence.title || evidence.url}):\n${(evidence.content || evidence.snippet || '').slice(0, 2500)}`,
+        `[Web] (External: ${evidence.title || evidence.url}):\n${(evidence.content || evidence.snippet || '').slice(0, Math.floor(budget.webEvidence / Math.max(webEvidence.length, 1)))}`,
       );
       citations.push({
         sourceType: 'page' as const,
