@@ -70,4 +70,14 @@ export class AnswerVerifierService {
       return { isGrounded: true, confidence: 0.5, ungroundedClaims: [] };
     }
   }
+
+  checkCompleteness(
+    answer: string,
+    entities: string[],
+  ): { isComplete: boolean; missingEntities: string[] } {
+    if (entities.length === 0) return { isComplete: true, missingEntities: [] };
+    const answerLower = answer.toLowerCase();
+    const missing = entities.filter(e => !answerLower.includes(e.toLowerCase()));
+    return { isComplete: missing.length === 0, missingEntities: missing };
+  }
 }

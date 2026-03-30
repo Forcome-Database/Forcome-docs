@@ -1219,12 +1219,20 @@ export class AiSearchService {
     answerPreview: string,
     currentPageTitle?: string,
     isChinese = true,
+    mode: 'explore' | 'refine' | 'redirect' = 'explore',
   ): Promise<string[]> {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { generateText } = require('ai');
       const model = this.getLiteModel();
       const lang = isChinese ? '中文' : 'English';
+
+      const modeInstruction = mode === 'explore'
+        ? (isChinese ? '基于回答内容，建议 3 个深入探索的方向（不同角度）' : 'Based on the answer, suggest 3 exploration directions (different angles)')
+        : mode === 'refine'
+          ? (isChinese ? '用户的问题中有些方面未被回答。建议 3 个更精确的搜索词来找到缺失的信息' : 'Some aspects of the question were not answered. Suggest 3 more precise search terms')
+          : (isChinese ? '知识库中没有用户要找的内容。建议 3 个最可能的替代搜索词或相关主题名称' : 'Knowledge base does not have what the user is looking for. Suggest 3 alternative search terms or related topic names');
+
       const { text } = await generateText({
         model,
         prompt: `Based on this Q&A interaction, suggest exactly 3 natural follow-up questions a user might ask next.
@@ -1236,7 +1244,7 @@ ${currentPageTitle ? `Current page: ${currentPageTitle}` : ''}
 
 Rules:
 - Questions must be in ${lang}
-- Each question should explore a different angle (deeper detail, related topic, practical application)
+- ${modeInstruction}
 - Keep each question under 30 characters
 - Return ONLY a JSON array of 3 strings, no markdown
 
@@ -1644,7 +1652,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       });
       try {
         const suggestions = await this.generateSuggestedQuestions(
-          input.query, understanding.intent, '', currentPage?.title, isChinese,
+          input.query, understanding.intent, '', currentPage?.title, isChinese, 'redirect',
         );
         if (suggestions.length > 0) {
           yield JSON.stringify({ suggestedQuestions: suggestions });
@@ -1678,7 +1686,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
             });
             try {
               const suggestions = await this.generateSuggestedQuestions(
-                input.query, understanding.intent, '', currentPage?.title, isChinese,
+                input.query, understanding.intent, '', currentPage?.title, isChinese, 'redirect',
               );
               if (suggestions.length > 0) {
                 yield JSON.stringify({ suggestedQuestions: suggestions });
@@ -1835,7 +1843,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
         // Suggested questions in redirect mode
         try {
           const suggestions = await this.generateSuggestedQuestions(
-            input.query, understanding.intent, '', currentPage?.title, isChinese,
+            input.query, understanding.intent, '', currentPage?.title, isChinese, 'redirect',
           );
           if (suggestions.length > 0) yield JSON.stringify({ suggestedQuestions: suggestions });
         } catch {}
@@ -2026,6 +2034,18 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       }
     }
 
+    // ---- Completeness check (no LLM, pure string match) ----
+    if ((understanding.entities?.length || 0) > 0 && fullAnswer.length > 50) {
+      const completeness = this.answerVerifier?.checkCompleteness(fullAnswer, understanding.entities || []);
+      if (completeness && !completeness.isComplete && completeness.missingEntities.length > 0) {
+        const missingStr = completeness.missingEntities.join('、');
+        const warning = isChinese
+          ? `ℹ️ 关于「${missingStr}」方面，知识库中暂无相关内容。`
+          : `ℹ️ No content found for: ${completeness.missingEntities.join(', ')}`;
+        yield JSON.stringify({ warning });
+      }
+    }
+
     // ---- Mark actually-cited sources ----
     const usedIndices = new Set<number>();
     const citationRegex = /\[(\d+)\]/g;
@@ -2048,6 +2068,9 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     }
 
     // ---- Suggested Follow-up Questions (non-blocking) ----
+    const suggestionMode = qualityResult.confidence === 'exact' || qualityResult.confidence === 'high'
+      ? 'explore'
+      : qualityResult.confidence === 'partial' ? 'refine' : 'redirect';
     try {
       const suggestedQuestions = await this.generateSuggestedQuestions(
         input.query,
@@ -2055,6 +2078,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
         fullAnswer,
         currentPage?.title,
         isChinese,
+        suggestionMode,
       );
       if (suggestedQuestions.length > 0) {
         yield JSON.stringify({ suggestedQuestions });
