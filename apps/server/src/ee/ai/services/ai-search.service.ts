@@ -1704,24 +1704,9 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
             ? '\n\n注意：以下部分内容来自外部网络搜索（标记为 [Web]），可能不完全适用于你的具体环境。知识库原有内容标记为 [1][2] 等编号。'
             : '\n\nNote: Some content below is from external web search (marked [Web]) and may not fully apply to your specific environment. Knowledge base content is marked with [1][2] etc.';
         } catch {
-          // External search failed — use cautionary hint only
-          confidenceHint = isChinese
-            ? '\n\n⚠️ 知识库中可能没有足够信息。如果无法从上下文找到答案，请明确说明"知识库中暂无此内容"。'
-            : '\n\n⚠️ The knowledge base may not have sufficient information. If you cannot find the answer, say so explicitly.';
+          // External search failed — continue without hint
         }
-      } else {
-        // WebExplorer not available — cautionary hint only
-        confidenceHint = isChinese
-          ? '\n\n⚠️ 知识库中可能没有足够信息。如果无法从上下文找到答案，请明确说明"知识库中暂无此内容"。'
-          : '\n\n⚠️ The knowledge base may not have sufficient information. If you cannot find the answer, say so explicitly.';
       }
-    }
-
-    // Partial/tangential confidence (not already handled by web exploration) → cautionary hint
-    if (!confidenceHint && (qualityResult.confidence === 'partial' || qualityResult.confidence === 'tangential')) {
-      confidenceHint = isChinese
-        ? '\n\n⚠️ 知识库中可能没有足够信息。如果无法从上下文找到答案，请明确说明"知识库中暂无此内容"。'
-        : '\n\n⚠️ The knowledge base may not have sufficient information. If you cannot find the answer, say so explicitly.';
     }
 
     metrics.answerabilityGate = Date.now() - t0;
@@ -2048,10 +2033,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
             liteModel,
           );
           if (verification && !verification.isGrounded && verification.ungroundedClaims.length > 0) {
-            const warningMsg = isChinese
-              ? `⚠️ 以下内容可能未在知识库中找到充分依据：${verification.ungroundedClaims.slice(0, 3).join('、')}`
-              : `⚠️ These claims may not be fully supported: ${verification.ungroundedClaims.slice(0, 3).join(', ')}`;
-            yield JSON.stringify({ warning: warningMsg });
+            this.logger.warn(`[Groundedness] Ungrounded claims: ${verification.ungroundedClaims.join(', ')}`);
           }
         } catch {
           // Non-blocking: silently skip verification failures
