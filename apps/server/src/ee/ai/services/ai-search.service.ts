@@ -1338,6 +1338,29 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     return this.rerank(rewrittenQuery, merged, 7);
   }
 
+  // ==================== HyDE (Hypothetical Document Embedding) ====================
+
+  private async hydeSearch(
+    query: string,
+    workspaceId: string,
+    scope?: RetrievalScope,
+  ): Promise<ChunkResult[]> {
+    try {
+      const { generateText } = require('ai');
+      let model: any;
+      try { model = this.getLiteModel(); } catch { model = this.getCompletionModel(); }
+      const { text: hydeAnswer } = await generateText({
+        model,
+        prompt: `假设知识库中有一篇文档能完美回答以下问题，这篇文档会怎么写？写一段 50-100 字的假想文档片段。\n问题：${query}`,
+        maxTokens: 150,
+        temperature: 0.3,
+      });
+      return this.searchSimilarChunks(hydeAnswer.trim(), workspaceId, 10, 0.8, undefined, scope);
+    } catch {
+      return [];
+    }
+  }
+
   // ==================== Answer With Context ====================
 
   async *answerWithContext(
@@ -1474,6 +1497,29 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       ? finalReranked[0].score / searchPathCount
       : 0;
 
+    // HyDE: if initial retrieval quality is poor, try hypothetical document embedding
+    if (normalizedTopScore < 0.008 && finalReranked.length > 0) {
+      try {
+        const hydeChunks = await this.hydeSearch(searchQuery, input.workspaceId, input.scope);
+        if (hydeChunks.length > 0) {
+          const seen = new Set(finalReranked.map(r => r.pageId));
+          for (const chunk of hydeChunks) {
+            if (!seen.has(chunk.pageId)) {
+              finalReranked.push({
+                pageId: chunk.pageId, title: chunk.title, slugId: chunk.slugId,
+                spaceSlug: chunk.spaceSlug, textContent: chunk.textContent,
+                score: 0.01, chunkText: chunk.chunkText, metadata: chunk.metadata,
+                chunkStart: chunk.chunkStart, chunkLength: chunk.chunkLength,
+              });
+              seen.add(chunk.pageId);
+            }
+          }
+          finalReranked = await this.rerank(searchQuery, finalReranked, 5);
+          normalizedTopScore = finalReranked[0]?.score / searchPathCount || 0;
+        }
+      } catch { /* non-blocking */ }
+    }
+
     metrics.retrieval = Date.now() - t0;
     t0 = Date.now();
 
@@ -1483,7 +1529,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       isPublicTopic: false,
     };
 
-    const entityCoverage = computeEntityCoverage(
+    let entityCoverage = computeEntityCoverage(
       understanding.entities || [],
       understanding.searchFacets || [],
       finalReranked.map(r => ({ chunkText: r.chunkText, textContent: r.textContent })),
@@ -1510,6 +1556,51 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       } catch {
         // Fail-open: continue with generation
       }
+    }
+
+    // CRAG: if confidence is weak and entity coverage is low, try corrective query
+    let hasRetried = false;
+    if (
+      !hasRetried &&
+      ['partial', 'tangential'].includes(qualityResult.confidence) &&
+      entityCoverage < 0.5
+    ) {
+      hasRetried = true;
+      try {
+        const { generateText } = require('ai');
+        let lm: any;
+        try { lm = this.getLiteModel(); } catch { lm = this.getCompletionModel(); }
+        const topTitle = finalReranked[0]?.title || '';
+        const { text: correctedQuery } = await generateText({
+          model: lm,
+          prompt: `用户问"${input.query}"，但检索到的内容主要关于"${topTitle}"。生成一个更精确的搜索词来找到用户真正想要的内容。只输出搜索词，不要解释。`,
+          maxTokens: 50,
+          temperature: 0,
+        });
+
+        const retryResults = await this.hybridSearch(
+          correctedQuery.trim(), input.workspaceId, 10, undefined, input.scope,
+        );
+        const retryRawTopScore = retryResults[0]?.score || 0;
+        const originalRawTopScore = finalReranked[0]?.score || 0;
+
+        if (retryResults.length > 0 && retryRawTopScore > originalRawTopScore * 1.5) {
+          finalReranked = await this.rerank(correctedQuery.trim(), retryResults, 5);
+          normalizedTopScore = finalReranked[0]?.score / searchPathCount || 0;
+          // Re-assess
+          entityCoverage = computeEntityCoverage(
+            understanding.entities || [], understanding.searchFacets || [],
+            finalReranked.map(r => ({ chunkText: r.chunkText, textContent: r.textContent })),
+          );
+          if (this.retrievalQuality) {
+            qualityResult = await this.retrievalQuality.assess(
+              input.query, understanding.intent,
+              finalReranked.map(r => ({ pageTitle: r.title, chunkText: r.chunkText || r.textContent?.slice(0, 300), score: r.score })),
+              currentPage?.title, lm, entityCoverage, normalizedTopScore,
+            );
+          }
+        }
+      } catch { /* non-blocking */ }
     }
 
     // NONE confidence + private topic → honest refusal
