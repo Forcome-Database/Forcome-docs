@@ -1643,22 +1643,37 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       } catch { /* non-blocking */ }
     }
 
-    // NONE confidence + private topic → honest refusal
+    // ---- Answer Confidence (combines retrieval quality + current page context) ----
+    // retrieval confidence: based purely on search results
+    // answer confidence: whether the system has enough context to answer
+    //
+    // When a current page exists, it is always a valid context source —
+    // the system should never refuse when it has page content available.
+    // Early-exit (refusal/disambiguation) only applies when there is
+    // NO current page context to fall back on.
+    const hasPageContext = !!currentPage?.content;
+    const retrievalConfidence = qualityResult.confidence;
+
+    // Upgrade answer confidence when current page provides context
+    if (hasPageContext && ['none', 'tangential'].includes(qualityResult.confidence)) {
+      qualityResult = { ...qualityResult, confidence: 'partial' };
+      this.logger.debug(
+        `[AnswerConfidence] retrieval=${retrievalConfidence}, upgraded to partial (current page "${currentPage!.title}" provides context)`,
+      );
+    }
+
+    // NONE confidence + no page context + private topic → honest refusal
     if (qualityResult.confidence === 'none' && !qualityResult.isPublicTopic) {
       yield JSON.stringify({
-        sources: this.dedupePageSources(
-          currentPage
-            ? [{ title: currentPage.title, slugId: currentPage.slugId, spaceSlug: currentPage.spaceSlug, distance: 0 }]
-            : [],
-        ),
-        citations: currentPage ? [this.createPageCitation(currentPage)] : [],
+        sources: [],
+        citations: [],
       });
       yield JSON.stringify({
-        content: getLowConfidenceResponse(input.query, isChinese, currentPage?.title),
+        content: getLowConfidenceResponse(input.query, isChinese),
       });
       try {
         const suggestions = await this.generateSuggestedQuestions(
-          input.query, understanding.intent, '', currentPage?.title, isChinese, 'redirect',
+          input.query, understanding.intent, '', undefined, isChinese, 'redirect',
         );
         if (suggestions.length > 0) {
           yield JSON.stringify({ suggestedQuestions: suggestions });
@@ -1667,7 +1682,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       return;
     }
 
-    // TANGENTIAL/NONE confidence + public topic → external web exploration
+    // TANGENTIAL/NONE confidence + no page context + public topic → external web exploration
     let webEvidence: WebEvidence[] = [];
     let confidenceHint = '';
     if ((qualityResult.confidence === 'tangential' || qualityResult.confidence === 'none') && qualityResult.isPublicTopic) {
@@ -1680,19 +1695,15 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
           if (webEvidence.length === 0) {
             // External search also found nothing → honest refusal
             yield JSON.stringify({
-              sources: this.dedupePageSources(
-                currentPage
-                  ? [{ title: currentPage.title, slugId: currentPage.slugId, spaceSlug: currentPage.spaceSlug, distance: 0 }]
-                  : [],
-              ),
-              citations: currentPage ? [this.createPageCitation(currentPage)] : [],
+              sources: [],
+              citations: [],
             });
             yield JSON.stringify({
-              content: getLowConfidenceResponse(input.query, isChinese, currentPage?.title),
+              content: getLowConfidenceResponse(input.query, isChinese),
             });
             try {
               const suggestions = await this.generateSuggestedQuestions(
-                input.query, understanding.intent, '', currentPage?.title, isChinese, 'redirect',
+                input.query, understanding.intent, '', undefined, isChinese, 'redirect',
               );
               if (suggestions.length > 0) {
                 yield JSON.stringify({ suggestedQuestions: suggestions });
