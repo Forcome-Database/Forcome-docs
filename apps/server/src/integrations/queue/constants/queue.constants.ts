@@ -61,6 +61,7 @@ export enum QueueJob {
 
   GENERATE_PAGE_EMBEDDINGS = 'generate-page-embeddings',
   DELETE_PAGE_EMBEDDINGS = 'delete-page-embeddings',
+  REBUILD_ALL_EMBEDDINGS = 'rebuild-all-embeddings',
 
   PAGE_HISTORY = 'page-history',
 

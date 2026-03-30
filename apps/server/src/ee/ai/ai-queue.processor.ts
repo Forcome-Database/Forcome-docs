@@ -108,6 +108,46 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
           }
           break;
         }
+
+        case QueueJob.REBUILD_ALL_EMBEDDINGS: {
+          this.logger.log('Starting full embedding rebuild...');
+          const pages = await sql`
+            SELECT p.id, p.workspace_id as "workspaceId" FROM pages p WHERE p.deleted_at IS NULL
+          `.execute(this.db);
+
+          const BATCH_SIZE = 5;
+          let processed = 0;
+          const total = (pages.rows as any[]).length;
+
+          for (let i = 0; i < total; i += BATCH_SIZE) {
+            const batch = (pages.rows as any[]).slice(i, i + BATCH_SIZE);
+            await Promise.all(batch.map(async (row: any) => {
+              try {
+                const page = await this.db
+                  .selectFrom('pages')
+                  .select(['id', 'title', 'textContent', 'content'])
+                  .where('id', '=', row.id)
+                  .where('deletedAt', 'is', null)
+                  .executeTakeFirst();
+
+                if (!page) return;
+
+                const text = (page.textContent || '').trim();
+                if (!text) return;
+
+                await this.upsertPageEmbedding(page.id, row.workspaceId, text, page.title || 'Untitled', page.content);
+                processed++;
+              } catch (err: any) {
+                this.logger.warn(`Rebuild failed for page ${row.id}: ${err?.message}`);
+              }
+            }));
+            if (processed % 50 === 0 || i + BATCH_SIZE >= total) {
+              this.logger.log(`Rebuild progress: ${processed}/${total}`);
+            }
+          }
+          this.logger.log(`Rebuild complete: ${processed}/${total} pages`);
+          break;
+        }
       }
     } catch (err: any) {
       this.logger.error(
