@@ -467,6 +467,33 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
       }
     }
 
+    // Enrich tsvector with spaceName + pageTitle for better BM25 recall.
+    // The pages table has a BEFORE UPDATE trigger that recomputes tsv from
+    // title + text_content.  We disable it for this single statement so our
+    // enriched value (which includes spaceName) is preserved.
+    try {
+      await sql`
+        ALTER TABLE pages DISABLE TRIGGER pages_tsvector_update
+      `.execute(this.db);
+
+      await sql`
+        UPDATE pages
+        SET tsv = setweight(to_tsvector('english', f_unaccent(${spaceName + ' ' + pageTitle})), 'A') ||
+                  setweight(to_tsvector('english', f_unaccent(substring(${text}, 1, 1000000))), 'B')
+        WHERE id = ${pageId}
+      `.execute(this.db);
+
+      await sql`
+        ALTER TABLE pages ENABLE TRIGGER pages_tsvector_update
+      `.execute(this.db);
+    } catch (tsvErr: any) {
+      // Re-enable trigger even on failure
+      try {
+        await sql`ALTER TABLE pages ENABLE TRIGGER pages_tsvector_update`.execute(this.db);
+      } catch { /* best-effort */ }
+      this.logger.warn(`Failed to enrich tsv for page ${pageId}: ${tsvErr?.message}`);
+    }
+
     this.logger.log(`Generated ${chunks.length} chunk embeddings for page ${pageId}`);
   }
 
