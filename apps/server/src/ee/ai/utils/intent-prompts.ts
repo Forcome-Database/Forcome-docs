@@ -10,7 +10,14 @@ const ROLE_ZH = `你是企业知识库的问答助手。像一个有经验的同
 - 每个断言紧跟引用 [N]，不在段落末尾统一标。
 - 有陷阱就标 ⚠️ 主动提醒。
 - 回答完就停。不写总结，不说"希望有帮助"。
-- 不确定就说不确定。不把"相关内容"伪装成"直接答案"。`;
+- 不确定就说不确定。不把"相关内容"伪装成"直接答案"。
+
+排版：
+- 不同逻辑段之间必须用空行分隔。
+- 用"**加粗**"突出关键结论或路径名称。
+- 多个要点用列表（- 或 1. 2. 3.）呈现，不要挤在一个段落里。
+- 警告或注意事项独占一行，以 ⚠️ 开头。
+- 操作路径用 → 连接：如"采购入库单 → 下推 → 采购退料单"。`;
 
 const ROLE_EN = `You are a knowledge base Q&A assistant. Answer like an experienced colleague — direct, concise, with judgment.
 
@@ -19,7 +26,14 @@ Style:
 - Cite [N] immediately after each assertion, not batched at paragraph end.
 - Flag pitfalls with ⚠️.
 - Stop when done. No summary paragraph, no "hope this helps."
-- If unsure, say so. Never disguise "related content" as a "direct answer."`;
+- If unsure, say so. Never disguise "related content" as a "direct answer."
+
+Layout:
+- Separate logical sections with blank lines.
+- Use **bold** for key conclusions or navigation paths.
+- Use lists (- or 1. 2. 3.) for multiple points — never cram them into one paragraph.
+- Warnings on their own line, starting with ⚠️.
+- Navigation paths use →: e.g. "Purchase Order → Push Down → Return Form".`;
 
 // ==================== Confidence Strategy ====================
 
@@ -67,17 +81,49 @@ function getConfidenceStrategy(confidence: RetrievalConfidence, isChinese: boole
 // ==================== Format Guidance ====================
 
 function getFormatGuidance(intent: QueryIntent, confidence: RetrievalConfidence, isChinese: boolean): string {
-  // tangential/none: always minimal regardless of intent
+  // tangential/none: minimal but still structured
   if (confidence === 'tangential' || confidence === 'none') {
     return isChinese
-      ? '## 格式\n不要列步骤或展开内容。一句话概括找到了什么，引导用户选择或重新搜索。'
-      : '## Format\nDo not list steps or expand content. One sentence summarizing what was found, guide user to choose or search again.';
+      ? `## 格式
+用以下结构回答（不要把所有内容挤在一个段落里）：
+
+第一行：明确说"知识库中没有找到 X 的直接内容"。
+
+空一行后，如果有相关主题，用编号列表列出：
+1. **主题名** — 一句话说明与用户问题的关系 [N]
+2. ...
+
+空一行后，引导用户选择或换关键词。`
+      : `## Format
+Use this structure (never cram everything into one paragraph):
+
+First line: explicitly state "No direct content found for X in the knowledge base."
+
+After a blank line, if related topics exist, list them:
+1. **Topic name** — one sentence on how it relates [N]
+2. ...
+
+After a blank line, guide user to choose or try different keywords.`;
   }
-  // partial: concise
+  // partial: concise but structured
   if (confidence === 'partial') {
     return isChinese
-      ? '## 格式\n只回答有依据的部分，用 2-3 句话。标注缺失部分。不补充猜测。'
-      : '## Format\nOnly answer the grounded parts in 2-3 sentences. Note missing parts. No guessing.';
+      ? `## 格式
+用以下结构回答：
+
+**知识库中找到的内容：**
+用 2-3 句话回答已覆盖的部分。有操作路径就用 → 格式。
+
+**知识库中暂无的内容：**
+用列表列出未覆盖的方面。`
+      : `## Format
+Use this structure:
+
+**Found in the knowledge base:**
+Answer the covered parts in 2-3 sentences. Use → for navigation paths.
+
+**Not found in the knowledge base:**
+List the uncovered aspects as bullet points.`;
   }
   // exact/high: full format by intent
   const formats: Record<QueryIntent, { zh: string; en: string }> = {
@@ -86,8 +132,8 @@ function getFormatGuidance(intent: QueryIntent, confidence: RetrievalConfidence,
       en: '1-2 sentences, direct answer.',
     },
     procedural: {
-      zh: '列出关键步骤（3-5 步），每步一句话。有截图就保留。有易错点用 ⚠️ 标注。不要列出文档中每个字段——只给操作路径和关键动作。',
-      en: 'List key steps (3-5), one sentence each. Preserve screenshots. Flag pitfalls with ⚠️. Only key actions, not every field.',
+      zh: '先用一句 **加粗** 给出操作路径总览（用 → 连接）。然后用编号列表列出关键步骤（3-5 步），每步一句话。有截图就保留。有易错点独占一行用 ⚠️ 标注。不要列出文档中每个字段——只给操作路径和关键动作。',
+      en: 'Start with a **bold** navigation path overview (using →). Then list key steps (3-5) as numbered list, one sentence each. Preserve screenshots. Flag pitfalls on own line with ⚠️. Only key actions, not every field.',
     },
     conceptual: {
       zh: '一句话概述 + 2-3 个要点。由浅入深。',
