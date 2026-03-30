@@ -75,9 +75,12 @@ export class RetrievalQualityService {
       };
     }
 
-    // Fast path: top result has a strong score — skip LLM
+    // Fast path: top result has a very strong score AND intent is simple — skip LLM.
+    // For troubleshooting/comparison, always run LLM assessment since high
+    // keyword overlap doesn't guarantee the content answers the specific question type.
     const topScore = retrievedChunks[0]?.score ?? 0;
-    if (topScore > 0.03) {
+    const simpleIntents: QueryIntent[] = ['factual', 'follow_up'];
+    if (topScore > 0.04 && simpleIntents.includes(intent)) {
       return { confidence: 'high', isPublicTopic: false };
     }
 
