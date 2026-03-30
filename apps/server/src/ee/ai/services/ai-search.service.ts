@@ -11,7 +11,7 @@ import {
   type QueryIntent,
 } from './query-understanding.service';
 import { AnswerVerifierService } from './answer-verifier.service';
-import { getIntentSystemPrompt, getLowConfidenceResponse } from '../utils/intent-prompts';
+import { buildSystemPrompt, getLowConfidenceResponse } from '../utils/intent-prompts';
 import { RetrievalQualityService, type RetrievalQualityResult, computeEntityCoverage } from './retrieval-quality.service';
 import { WebExplorerService, type WebEvidence } from './web-explorer.service';
 import {
@@ -1834,8 +1834,9 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     metrics.contextAssembly = Date.now() - t0;
 
     // ---- Intent-aware System Prompt ----
-    const systemPromptText = getIntentSystemPrompt(
+    const systemPromptText = buildSystemPrompt(
       understanding.intent,
+      qualityResult.confidence,
       isChinese,
       context,
     ) + confidenceHint;
