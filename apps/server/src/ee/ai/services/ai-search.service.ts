@@ -1437,8 +1437,37 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
 
     const currentPage = await this.loadCurrentPage(input);
 
-    // ---- Query Understanding (non-blocking) ----
-    let understanding: QueryUnderstandingResult = {
+    // ---- Query Understanding + Retrieval (parallel) ----
+    const understandingPromise = this.queryUnderstanding
+      ? (async () => {
+          try {
+            let classifyModel: any;
+            try { classifyModel = this.getLiteModel(); }
+            catch { classifyModel = this.getCompletionModel(); }
+            const pageOutline = currentPage?.content
+              ? this.extractHeadingOutline(currentPage.content)
+              : undefined;
+            return await this.queryUnderstanding.classifyAndRewrite(
+              input.query, input.history || [], currentPage?.title, classifyModel, pageOutline,
+            );
+          } catch (err: any) {
+            this.logger.warn(`Query understanding failed, using defaults: ${err?.message}`);
+            return null;
+          }
+        })()
+      : Promise.resolve(null);
+
+    // Start retrieval immediately with raw query (don't wait for understanding)
+    const initialRetrievalPromise = this.hybridSearch(
+      input.query, input.workspaceId, 15, undefined, input.scope,
+    );
+
+    // Wait for both
+    const [understandingResult, initialResults] = await Promise.all([
+      understandingPromise, initialRetrievalPromise,
+    ]);
+
+    let understanding: QueryUnderstandingResult = understandingResult || {
       intent: 'factual',
       complexity: 1,
       rewrittenQuery: input.query,
@@ -1447,33 +1476,6 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       needsClarification: false,
       isOutOfScope: false,
     };
-
-    if (this.queryUnderstanding) {
-      try {
-        // Use lite model for intent classification — simple structured output task,
-        // completion model is wasteful here (adds cost + latency for no quality gain).
-        // Fallback to completion model if lite model is not configured.
-        let classifyModel: any;
-        try {
-          classifyModel = this.getLiteModel();
-        } catch {
-          classifyModel = this.getCompletionModel();
-        }
-        // Extract page headings as outline for better query understanding
-        const pageOutline = currentPage?.content
-          ? this.extractHeadingOutline(currentPage.content)
-          : undefined;
-        understanding = await this.queryUnderstanding.classifyAndRewrite(
-          input.query,
-          input.history || [],
-          currentPage?.title,
-          classifyModel,
-          pageOutline,
-        );
-      } catch (err: any) {
-        this.logger.warn(`Query understanding failed, using defaults: ${err?.message}`);
-      }
-    }
 
     // Deep Research mode forces agentic retrieval
     if (input.deepResearch) {
@@ -1505,30 +1507,29 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
         input.scope,
       );
     } else {
-      // Multi-facet retrieval: search with all facets in parallel
-      const facets = understanding.searchFacets?.length > 0
-        ? understanding.searchFacets.slice(0, 3)
-        : [searchQuery];
-      searchPathCount = facets.length;
+      // Use initial results + supplement with additional facets if available
+      const extraFacets = (understanding.searchFacets || [])
+        .filter(f => f !== input.query)
+        .slice(0, 2);
 
-      const searchPromises = facets.map((facet, i) =>
-        this.hybridSearch(facet, input.workspaceId, i === 0 ? 15 : 10, undefined, input.scope),
-      );
-      const searchResults = await Promise.all(searchPromises);
-
-      // Merge all paths (page-level dedup, keep first occurrence)
-      let merged = searchResults[0];
-      for (let pathIdx = 1; pathIdx < searchResults.length; pathIdx++) {
-        const seen = new Set(merged.map((r) => r.pageId));
-        for (const r of searchResults[pathIdx]) {
-          if (!seen.has(r.pageId)) {
-            merged.push(r);
-            seen.add(r.pageId);
+      if (extraFacets.length > 0) {
+        const extraResults = await Promise.all(
+          extraFacets.map(facet =>
+            this.hybridSearch(facet, input.workspaceId, 10, undefined, input.scope),
+          ),
+        );
+        let merged = [...initialResults];
+        for (const extra of extraResults) {
+          const seen = new Set(merged.map(r => r.pageId));
+          for (const r of extra) {
+            if (!seen.has(r.pageId)) { merged.push(r); seen.add(r.pageId); }
           }
         }
+        searchPathCount = 1 + extraFacets.length;
+        finalReranked = await this.rerank(searchQuery, merged, 5);
+      } else {
+        finalReranked = await this.rerank(input.query, initialResults, 5);
       }
-
-      finalReranked = await this.rerank(searchQuery, merged, 5);
     }
 
     let normalizedTopScore = finalReranked.length > 0
@@ -2003,11 +2004,20 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     });
 
     let fullAnswer = '';
+    let suggestionsPromise: Promise<string[]> | null = null;
 
     try {
       for await (const text of this.stripThinkBlocks(result.textStream)) {
         fullAnswer += text;
         yield JSON.stringify({ content: text });
+        if (fullAnswer.length > 200 && !suggestionsPromise) {
+          const mode = qualityResult.confidence === 'exact' || qualityResult.confidence === 'high'
+            ? 'explore' : qualityResult.confidence === 'partial' ? 'refine' : 'redirect';
+          suggestionsPromise = this.generateSuggestedQuestions(
+            input.query, understanding.intent, fullAnswer.slice(0, 500),
+            currentPage?.title, isChinese, mode,
+          ).catch(() => [] as string[]);
+        }
       }
     } catch (streamError: any) {
       const message = streamError?.message || '';
@@ -2027,23 +2037,25 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       throw streamError;
     }
 
-    // ---- Groundedness verification (skip for simple queries, non-blocking) ----
-    if (fullAnswer.length > 100 && understanding.complexity >= 2) {
-      try {
-        const liteModel = this.getLiteModel();
-        const verification = await this.answerVerifier?.verify(
-          fullAnswer,
-          context,
-          liteModel,
-        );
-        if (verification && !verification.isGrounded && verification.ungroundedClaims.length > 0) {
-          const warningMsg = isChinese
-            ? `⚠️ 以下内容可能未在知识库中找到充分依据：${verification.ungroundedClaims.slice(0, 3).join('、')}`
-            : `⚠️ These claims may not be fully supported: ${verification.ungroundedClaims.slice(0, 3).join(', ')}`;
-          yield JSON.stringify({ warning: warningMsg });
+    // ---- Groundedness Verification (only for partial/tangential) ----
+    if (['partial', 'tangential'].includes(qualityResult.confidence)) {
+      if (fullAnswer.length > 100 && understanding.complexity >= 2) {
+        try {
+          const liteModel = this.getLiteModel();
+          const verification = await this.answerVerifier?.verify(
+            fullAnswer,
+            context,
+            liteModel,
+          );
+          if (verification && !verification.isGrounded && verification.ungroundedClaims.length > 0) {
+            const warningMsg = isChinese
+              ? `⚠️ 以下内容可能未在知识库中找到充分依据：${verification.ungroundedClaims.slice(0, 3).join('、')}`
+              : `⚠️ These claims may not be fully supported: ${verification.ungroundedClaims.slice(0, 3).join(', ')}`;
+            yield JSON.stringify({ warning: warningMsg });
+          }
+        } catch {
+          // Non-blocking: silently skip verification failures
         }
-      } catch {
-        // Non-blocking: silently skip verification failures
       }
     }
 
@@ -2068,24 +2080,23 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       yield JSON.stringify({ sources: markedSources, citations: markedCitations });
     }
 
-    // ---- Suggested Follow-up Questions (non-blocking) ----
-    const suggestionMode = qualityResult.confidence === 'exact' || qualityResult.confidence === 'high'
-      ? 'explore'
-      : qualityResult.confidence === 'partial' ? 'refine' : 'redirect';
+    // ---- Suggested Follow-up Questions ----
     try {
-      const suggestedQuestions = await this.generateSuggestedQuestions(
-        input.query,
-        understanding.intent,
-        fullAnswer,
-        currentPage?.title,
-        isChinese,
-        suggestionMode,
-      );
+      if (!suggestionsPromise) {
+        // Streaming was short — generate now
+        const mode = qualityResult.confidence === 'exact' || qualityResult.confidence === 'high'
+          ? 'explore' : qualityResult.confidence === 'partial' ? 'refine' : 'redirect';
+        suggestionsPromise = this.generateSuggestedQuestions(
+          input.query, understanding.intent, fullAnswer,
+          currentPage?.title, isChinese, mode,
+        ).catch(() => [] as string[]);
+      }
+      const suggestedQuestions = await suggestionsPromise;
       if (suggestedQuestions.length > 0) {
         yield JSON.stringify({ suggestedQuestions });
       }
     } catch {
-      // non-blocking — do not fail the response
+      // non-blocking
     }
 
     metrics.total = Date.now() - pipelineStart;
