@@ -1864,22 +1864,6 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
         imageDescriptions,
       );
 
-      // Build inline image context: ![description](url) for LLM to intelligently select
-      const imageContext = relevantAssets
-        .filter(asset => asset.sourceType === 'image' || asset.sourceType === 'diagram')
-        .map(asset => {
-          const url = asset.publicAssetUrl || `${this.environmentService.getAppUrl()}/api/files/${asset.attachmentId}/${asset.title}`;
-          const desc = asset.snippet || asset.title;
-          return `![${desc}](${url})`;
-        })
-        .join('\n');
-
-      const nonImageAssets = relevantAssets
-        .filter(asset => asset.sourceType !== 'image' && asset.sourceType !== 'diagram');
-      const attachmentHints = nonImageAssets.length > 0
-        ? `\nAttachments:\n${nonImageAssets.map(a => this.formatCitationHint(a)).join('\n')}`
-        : '';
-
       const label =
         result.metadata?.type === 'image'
           ? '(Image)'
@@ -1887,25 +1871,78 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
             ? '(Diagram)'
             : '(Page)';
 
-      // Expand chunk context: if chunk is short, include surrounding text from the page
-      let chunkContent = result.chunkText || '';
-      if (chunkContent.length < 800 && result.chunkStart != null && page.textContent) {
-        const expandChars = Math.floor(((budget?.perChunk || 2500) - chunkContent.length) / 2);
-        const start = Math.max(0, result.chunkStart - expandChars);
-        const end = Math.min(
-          page.textContent.length,
-          result.chunkStart + (result.chunkLength || chunkContent.length) + expandChars,
+      // Build chunk content with images inline (not appended at end)
+      let chunkContent: string;
+
+      if (page.content && label === '(Page)') {
+        // Use ProseMirror rendering to preserve image positions within text
+        const fullContextWithImages = await this.buildContextText(
+          page,
+          input.scope,
+          imageDescriptions,
         );
-        chunkContent = page.textContent.slice(start, end);
+
+        // Locate the chunk within the full rendered context and extract a window
+        const chunkText = result.chunkText || '';
+        if (chunkText.length > 50) {
+          // Find approximate position using first 50 chars of chunk text
+          const searchStr = chunkText.slice(0, 50).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const chunkPos = fullContextWithImages.search(new RegExp(searchStr.slice(0, 30)));
+          if (chunkPos >= 0) {
+            // Extract window around the chunk position, keeping images in context
+            const perChunk = budget?.perChunk || 2500;
+            const halfExtra = Math.floor((perChunk - chunkText.length) / 2);
+            const start = Math.max(0, chunkPos - Math.max(halfExtra, 0));
+            const end = Math.min(fullContextWithImages.length, chunkPos + chunkText.length + Math.max(halfExtra, 0));
+            chunkContent = fullContextWithImages.slice(start, end);
+          } else {
+            // Fallback: use full rendered context (truncated)
+            chunkContent = fullContextWithImages;
+          }
+        } else {
+          chunkContent = fullContextWithImages;
+        }
+      } else {
+        // No ProseMirror content or non-page type: use plain text chunk
+        chunkContent = result.chunkText || '';
+        if (chunkContent.length < 800 && result.chunkStart != null && page.textContent) {
+          const expandChars = Math.floor(((budget?.perChunk || 2500) - chunkContent.length) / 2);
+          const start = Math.max(0, result.chunkStart - expandChars);
+          const end = Math.min(
+            page.textContent.length,
+            result.chunkStart + (result.chunkLength || chunkContent.length) + expandChars,
+          );
+          chunkContent = page.textContent.slice(start, end);
+        }
+        if (!chunkContent) {
+          chunkContent = (result.textContent || '').slice(0, budget?.perChunk || 2500);
+        }
+
+        // Append images at end for non-ProseMirror fallback
+        const imageContext = relevantAssets
+          .filter(asset => asset.sourceType === 'image' || asset.sourceType === 'diagram')
+          .map(asset => {
+            const url = asset.publicAssetUrl || `${this.environmentService.getAppUrl()}/api/files/${asset.attachmentId}/${asset.title}`;
+            const desc = asset.snippet || asset.title;
+            return `![${desc}](${url})`;
+          })
+          .join('\n');
+        if (imageContext) {
+          chunkContent += '\n' + imageContext;
+        }
       }
-      if (!chunkContent) {
-        chunkContent = (result.textContent || '').slice(0, budget?.perChunk || 2500);
-      }
+
+      // Append non-image attachment hints
+      const nonImageAssets = relevantAssets
+        .filter(asset => asset.sourceType !== 'image' && asset.sourceType !== 'diagram');
+      const attachmentHints = nonImageAssets.length > 0
+        ? `\nAttachments:\n${nonImageAssets.map(a => this.formatCitationHint(a)).join('\n')}`
+        : '';
 
       const annotation = annotations[rerankedIdx] || '';
       const annotationLine = annotation ? `\n关系：${annotation}` : '';
       contextParts.push(
-        `[${sourceIndex}] ${label} ${page.title}${annotationLine}\n---\n${chunkContent.slice(0, budget?.perChunk || 2500)}${imageContext ? '\n' + imageContext : ''}${attachmentHints}`,
+        `[${sourceIndex}] ${label} ${page.title}${annotationLine}\n---\n${chunkContent.slice(0, budget?.perChunk || 2500)}${attachmentHints}`,
       );
       legacySources.push({
         title: page.title,
