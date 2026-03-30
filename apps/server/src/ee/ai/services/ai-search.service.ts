@@ -268,8 +268,23 @@ export class AiSearchService {
     asset: Pick<DocumentAssetProjection, 'attachmentId' | 'rawUrl' | 'title'>,
     scope?: RetrievalScope,
   ): Promise<string> {
-    // Always use simple URL without JWT — public wiki images don't need token auth
-    return this.buildAppAssetUrl(asset);
+    if (!scope?.isPublicWiki) {
+      return this.buildAppAssetUrl(asset);
+    }
+
+    if (!this.tokenService) {
+      return this.buildAppAssetUrl(asset);
+    }
+
+    const token = await this.tokenService.generateAttachmentToken({
+      attachmentId: asset.attachmentId,
+      pageId: page.pageId,
+      workspaceId: page.workspaceId,
+    });
+
+    const rawUrl =
+      asset.rawUrl || `/api/files/${asset.attachmentId}/${asset.title}`;
+    return `${this.environmentService.getAppUrl()}${buildPublicAttachmentUrl(rawUrl, token)}`;
   }
 
   private createPageCitation(page: PageRecord): AiCitation {
@@ -481,9 +496,12 @@ export class AiSearchService {
     const resolvedUrlMap = new Map<string, string>();
 
     for (const asset of assets) {
+      // Always use short URL (no JWT) for LLM context to avoid token waste
+      // and prevent LLMs from breaking long JWT-signed URLs in their output.
+      // URLs are post-processed after streaming to add JWT for public wiki.
       resolvedUrlMap.set(
         asset.attachmentId,
-        await this.buildResolvedAssetUrl(page, asset, scope),
+        this.buildAppAssetUrl(asset),
       );
     }
 
@@ -604,6 +622,11 @@ export class AiSearchService {
   }
 
   private formatCitationHint(citation: AiCitation): string {
+    if (citation.attachmentId) {
+      // Use short URL (no JWT) for LLM context — URLs are post-processed
+      const shortUrl = `${this.environmentService.getAppUrl()}/api/files/${citation.attachmentId}/${citation.title}`;
+      return `- ${citation.title}: ${shortUrl}`;
+    }
     if (citation.publicAssetUrl) {
       return `- ${citation.title}: ${citation.publicAssetUrl}`;
     }
@@ -1295,9 +1318,15 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
 
     if (this.queryUnderstanding) {
       try {
-        // Use completion model for intent classification — this is the critical
-        // first decision that determines the entire pipeline behavior
-        const classifyModel = this.getCompletionModel();
+        // Use lite model for intent classification — simple structured output task,
+        // completion model is wasteful here (adds cost + latency for no quality gain).
+        // Fallback to completion model if lite model is not configured.
+        let classifyModel: any;
+        try {
+          classifyModel = this.getLiteModel();
+        } catch {
+          classifyModel = this.getCompletionModel();
+        }
         // Extract page headings as outline for better query understanding
         const pageOutline = currentPage?.content
           ? this.extractHeadingOutline(currentPage.content)
