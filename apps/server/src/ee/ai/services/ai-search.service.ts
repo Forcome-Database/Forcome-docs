@@ -1309,6 +1309,33 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     const pipelineStart = Date.now();
     const metrics: Record<string, number> = {};
     let t0 = Date.now();
+
+    // ---- Fast-reject: skip RAG pipeline for trivial inputs ----
+    const trimmedQuery = input.query.trim();
+    if (trimmedQuery.length <= 2) {
+      yield JSON.stringify({ intent: 'factual', complexity: 1 });
+      yield JSON.stringify({ sources: [], citations: [] });
+      const hint = isChinese
+        ? '请输入更具体的问题，我可以帮您从知识库中查找信息。'
+        : 'Please ask a more specific question so I can search the knowledge base for you.';
+      yield JSON.stringify({ content: hint });
+      return;
+    }
+
+    // Greeting detection (cheap regex, no LLM call)
+    // Only match pure greetings with no conversation history.
+    // "ok"/"thanks" excluded — they're natural acknowledgments after answers.
+    const greetingPatterns = /^(你好|您好|嗨|hi|hello|hey)\s*[!！。.？?]*$/i;
+    if (greetingPatterns.test(trimmedQuery) && !(input.history?.length)) {
+      yield JSON.stringify({ intent: 'factual', complexity: 1 });
+      yield JSON.stringify({ sources: [], citations: [] });
+      const greeting = isChinese
+        ? '你好！请问有什么关于知识库的问题需要我帮您查找？'
+        : 'Hello! What would you like to know from the knowledge base?';
+      yield JSON.stringify({ content: greeting });
+      return;
+    }
+
     const currentPage = await this.loadCurrentPage(input);
 
     // ---- Query Understanding (non-blocking) ----
