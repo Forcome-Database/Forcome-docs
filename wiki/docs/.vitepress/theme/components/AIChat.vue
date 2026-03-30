@@ -204,11 +204,26 @@ const getCurrentPageSlugId = (): string | undefined => {
 }
 
 // ===== Markdown 渲染（含来源卡片） =====
+const resolveImageUrls = (text: string, citations?: AiCitation[]): string => {
+  if (!citations?.length) return text
+  let resolved = text
+  for (const c of citations) {
+    if (!c.attachmentId || !c.publicAssetUrl) continue
+    // Replace any /api/files/ URL containing this attachmentId with the JWT-signed URL
+    const re = new RegExp(
+      `https?://[^\\s"')\\]]*?/api/files/(?:public/)?${c.attachmentId}/[^\\s"')\\]]*`,
+      'g',
+    )
+    resolved = resolved.replace(re, c.publicAssetUrl)
+  }
+  return resolved
+}
+
 const renderAssistantMessage = (content: string, sources?: AiSource[], citations?: AiCitation[], suggestedQuestions?: string[]) => {
   const nodes: any[] = [
     h('div', {
       class: 'ai-chat-markdown',
-      innerHTML: renderMarkdownToHtml(content)
+      innerHTML: renderMarkdownToHtml(resolveImageUrls(content, citations))
     })
   ]
   if ((citations && citations.length > 0) || (sources && sources.length > 0)) {
@@ -312,8 +327,8 @@ const loadHistory = () => {
     messages.value = []
     conversationId.value = null
   }
-  // Reset server-side session ID on page navigation — each page gets a fresh session
-  sessionId.value = null
+  // Restore server-side session ID from localStorage (each page has its own session)
+  sessionId.value = saved?.sessionId ?? null
   error.value = null
 }
 
@@ -331,6 +346,7 @@ const saveHistory = () => {
     })
   const data: StoredChatHistory = {
     conversationId: conversationId.value || '',
+    sessionId: sessionId.value,
     messages: cleanMessages,
     updatedAt: Date.now()
   }
@@ -409,14 +425,7 @@ const sendMessage = async (content: string) => {
           const currentMsg = messages.value[assistantIndex]
           messages.value[assistantIndex] = { ...currentMsg, citations: event.citations }
         }
-        if (event.content_replace) {
-          // Full content replacement (e.g., after short URL → JWT URL post-processing)
-          const currentMsg = messages.value[assistantIndex]
-          messages.value[assistantIndex] = {
-            ...currentMsg,
-            content: event.content_replace
-          }
-        } else if (event.content) {
+        if (event.content) {
           const currentMsg = messages.value[assistantIndex]
           messages.value[assistantIndex] = {
             ...currentMsg,
@@ -654,7 +663,9 @@ onMounted(() => {
   // 每次打开面板都是新对话（历史记录通过历史按钮访问）
   messages.value = []
   conversationId.value = null
-  sessionId.value = null
+  const mountKey = `${StorageKey.ChatHistory}:${route.path}`
+  const mountStored = storage.get<StoredChatHistory>(mountKey)
+  sessionId.value = mountStored?.sessionId ?? null
   error.value = null
   updatePageTitle()
   document.addEventListener('keydown', handleKeydown)

@@ -27,6 +27,8 @@ export interface StoredChatHistory {
   conversationId: string
   /** 消息列表 */
   messages: ChatMessage[]
+  /** 服务端会话 ID（多轮对话 Redis session） */
+  sessionId?: string | null
   /** 更新时间戳 */
   updatedAt: number
 }
@@ -395,8 +397,6 @@ export interface DocmostAiStreamEvent {
   complexity?: number
   suggestedQuestions?: string[]
   warning?: string
-  /** Full content replacement after post-processing (e.g., URL resolution) */
-  content_replace?: string
   /** Server-side conversation session ID (emitted as the first SSE event) */
   sessionId?: string
 }
