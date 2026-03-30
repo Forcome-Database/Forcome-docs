@@ -174,23 +174,40 @@ Docker 文件结构：
 
 如使用非标准安装的 PostgreSQL（如宝塔面板），需手动编译安装 contrib、pgvector 和 pg_jieba，详见相关踩坑文档。
 
-## RAG 向量检索架构（2026-03-29 优化后）
+## RAG 向量检索架构（2026-03-30 升级后）
 
-混合检索管道：向量搜索 + BM25 全文搜索 + RRF 融合 + Reranking + 上下文组装 + LLM 流式回答。
+多路混合检索管道：实体抽取 + 多 Facet 并行搜索 + HyDE/CRAG 自适应重试 + 五档置信度 + 上下文标注 + 分层 Prompt + 消歧拦截。
 
-关键文件：
-- 分块：`apps/server/src/ee/ai/utils/chunker.ts`（Markdown 标题感知 + 1600 字符递归 + 20% overlap）
-- Embedding 管道：`apps/server/src/ee/ai/ai-queue.processor.ts`（BullMQ 异步，per-document context prefix）
-- 搜索服务：`apps/server/src/ee/ai/services/ai-search.service.ts`（混合搜索、自适应阈值、multi-chunk RRF、embedding 缓存）
+### 关键文件
+
+- 分块：`apps/server/src/ee/ai/utils/chunker.ts`（Markdown 标题感知 + sectionHeading 传递 + 1600 字符递归 + 20% overlap）
+- Embedding 管道：`apps/server/src/ee/ai/ai-queue.processor.ts`（BullMQ 异步，structural context = 空间名+页面标题+章节名+文档摘要）
+- 查询理解：`apps/server/src/ee/ai/services/query-understanding.service.ts`（intent + complexity + entities + searchFacets）
+- 搜索服务：`apps/server/src/ee/ai/services/ai-search.service.ts`（多路 Facet 搜索、HyDE、CRAG、上下文标注、消歧拦截、normalizedScore）
+- 置信度评估：`apps/server/src/ee/ai/services/retrieval-quality.service.ts`（五档：exact/high/partial/tangential/none + entityCoverage）
+- Prompt 架构：`apps/server/src/ee/ai/utils/intent-prompts.ts`（Role → Formatting Standard → Strategy → Output Structure → Constraints → SelfCheck）
+- 完整性检查：`apps/server/src/ee/ai/services/answer-verifier.service.ts`（groundedness + completeness）
+- Token 预算：`apps/server/src/ee/ai/utils/token-budget.ts`
 - 上下文投影：`apps/server/src/common/helpers/prosemirror/content-projection.ts`
 - 图片提取：`apps/server/src/ee/ai/utils/content-extractor.ts`
 
-关键约束：
+### 关键约束
+
 - `page_embeddings` 表通过 `ai-queue.processor.ts` 动态创建（非迁移文件）
 - HNSW 索引参数 m=16, ef_construction=200；查询时 SET LOCAL hnsw.ef_search=100（需在事务内）
 - 图片节点必须有 `attachmentId`：`persistence.extension.ts` 的 `ensureImageAttachmentIds()` 在保存时从 src URL 提取
 - jiebacfg 搜索通过 `checkJiebaAvailable()` 条件启用（pg_jieba 未安装时自动回退到 English-only）
 - Wiki 公共 AI 问答用完整 JWT 签名 URL（不可用短 URL 替代，LLM 不保证原样输出 URL）
+- Adaptive 策略：HyDE（normalizedScore < 0.008）、CRAG（partial/tangential + entityCoverage < 0.5）、上下文标注（partial/tangential）——好查询零额外开销
+- 消歧最多 1 轮追问，通过 `{ disambiguation: true }` SSE 事件 + `isDisambiguation` flag 追踪
+- 全量重建：`rebuild-all-embeddings` BullMQ job，BATCH_SIZE=5 并发
+- Prompt 排版规范：加粗结论独立成段、段落最多 2 句、操作路径用代码格式、警告独立成段、列表化、每种 confidence×intent 有视觉模板
+
+### 设计文档
+
+- **[质量升级设计 Spec](docs/superpowers/specs/2026-03-30-wiki-qa-quality-upgrade-design.md)**：4 模块完整架构（索引→查询→衔接→生成）
+- **[P0-P2 关键改进计划](docs/superpowers/plans/2026-03-30-wiki-qa-critical-improvements.md)**：13 项安全/质量/体验修复
+- **[全面升级计划](docs/superpowers/plans/2026-03-30-wiki-qa-quality-upgrade.md)**：12 Task 五阶段实施
 
 ## EE 模块关键约束
 
