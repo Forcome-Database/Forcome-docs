@@ -411,6 +411,23 @@ const sendMessage = async (content: string) => {
         )
       }
 
+      // Buffer content chunks to reduce render frequency during streaming
+      let contentBuffer = ''
+      let flushTimer: ReturnType<typeof setTimeout> | null = null
+      const FLUSH_INTERVAL = 80 // ms
+
+      const flushContent = () => {
+        if (contentBuffer) {
+          const currentMsg = messages.value[assistantIndex]
+          messages.value[assistantIndex] = {
+            ...currentMsg,
+            content: currentMsg.content + contentBuffer,
+          }
+          contentBuffer = ''
+        }
+        flushTimer = null
+      }
+
       // Docmost AI 流式问答（多轮对话 + 图片 + 来源引用卡片化）
       for await (const event of docmostService.aiAnswers(messageContent, getCurrentPageSlugId(), imagePayload, history, sessionId.value ?? undefined, deepResearch.value)) {
         // Capture server-side session ID from the first SSE event
@@ -426,13 +443,15 @@ const sendMessage = async (content: string) => {
           messages.value[assistantIndex] = { ...currentMsg, citations: event.citations }
         }
         if (event.content) {
-          const currentMsg = messages.value[assistantIndex]
-          messages.value[assistantIndex] = {
-            ...currentMsg,
-            content: currentMsg.content + event.content
+          contentBuffer += event.content
+          if (!flushTimer) {
+            flushTimer = setTimeout(flushContent, FLUSH_INTERVAL)
           }
         }
         if (event.error) {
+          // Flush buffered content so partial answer is preserved in catch block
+          if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
+          flushContent()
           throw new Error(event.error)
         }
         if (event.suggestedQuestions) {
@@ -440,6 +459,9 @@ const sendMessage = async (content: string) => {
           messages.value[assistantIndex] = { ...currentMsg, suggestedQuestions: event.suggestedQuestions }
         }
         if (event.warning) {
+          // Flush buffered content before appending warning
+          if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
+          flushContent()
           const currentMsg = messages.value[assistantIndex]
           messages.value[assistantIndex] = {
             ...currentMsg,
@@ -447,6 +469,9 @@ const sendMessage = async (content: string) => {
           }
         }
       }
+      // Flush any remaining buffered content
+      if (flushTimer) clearTimeout(flushTimer)
+      flushContent()
       const currentMsg = messages.value[assistantIndex]
       messages.value[assistantIndex] = { ...currentMsg, isStreaming: false }
     } else if (difyService) {
