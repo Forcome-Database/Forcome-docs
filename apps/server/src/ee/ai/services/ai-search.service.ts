@@ -1432,9 +1432,11 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     const searchQuery = understanding.rewrittenQuery || input.query;
 
     let finalReranked: PageResult[];
+    let searchPathCount = 1;
 
     if (understanding.complexity === 3) {
       // Route D: Agentic — decompose + parallel search + merge
+      searchPathCount = 3; // agenticSearch typically decomposes into 2-3 sub-queries
       finalReranked = await this.agenticSearch(
         input.query,
         searchQuery,
@@ -1442,24 +1444,22 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
         input.scope,
       );
     } else {
-      // Dual-path retrieval: search with both rewritten and original query
-      const searchPromises: Promise<PageResult[]>[] = [
-        this.hybridSearch(searchQuery, input.workspaceId, 15, undefined, input.scope),
-      ];
-      // If rewritten query differs from original, search both and merge
-      if (searchQuery !== input.query) {
-        searchPromises.push(
-          this.hybridSearch(input.query, input.workspaceId, 10, undefined, input.scope),
-        );
-      }
+      // Multi-facet retrieval: search with all facets in parallel
+      const facets = understanding.searchFacets?.length > 0
+        ? understanding.searchFacets.slice(0, 3)
+        : [searchQuery];
+      searchPathCount = facets.length;
 
+      const searchPromises = facets.map((facet, i) =>
+        this.hybridSearch(facet, input.workspaceId, i === 0 ? 15 : 10, undefined, input.scope),
+      );
       const searchResults = await Promise.all(searchPromises);
-      let merged = searchResults[0];
 
-      // Merge second path results if present
-      if (searchResults.length > 1 && searchResults[1].length > 0) {
+      // Merge all paths (page-level dedup, keep first occurrence)
+      let merged = searchResults[0];
+      for (let pathIdx = 1; pathIdx < searchResults.length; pathIdx++) {
         const seen = new Set(merged.map((r) => r.pageId));
-        for (const r of searchResults[1]) {
+        for (const r of searchResults[pathIdx]) {
           if (!seen.has(r.pageId)) {
             merged.push(r);
             seen.add(r.pageId);
@@ -1469,6 +1469,10 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
 
       finalReranked = await this.rerank(searchQuery, merged, 5);
     }
+
+    let normalizedTopScore = finalReranked.length > 0
+      ? finalReranked[0].score / searchPathCount
+      : 0;
 
     metrics.retrieval = Date.now() - t0;
     t0 = Date.now();
