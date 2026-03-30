@@ -1643,19 +1643,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       } catch { /* non-blocking */ }
     }
 
-    // Current page safety net: when a current page with content exists,
-    // never refuse outright — the current page context is always a valid source.
-    // This prevents absurd refusals like "this page has no content about X"
-    // when the user is literally on the page asking about it.
-    if (currentPage?.content && ['none', 'tangential'].includes(qualityResult.confidence)) {
-      const originalConfidence = qualityResult.confidence;
-      qualityResult = { ...qualityResult, confidence: 'partial' };
-      this.logger.debug(
-        `[CurrentPageSafetyNet] Upgraded confidence from ${originalConfidence} to partial — current page "${currentPage.title}" provides context`,
-      );
-    }
-
-    // NONE confidence + private topic → honest refusal (only when no current page context)
+    // NONE confidence + private topic → honest refusal
     if (qualityResult.confidence === 'none' && !qualityResult.isPublicTopic) {
       yield JSON.stringify({
         sources: this.dedupePageSources(
