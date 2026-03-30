@@ -131,8 +131,6 @@ export class AiSearchService {
   private readonly logger = new Logger(AiSearchService.name);
   private embeddingCache = new Map<string, { embedding: number[]; expires: number }>();
   private hasJieba: boolean | null = null;
-  /** Short URL → Full JWT URL mapping, populated during context assembly, used for output post-processing */
-  private _assetUrlMap: Map<string, string> | null = null;
 
   constructor(
     @InjectKysely() private readonly db: KyselyDB,
@@ -270,23 +268,8 @@ export class AiSearchService {
     asset: Pick<DocumentAssetProjection, 'attachmentId' | 'rawUrl' | 'title'>,
     scope?: RetrievalScope,
   ): Promise<string> {
-    if (!scope?.isPublicWiki) {
-      return this.buildAppAssetUrl(asset);
-    }
-
-    if (!this.tokenService) {
-      return this.buildAppAssetUrl(asset);
-    }
-
-    const token = await this.tokenService.generateAttachmentToken({
-      attachmentId: asset.attachmentId,
-      pageId: page.pageId,
-      workspaceId: page.workspaceId,
-    });
-
-    const rawUrl =
-      asset.rawUrl || `/api/files/${asset.attachmentId}/${asset.title}`;
-    return `${this.environmentService.getAppUrl()}${buildPublicAttachmentUrl(rawUrl, token)}`;
+    // Always use simple URL without JWT — public wiki images don't need token auth
+    return this.buildAppAssetUrl(asset);
   }
 
   private createPageCitation(page: PageRecord): AiCitation {
@@ -495,26 +478,13 @@ export class AiSearchService {
 
     const document = getProsemirrorContent(page.content);
     const assets = collectDocumentAssetProjections(document, imageDescriptions);
-
-    // Build two maps: short URLs for LLM context, full JWT URLs for post-processing
-    const shortUrlMap = new Map<string, string>();
-    const shortToFullMap = new Map<string, string>();
+    const resolvedUrlMap = new Map<string, string>();
 
     for (const asset of assets) {
-      // Short URL: /files/{attachmentId}/{filename} — easy for LLM to preserve
-      const shortUrl = `/files/${asset.attachmentId}/${asset.title}`;
-      shortUrlMap.set(asset.attachmentId, shortUrl);
-      // Full JWT URL for replacement in output
-      const fullUrl = await this.buildResolvedAssetUrl(page, asset, scope);
-      shortToFullMap.set(shortUrl, fullUrl);
-    }
-
-    // Store mapping on the instance for post-processing (used by answerWithContext)
-    if (!this._assetUrlMap) {
-      this._assetUrlMap = new Map<string, string>();
-    }
-    for (const [short, full] of shortToFullMap) {
-      this._assetUrlMap.set(short, full);
+      resolvedUrlMap.set(
+        asset.attachmentId,
+        await this.buildResolvedAssetUrl(page, asset, scope),
+      );
     }
 
     const linkSummary = collectDocumentLinkProjections(document)
@@ -524,7 +494,7 @@ export class AiSearchService {
     const body = projectProsemirrorToContextText(document, {
       imageDescriptions,
       resolveAssetUrl: (asset) =>
-        shortUrlMap.get(asset.attachmentId) || asset.rawUrl,
+        resolvedUrlMap.get(asset.attachmentId) || asset.rawUrl,
     });
 
     if (!linkSummary) {
@@ -1312,7 +1282,6 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     input: AnswerWithContextInput,
   ): AsyncGenerator<string> {
     const isChinese = /[\u4e00-\u9fa5]/.test(input.query);
-    this._assetUrlMap = null; // Reset per-request
     const currentPage = await this.loadCurrentPage(input);
 
     // ---- Query Understanding (non-blocking) ----
@@ -1674,19 +1643,6 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       for await (const text of this.stripThinkBlocks(result.textStream)) {
         fullAnswer += text;
         yield JSON.stringify({ content: text });
-      }
-
-      // Post-process: replace short asset URLs with full JWT-signed URLs
-      // Done on accumulated fullAnswer because URLs span multiple streaming chunks
-      if (this._assetUrlMap?.size && fullAnswer) {
-        let corrected = fullAnswer;
-        for (const [shortUrl, fullUrl] of this._assetUrlMap) {
-          corrected = corrected.replaceAll(shortUrl, fullUrl);
-        }
-        if (corrected !== fullAnswer) {
-          fullAnswer = corrected;
-          yield JSON.stringify({ content_replace: corrected });
-        }
       }
     } catch (streamError: any) {
       const message = streamError?.message || '';
