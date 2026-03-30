@@ -131,6 +131,8 @@ export class AiSearchService {
   private readonly logger = new Logger(AiSearchService.name);
   private embeddingCache = new Map<string, { embedding: number[]; expires: number }>();
   private hasJieba: boolean | null = null;
+  /** Short URL → Full JWT URL mapping, populated during context assembly, used for output post-processing */
+  private _assetUrlMap: Map<string, string> | null = null;
 
   constructor(
     @InjectKysely() private readonly db: KyselyDB,
@@ -493,13 +495,26 @@ export class AiSearchService {
 
     const document = getProsemirrorContent(page.content);
     const assets = collectDocumentAssetProjections(document, imageDescriptions);
-    const resolvedUrlMap = new Map<string, string>();
+
+    // Build two maps: short URLs for LLM context, full JWT URLs for post-processing
+    const shortUrlMap = new Map<string, string>();
+    const shortToFullMap = new Map<string, string>();
 
     for (const asset of assets) {
-      resolvedUrlMap.set(
-        asset.attachmentId,
-        await this.buildResolvedAssetUrl(page, asset, scope),
-      );
+      // Short URL: /files/{attachmentId}/{filename} — easy for LLM to preserve
+      const shortUrl = `/files/${asset.attachmentId}/${asset.title}`;
+      shortUrlMap.set(asset.attachmentId, shortUrl);
+      // Full JWT URL for replacement in output
+      const fullUrl = await this.buildResolvedAssetUrl(page, asset, scope);
+      shortToFullMap.set(shortUrl, fullUrl);
+    }
+
+    // Store mapping on the instance for post-processing (used by answerWithContext)
+    if (!this._assetUrlMap) {
+      this._assetUrlMap = new Map<string, string>();
+    }
+    for (const [short, full] of shortToFullMap) {
+      this._assetUrlMap.set(short, full);
     }
 
     const linkSummary = collectDocumentLinkProjections(document)
@@ -509,7 +524,7 @@ export class AiSearchService {
     const body = projectProsemirrorToContextText(document, {
       imageDescriptions,
       resolveAssetUrl: (asset) =>
-        resolvedUrlMap.get(asset.attachmentId) || asset.rawUrl,
+        shortUrlMap.get(asset.attachmentId) || asset.rawUrl,
     });
 
     if (!linkSummary) {
@@ -1297,6 +1312,7 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     input: AnswerWithContextInput,
   ): AsyncGenerator<string> {
     const isChinese = /[\u4e00-\u9fa5]/.test(input.query);
+    this._assetUrlMap = null; // Reset per-request
     const currentPage = await this.loadCurrentPage(input);
 
     // ---- Query Understanding (non-blocking) ----
@@ -1655,7 +1671,15 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
     let fullAnswer = '';
 
     try {
-      for await (const text of this.stripThinkBlocks(result.textStream)) {
+      for await (let text of this.stripThinkBlocks(result.textStream)) {
+        // Post-process: replace short asset URLs with full JWT-signed URLs
+        if (this._assetUrlMap?.size) {
+          for (const [shortUrl, fullUrl] of this._assetUrlMap) {
+            if (text.includes(shortUrl)) {
+              text = text.replaceAll(shortUrl, fullUrl);
+            }
+          }
+        }
         fullAnswer += text;
         yield JSON.stringify({ content: text });
       }
