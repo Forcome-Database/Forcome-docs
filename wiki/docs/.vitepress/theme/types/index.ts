@@ -135,6 +135,8 @@ export interface ChatMessage {
   citations?: AiCitation[]
   /** AI 推荐的后续问题（仅 assistant 消息） */
   suggestedQuestions?: string[]
+  /** 是否为消歧追问消息（仅 assistant 消息） */
+  isDisambiguation?: boolean
 }
 
 /** AI 来源引用 */
@@ -165,6 +167,7 @@ export interface AiCitation {
 export interface AiHistoryMessage {
   role: 'user' | 'assistant'
   content: string
+  isDisambiguation?: boolean
 }
 
 /** 对话状态 */
@@ -398,9 +401,10 @@ export interface DocmostAiStreamEvent {
   intent?: string
   complexity?: number
   suggestedQuestions?: string[]
-  warning?: string
   /** Server-side conversation session ID (emitted as the first SSE event) */
   sessionId?: string
+  /** Whether this response is a disambiguation follow-up question */
+  disambiguation?: boolean
 }
 
 // ===== 组件 Props 类型 =====

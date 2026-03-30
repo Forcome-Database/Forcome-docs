@@ -313,7 +313,11 @@ function generateMessageId(role: 'user' | 'assistant'): string {
 function buildHistory(): AiHistoryMessage[] {
   const completed = messages.value.filter(m => !m.isStreaming)
   const recent = completed.slice(-MAX_HISTORY_MESSAGES)
-  return recent.map(m => ({ role: m.role, content: m.content }))
+  return recent.map(m => ({
+    role: m.role,
+    content: m.content,
+    ...(m.isDisambiguation ? { isDisambiguation: true } : {}),
+  }))
 }
 
 // ===== 历史记录（按页面隔离） =====
@@ -454,20 +458,15 @@ const sendMessage = async (content: string) => {
           flushContent()
           throw new Error(event.error)
         }
+        if (event.disambiguation) {
+          const currentMsg = messages.value[assistantIndex]
+          messages.value[assistantIndex] = { ...currentMsg, isDisambiguation: true }
+        }
         if (event.suggestedQuestions) {
           const currentMsg = messages.value[assistantIndex]
           messages.value[assistantIndex] = { ...currentMsg, suggestedQuestions: event.suggestedQuestions }
         }
-        if (event.warning) {
-          // Flush buffered content before appending warning
-          if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
-          flushContent()
-          const currentMsg = messages.value[assistantIndex]
-          messages.value[assistantIndex] = {
-            ...currentMsg,
-            content: currentMsg.content + '\n\n' + event.warning
-          }
-        }
+
       }
       // Flush any remaining buffered content
       if (flushTimer) clearTimeout(flushTimer)

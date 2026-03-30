@@ -2034,18 +2034,6 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       }
     }
 
-    // ---- Completeness check (no LLM, pure string match) ----
-    if ((understanding.entities?.length || 0) > 0 && fullAnswer.length > 50) {
-      const completeness = this.answerVerifier?.checkCompleteness(fullAnswer, understanding.entities || []);
-      if (completeness && !completeness.isComplete && completeness.missingEntities.length > 0) {
-        const missingStr = completeness.missingEntities.join('、');
-        const warning = isChinese
-          ? `ℹ️ 关于「${missingStr}」方面，知识库中暂无相关内容。`
-          : `ℹ️ No content found for: ${completeness.missingEntities.join(', ')}`;
-        yield JSON.stringify({ warning });
-      }
-    }
-
     // ---- Mark actually-cited sources ----
     const usedIndices = new Set<number>();
     const citationRegex = /\[(\d+)\]/g;
