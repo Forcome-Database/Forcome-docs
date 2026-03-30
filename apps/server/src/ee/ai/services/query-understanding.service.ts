@@ -15,6 +15,8 @@ export interface QueryUnderstandingResult {
   intent: QueryIntent;
   complexity: QueryComplexity;
   rewrittenQuery: string;
+  entities: string[];
+  searchFacets: string[];
   needsClarification: boolean;
   clarificationQuestion?: string;
   isOutOfScope: boolean;
@@ -35,6 +37,8 @@ export class QueryUnderstandingService {
       intent: 'factual',
       complexity: 1,
       rewrittenQuery: query,
+      entities: [],
+      searchFacets: [query],
       needsClarification: false,
       isOutOfScope: false,
     };
@@ -65,6 +69,11 @@ Return ONLY a valid JSON object with these fields:
 - intent: one of "factual" | "procedural" | "conceptual" | "troubleshooting" | "comparison" | "follow_up"
 - complexity: integer 1 (simple lookup), 2 (moderate, needs synthesis), or 3 (complex, multi-step reasoning)
 - rewrittenQuery: a standalone, self-contained version of the query optimized for knowledge base search. Resolve pronouns using conversation history. If page sections are provided, use them to make the query more specific.
+- entities: array of 2-4 key business entities extracted from the query (nouns + actions)
+- searchFacets: array of 2-3 synonym/alternative search phrases. Rules:
+  - Always include the rewrittenQuery itself as the first element
+  - Generate synonym replacements for domain-specific terms (e.g. "下推" → "生成下游单据", "单据转换")
+  - Use page context for domain scoping if available
 
 Query rewriting rules:
 - Resolve pronouns and elliptical references using conversation history.
@@ -92,7 +101,7 @@ Intent definitions:
 
       const { text } = await generateText({
         model: liteModel,
-        maxTokens: 300,
+        maxTokens: 400,
         temperature: 0,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -132,10 +141,25 @@ Intent definitions:
           ? parsed.rewrittenQuery.trim()
           : query;
 
+      const entities = Array.isArray(parsed.entities)
+        ? parsed.entities.filter((e: any) => typeof e === 'string' && e.trim()).map(String)
+        : [];
+
+      const searchFacets = Array.isArray(parsed.searchFacets) && parsed.searchFacets.length > 0
+        ? parsed.searchFacets.filter((f: any) => typeof f === 'string' && f.trim()).map(String)
+        : [rewrittenQuery];
+
+      // Ensure searchFacets always includes rewrittenQuery
+      if (!searchFacets.includes(rewrittenQuery)) {
+        searchFacets.unshift(rewrittenQuery);
+      }
+
       return {
         intent,
         complexity,
         rewrittenQuery,
+        entities,
+        searchFacets,
         needsClarification: false,
         isOutOfScope: false,
       };

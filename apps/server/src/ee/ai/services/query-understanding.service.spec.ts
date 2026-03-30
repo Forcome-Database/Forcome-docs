@@ -35,6 +35,8 @@ describe('QueryUnderstandingService.classifyAndRewrite', () => {
       intent: 'procedural',
       complexity: 2,
       rewrittenQuery: 'How do I deploy Docker?',
+      entities: [],
+      searchFacets: ['How do I deploy Docker?'],
       needsClarification: false,
       clarificationQuestion: undefined,
       isOutOfScope: false,
@@ -46,7 +48,7 @@ describe('QueryUnderstandingService.classifyAndRewrite', () => {
     expect(call).toEqual(
       expect.objectContaining({
         model: liteModel,
-        maxTokens: 300,
+        maxTokens: 400,
         temperature: 0,
         messages: [
           expect.objectContaining({ role: 'system' }),

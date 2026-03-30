@@ -1381,6 +1381,8 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
       intent: 'factual',
       complexity: 1,
       rewrittenQuery: input.query,
+      entities: [],
+      searchFacets: [input.query],
       needsClarification: false,
       isOutOfScope: false,
     };
