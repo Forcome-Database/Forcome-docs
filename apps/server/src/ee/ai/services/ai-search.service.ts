@@ -48,6 +48,7 @@ export interface RetrievalScope {
 export interface AiCitation {
   sourceType: 'page' | 'attachment' | 'image' | 'diagram';
   title: string;
+  spaceName?: string;
   pageSlugId?: string;
   spaceSlug?: string;
   attachmentId?: string;
