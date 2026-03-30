@@ -35,6 +35,7 @@ export interface AiImagePayload {
 export interface AiChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  isDisambiguation?: boolean;
 }
 
 export interface RetrievalScope {
@@ -1793,6 +1794,55 @@ Return ONLY a JSON array of strings. Example: ["sub-q1", "sub-q2", "sub-q3"]`,
           annoModel,
         );
       } catch { /* non-blocking */ }
+    }
+
+    // Tangential + non-public: disambiguation instead of LLM generation
+    if (qualityResult.confidence === 'tangential' && !qualityResult.isPublicTopic) {
+      // Check if this is already a follow-up to a previous disambiguation (max 1 round)
+      const isFollowUpToDisambiguation = input.history?.some(
+        (m) => m.role === 'assistant' && m.isDisambiguation === true,
+      );
+
+      if (!isFollowUpToDisambiguation) {
+        // Load page records for disambiguation display
+        const disambigPageIds = finalReranked.slice(0, 3).map(r => r.pageId).filter(Boolean);
+        const disambigRecords = await this.loadPageRecords(input.workspaceId, disambigPageIds, input.scope);
+
+        // Build minimal sources
+        const disambigSources = finalReranked.slice(0, 3).map(r => ({
+          title: r.title, slugId: r.slugId, spaceSlug: r.spaceSlug,
+        }));
+        const disambigCitations = finalReranked.slice(0, 3).map(r => {
+          const page = disambigRecords.get(r.pageId);
+          return page ? this.createPageCitation(page) : { sourceType: 'page' as const, title: r.title, pageSlugId: r.slugId, spaceSlug: r.spaceSlug };
+        });
+
+        yield JSON.stringify({ sources: disambigSources, citations: disambigCitations });
+        yield JSON.stringify({ disambiguation: true });
+
+        const entitiesStr = (understanding.entities || []).join('、') || input.query.slice(0, 30);
+        const options = finalReranked.slice(0, 3).map((r, i) => {
+          const anno = annotations[i] || r.chunkText?.slice(0, 100) || r.title;
+          return `${i + 1}. **${r.title}** — ${anno}`;
+        });
+
+        const response = isChinese
+          ? `知识库中没有找到"${entitiesStr}"的直接内容。\n\n找到了以下相关主题：\n${options.join('\n')}\n\n请问您需要了解哪个？或者换个关键词试试。`
+          : `No direct content found for "${entitiesStr}" in the knowledge base.\n\nRelated topics:\n${options.join('\n')}\n\nWhich one do you need? Or try different keywords.`;
+
+        yield JSON.stringify({ content: response });
+
+        // Suggested questions in redirect mode
+        try {
+          const suggestions = await this.generateSuggestedQuestions(
+            input.query, understanding.intent, '', currentPage?.title, isChinese,
+          );
+          if (suggestions.length > 0) yield JSON.stringify({ suggestedQuestions: suggestions });
+        } catch {}
+
+        return; // Skip LLM generation entirely
+      }
+      // If follow-up to disambiguation, fall through to normal generation with tangential strategy
     }
 
     let rerankedIdx = -1;
