@@ -1043,6 +1043,38 @@ export class AiSearchService {
       }
     }
 
+    // For BM25-only results (no vector chunk), extract the most relevant text segment
+    for (const [, entry] of scoreMap) {
+      if (entry.chunkText || !entry.textContent) continue;
+      // Split query into terms, with CJK bigram support
+      let queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+      const cjkChars = query.replace(/[^\u4e00-\u9fa5]/g, '');
+      if (cjkChars.length >= 2) {
+        for (let i = 0; i < cjkChars.length - 1; i++) {
+          queryTerms.push(cjkChars.slice(i, i + 2));
+        }
+      }
+      if (queryTerms.length === 0) continue;
+
+      const paragraphs = entry.textContent.split(/\n{2,}/);
+      let bestPara = '';
+      let bestCount = 0;
+      for (const para of paragraphs) {
+        const lower = para.toLowerCase();
+        const count = queryTerms.filter(t => lower.includes(t)).length;
+        if (count > bestCount) {
+          bestCount = count;
+          bestPara = para;
+        }
+      }
+      if (bestPara) {
+        const idx = entry.textContent.indexOf(bestPara);
+        const start = Math.max(0, idx - 200);
+        const end = Math.min(entry.textContent.length, idx + bestPara.length + 200);
+        entry.chunkText = entry.textContent.slice(start, end);
+      }
+    }
+
     return Array.from(scoreMap.values())
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
