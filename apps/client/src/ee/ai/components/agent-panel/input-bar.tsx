@@ -1,5 +1,5 @@
-import { useRef, useState, useCallback, type KeyboardEvent } from "react";
-import { ActionIcon, Group, Textarea, Tooltip } from "@mantine/core";
+import { useRef, useState, useCallback, type KeyboardEvent, type ClipboardEvent } from "react";
+import { ActionIcon, Textarea, Tooltip } from "@mantine/core";
 import {
   IconArrowUp,
   IconPaperclip,
@@ -12,7 +12,8 @@ import classes from "./agent-panel.module.css";
 
 const MAX_FILES = 5;
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
-const ACCEPTED = ".pdf,.doc,.docx,.ppt,.pptx,.html,.png,.jpg,.jpeg";
+const ACCEPTED = ".pdf,.doc,.docx,.ppt,.pptx,.html,.png,.jpg,.jpeg,.gif,.webp";
+const IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"]);
 
 interface InputBarProps {
   onSubmit: (prompt: string, files?: File[]) => void;
@@ -27,9 +28,8 @@ export function InputBar({ onSubmit, onCancel, isStreaming, onFocus }: InputBarP
   const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const newFiles = Array.from(e.target.files ?? []);
+  const addFiles = useCallback(
+    (newFiles: File[]) => {
       const valid = newFiles.filter((f) => {
         if (f.size > MAX_FILE_SIZE) {
           notifications.show({ message: t("{{name}} exceeds 20MB", { name: f.name }), color: "red" });
@@ -37,10 +37,40 @@ export function InputBar({ onSubmit, onCancel, isStreaming, onFocus }: InputBarP
         }
         return true;
       });
-      setFiles((prev) => [...prev, ...valid].slice(0, MAX_FILES));
+      if (valid.length > 0) {
+        setFiles((prev) => [...prev, ...valid].slice(0, MAX_FILES));
+      }
+    },
+    [t],
+  );
+
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      addFiles(Array.from(e.target.files ?? []));
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
-    [],
+    [addFiles],
+  );
+
+  const handlePaste = useCallback(
+    (e: ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const imageFiles: File[] = [];
+      for (const item of items) {
+        if (IMAGE_MIMETYPES.has(item.type)) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        addFiles(imageFiles);
+      }
+    },
+    [addFiles],
   );
 
   const removeFile = (index: number) => {
@@ -79,7 +109,7 @@ export function InputBar({ onSubmit, onCancel, isStreaming, onFocus }: InputBarP
             ))}
           </div>
         )}
-        <Group gap={4} align="flex-end">
+        <div className={classes.inputRow}>
           <input
             ref={fileInputRef}
             type="file"
@@ -93,6 +123,7 @@ export function InputBar({ onSubmit, onCancel, isStreaming, onFocus }: InputBarP
               variant="subtle"
               color="gray"
               size="sm"
+              className={classes.inputSideIcon}
               onClick={() => fileInputRef.current?.click()}
               disabled={isStreaming}
             >
@@ -105,6 +136,7 @@ export function InputBar({ onSubmit, onCancel, isStreaming, onFocus }: InputBarP
             value={text}
             onChange={(e) => setText(e.currentTarget.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             onFocus={onFocus}
             autosize
             minRows={1}
@@ -118,7 +150,7 @@ export function InputBar({ onSubmit, onCancel, isStreaming, onFocus }: InputBarP
                 variant="filled"
                 color="red"
                 size="sm"
-                className={classes.stopButton}
+                className={`${classes.stopButton} ${classes.inputSideIcon}`}
                 onClick={onCancel}
               >
                 <IconPlayerStop size={14} />
@@ -128,7 +160,7 @@ export function InputBar({ onSubmit, onCancel, isStreaming, onFocus }: InputBarP
             <Tooltip label={t("Send")}>
               <ActionIcon
                 size="sm"
-                className={classes.sendButton}
+                className={`${classes.sendButton} ${classes.inputSideIcon}`}
                 onClick={handleSubmit}
                 disabled={!text.trim() && files.length === 0}
               >
@@ -136,7 +168,7 @@ export function InputBar({ onSubmit, onCancel, isStreaming, onFocus }: InputBarP
               </ActionIcon>
             </Tooltip>
           )}
-        </Group>
+        </div>
       </div>
     </div>
   );

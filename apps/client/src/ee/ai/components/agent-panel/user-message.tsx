@@ -1,6 +1,7 @@
 import { Group, Text } from "@mantine/core";
-import { IconUser } from "@tabler/icons-react";
-import { useTranslation } from "react-i18next";
+import { useAtomValue } from "jotai";
+import { currentUserAtom } from "@/features/user/atoms/current-user-atom";
+import { CustomAvatar } from "@/components/ui/custom-avatar";
 import type { AgentMessage } from "../../types/agent-v2.types";
 import classes from "./agent-panel.module.css";
 
@@ -9,15 +10,20 @@ interface UserMessageProps {
 }
 
 export function UserMessage({ message }: UserMessageProps) {
-  const { t } = useTranslation();
+  const currentUser = useAtomValue(currentUserAtom);
+  const userName = currentUser?.user?.name || "You";
+  const avatarUrl = currentUser?.user?.avatarUrl || "";
   return (
     <div className={classes.userMessage}>
       <Group gap={8} mb={4}>
-        <div className={classes.userAvatar}>
-          <IconUser size={13} />
-        </div>
+        <CustomAvatar
+          avatarUrl={avatarUrl}
+          name={userName}
+          size={22}
+          radius="xl"
+        />
         <Text size="sm" fw={600}>
-          {t("You")}
+          {userName}
         </Text>
       </Group>
       <Text size="sm" ml={30}>

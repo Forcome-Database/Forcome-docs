@@ -767,5 +767,17 @@
   "Build the working brief": "生成工作简报",
   "Prepare the execution blueprint": "准备执行蓝图",
   "Review generated changes": "审阅生成的改动",
-  "Prepare apply package": "准备应用包"
+  "Prepare apply package": "准备应用包",
+  "Smart Writer": "康康写作",
+  "Describe what to create...": "描述你想创建的内容...",
+  "Describe what you want to create, or upload a document to get started.": "描述你想创建的内容，或上传文档开始。",
+  "Editing selected content": "编辑选中内容",
+  "Inserting at cursor": "在光标处插入",
+  "Attach files": "附加文件",
+  "Apply to page": "应用到页面",
+  "Regenerate": "重新生成",
+  "No selection data available. Please select text and try again.": "没有选区数据，请选中文本后重试。",
+  "Cannot locate the original selection. Please select the text again and retry.": "无法定位原始选区，请重新选中文本后重试。",
+  "Applied to page": "已应用到页面",
+  "Failed to apply": "应用失败"
 }

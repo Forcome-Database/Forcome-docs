@@ -1,5 +1,5 @@
 import { markdownToHtml } from "@docmost/editor-ext";
-import { preprocessImagesForEditor } from "../components/ai-creator/ai-creator-utils";
+import { preprocessImagesForEditor } from "./markdown-utils";
 
 export interface ApplyOptions {
   editor: any;

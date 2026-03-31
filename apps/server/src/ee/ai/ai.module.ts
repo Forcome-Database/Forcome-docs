@@ -7,11 +7,7 @@ import { AiSearchService } from './services/ai-search.service';
 import { AiTemplateService } from './services/ai-template.service';
 import { AiQueueProcessor } from './ai-queue.processor';
 import { AiFileService } from './services/ai-file.service';
-import { DocumentTasksController } from './document-tasks/document-tasks.controller';
-import { DocumentTasksService } from './document-tasks/document-tasks.service';
 import { AgentGatewayService } from './agent-gateway/agent-gateway.service';
-import { InlineRewriteController } from './inline/inline-rewrite.controller';
-import { InlineRewriteService } from './inline/inline-rewrite.service';
 import { QueryUnderstandingService } from './services/query-understanding.service';
 import { AnswerVerifierService } from './services/answer-verifier.service';
 import { RetrievalQualityService } from './services/retrieval-quality.service';
@@ -26,8 +22,6 @@ import { TokenModule } from '../../core/auth/token.module';
     AiController,
     AiInternalController,
     AiTemplateController,
-    DocumentTasksController,
-    InlineRewriteController,
   ],
   providers: [
     AiService,
@@ -35,9 +29,7 @@ import { TokenModule } from '../../core/auth/token.module';
     AiTemplateService,
     AiQueueProcessor,
     AiFileService,
-    DocumentTasksService,
     AgentGatewayService,
-    InlineRewriteService,
     QueryUnderstandingService,
     AnswerVerifierService,
     RetrievalQualityService,

@@ -765,5 +765,17 @@
   "Build the working brief": "Build the working brief",
   "Prepare the execution blueprint": "Prepare the execution blueprint",
   "Review generated changes": "Review generated changes",
-  "Prepare apply package": "Prepare apply package"
+  "Prepare apply package": "Prepare apply package",
+  "Smart Writer": "Smart Writer",
+  "Describe what to create...": "Describe what to create...",
+  "Describe what you want to create, or upload a document to get started.": "Describe what you want to create, or upload a document to get started.",
+  "Editing selected content": "Editing selected content",
+  "Inserting at cursor": "Inserting at cursor",
+  "Attach files": "Attach files",
+  "Apply to page": "Apply to page",
+  "Regenerate": "Regenerate",
+  "No selection data available. Please select text and try again.": "No selection data available. Please select text and try again.",
+  "Cannot locate the original selection. Please select the text again and retry.": "Cannot locate the original selection. Please select the text again and retry.",
+  "Applied to page": "Applied to page",
+  "Failed to apply": "Failed to apply"
 }

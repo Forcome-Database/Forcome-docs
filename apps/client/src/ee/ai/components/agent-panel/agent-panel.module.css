@@ -435,6 +435,17 @@
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
 }
 
+.inputRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.inputSideIcon {
+  flex-shrink: 0;
+  margin-bottom: 2px;
+}
+
 .inputTextarea textarea {
   font-size: var(--mantine-font-size-sm);
   border: none !important;
@@ -446,6 +457,7 @@
 
 .inputTextarea {
   flex: 1;
+  min-width: 0;
 }
 
 .sendButton {

@@ -12,7 +12,6 @@ import {
   IconPrinter,
   IconTrash,
   IconWifiOff,
-  IconSparkles,
   IconBrain,
 } from "@tabler/icons-react";
 import React, { useEffect, useRef, useState } from "react";
@@ -80,19 +79,7 @@ export default function PageHeaderMenu({ readOnly }: PageHeaderMenuProps) {
       <ShareModal readOnly={readOnly} />
 
       {!readOnly && (
-        <Tooltip label={t("AI Creator")} openDelay={250} withArrow>
-          <ActionIcon
-            variant="subtle"
-            color="dark"
-            onClick={() => toggleAside("ai-creator")}
-          >
-            <IconSparkles size={20} stroke={2} />
-          </ActionIcon>
-        </Tooltip>
-      )}
-
-      {!readOnly && (
-        <Tooltip label={t("AI Agent")} openDelay={250} withArrow>
+        <Tooltip label={t("Smart Writer")} openDelay={250} withArrow>
           <ActionIcon
             variant="subtle"
             color="dark"

@@ -71,7 +71,7 @@ def create_agent(
         model: 覆盖默认模型（测试用）。
         extra_tools: 额外工具列表（测试用）。
     """
-    from app.orchestrator.llm_factory import create_pydantic_ai_model
+    from app.llm.factory import create_pydantic_ai_model
 
     m = model or create_pydantic_ai_model()
     max_tokens = get_max_tokens_for_current_model()

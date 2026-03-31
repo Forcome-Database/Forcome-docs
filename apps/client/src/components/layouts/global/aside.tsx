@@ -7,22 +7,12 @@ import { useTranslation } from "react-i18next";
 import { TableOfContents } from "@/features/editor/components/table-of-contents/table-of-contents.tsx";
 import { useAtomValue } from "jotai";
 import { pageEditorAtom } from "@/features/editor/atoms/editor-atoms.ts";
-import AiCreatorPanel from "@/ee/ai/components/ai-creator/ai-creator-panel";
 import AgentPanel from "@/ee/ai/components/agent-panel/agent-panel";
 
 export default function Aside() {
   const [{ tab }] = useAtom(asideStateAtom);
   const { t } = useTranslation();
   const pageEditor = useAtomValue(pageEditorAtom);
-
-  // AI Creator uses its own full-height layout
-  if (tab === "ai-creator") {
-    return (
-      <Box style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-        <AiCreatorPanel />
-      </Box>
-    );
-  }
 
   // Agent panel uses its own full-height layout
   if (tab === "agent") {

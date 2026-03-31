@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActionIcon, Group, Text, Tooltip } from "@mantine/core";
-import { IconCursorText, IconPlus, IconSparkles, IconX } from "@tabler/icons-react";
+import { IconCursorText, IconPencil, IconPlus, IconX } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -12,7 +12,7 @@ import {
   titleEditorAtom,
 } from "@/features/editor/atoms/editor-atoms";
 import { extractPageSlugId } from "@/lib";
-import { maybeExtractTitle } from "../ai-creator/ai-creator-writeback";
+import { maybeExtractTitle } from "../../utils/markdown-utils";
 import { htmlToMarkdown } from "@docmost/editor-ext";
 import { safeApply } from "../../utils/safe-apply";
 import {
@@ -214,9 +214,9 @@ export default function AgentPanel() {
     <div className={classes.panelRoot}>
       <Group className={classes.panelHeader} justify="space-between" px="sm" py={8}>
         <Group gap={8}>
-          <IconSparkles size={18} className={classes.headerIcon} />
+          <IconPencil size={18} className={classes.headerIcon} />
           <Text size="sm" fw={600}>
-            {t("AI Agent")}
+            {t("Smart Writer")}
           </Text>
         </Group>
         <Group gap={4}>

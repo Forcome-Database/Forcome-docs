@@ -50,42 +50,59 @@ VitePress 知识库（`wiki/`）已深度集成 Docmost，作为公开只读前�
 
 - **[模板管理重构细节](docs/ai-template-management.md)**：架构设计、权限模型、数据库设计、API 端点、文件清单、踩坑记录
 
-## AI Agent 智能体
+## AI Agent 智能体（康康写作）
 
-当前有两套 Agent 实现，共存于 `agent-service/` 中：
+V1 Orchestrator 已于 2026-03-30 完整移除（-37,000 行），当前仅保留 V2 Intelligent Agent。
 
-### v2 Intelligent Agent（`feat/intelligent-agent` 分支，推荐）
+### 架构
 
-PydanticAI 双 Agent（Creation + Editing）+ 5 工具 + 选区编辑 + Redis 会话，端点 `POST /agent/v2/run`。
+PydanticAI 双 Agent（Creation + Editing）+ 5 工具 + 选区编辑 + Redis 会话。
+
+- **Python 端点**：`POST /agent/v2/run`（`agent-service/app/main.py`）
+- **NestJS 代理**：`POST /api/agent/v2/run`（`agent-gateway.controller.ts`）
+- **LLM 工厂**：`app/llm/factory.py`（支持 OpenAI / Gemini / Ollama / OpenAI-compatible）
+- **前端面板**：`apps/client/src/ee/ai/components/agent-panel/`（品牌名"康康写作"，i18n key: `Smart Writer`）
+
+### 关键文件
+
+| 文件 | 作用 |
+|------|------|
+| `agent-service/app/main.py` | FastAPI 入口，`/agent/v2/run` + `/agent/stop` + `/agent/web-search` |
+| `agent-service/app/agent/runner.py` | Agent 执行引擎，SSE 事件流 |
+| `agent-service/app/agent/agent.py` | PydanticAI Agent 双单例（creation / editing） |
+| `agent-service/app/agent/skill_router.py` | 基于 selection / history / files 路由到 creation 或 editing |
+| `agent-service/app/agent/skills/` | creation.py（思考框架）+ editing.py（保真框架 + `<document>` 标记）+ shared.py（格式规则） |
+| `agent-service/app/agent/tools/` | 5 工具：extract_document, describe_images, scrape_url, search_web, read_page |
+| `agent-service/app/agent/conversation_store.py` | Redis 多轮会话存储（滑动窗口 6 轮，24h TTL） |
+| `agent-service/app/llm/factory.py` | PydanticAI 模型实例工厂 |
+| `apps/server/src/ee/ai/agent-gateway/` | NestJS SSE 代理 + 并发限制 + 会话鉴权 |
+| `apps/client/src/ee/ai/components/agent-panel/` | 前端面板（时间线消息、选区编辑、文件上传/粘贴） |
+| `apps/client/src/ee/ai/utils/safe-apply.ts` | TipTap 原生命令 Apply + 快照回退 |
+| `apps/client/src/ee/ai/utils/markdown-utils.ts` | 共享 markdown 工具（extractTitle, preprocessImages, maybeExtractTitle） |
+
+### 设计文档（历史参考）
 
 - **[v2 Agent 模块说明](agent-service/app/agent/README.md)**：架构、工具集、SSE 事件协议
 - **[Phase 1-3 实施总结](docs/superpowers/plans/2026-03-27-intelligent-agent-implementation-summary.md)**：核心 Agent + 前端 + 文档智能
 - **[多轮增强计划](docs/superpowers/plans/2026-03-28-agent-multi-turn-enhancement.md)**：Redis 会话 + Skill 拆分 + 输出分类
-- **[选区编辑设计](docs/superpowers/specs/2026-03-28-selection-editing-and-apply-safety.md)**：三模式编辑 + Apply 安全 + 全局审查
-- **[选区编辑计划](docs/superpowers/plans/2026-03-28-apply-safety-and-selection-editing.md)**：实施细节
+- **[选区编辑设计](docs/superpowers/specs/2026-03-28-selection-editing-and-apply-safety.md)**：三模式编辑 + Apply 安全
+- **[历史开发记录](docs/ai-agent-refactor-details.md)**：LangGraph → PydanticAI 重构历史（V1 已移除）
 
-关键设计决策：
-- Skill 拆分：`skills/creation.py`（思考框架）+ `skills/editing.py`（保真框架 + `<document>` 标记）+ `skills/shared.py`（格式规则）
+### 关键设计决策
+
 - 双 Agent singleton：`skill_router.py` 基于 has_selection / has_message_history / has_files 路由
 - 选区快照存入 userMessage（不可变），Apply 从消息读取（不是实时 state）
 - REPLACE 模式 fail-closed（验证失败拒绝应用），INSERT 模式宽松（只检查范围）
-- `safe-apply.ts` 用 TipTap 原生命令替代服务端 API，快照回退
 - 输出分类：选区/插入模式强制 document，全文模式启发式判断
 - V2 取消链路：session 事件含 task_id，cancel 调用 /agent/stop
 
-### v1 Orchestrator（master 分支，旧架构）
-
-`DocumentTaskEngine` + `OrchestratorEngine` 多层编排，端点 `POST /agent/run`。
-
-- **[v1 架构说明](agent-service/ARCHITECTURE.md)**：工作流分支、事件协议、会话与草稿接口
-- **[历史开发记录](docs/ai-agent-refactor-details.md)**：LangGraph → PydanticAI 重构历史
-
-### 共享约束
+### 约束
 
 - NestJS 网关使用 `http.request` 代理 SSE，而不是 `fetch`
 - `agent-service/app/config.py` 会优先读取根目录 `../.env`
 - `AGENT_SERVICE_URL` 与 `DOCMOST_INTERNAL_URL` 支持从端口配置派生
 - `AGENT_MAX_TOOL_CALLS` 环境变量控制工具调用上限（默认 10）
+- 前端输入框支持粘贴图片（自动添加到文件列表）
 
 ## Docker 部署与环境管理
 
@@ -190,6 +207,7 @@ Docker 文件结构：
 - Token 预算：`apps/server/src/ee/ai/utils/token-budget.ts`
 - 上下文投影：`apps/server/src/common/helpers/prosemirror/content-projection.ts`
 - 图片提取：`apps/server/src/ee/ai/utils/content-extractor.ts`
+- 引用上标渲染：`wiki/docs/.vitepress/theme/utils/markdown.ts`（引用 [N] 上标渲染）
 
 ### 关键约束
 
@@ -202,12 +220,18 @@ Docker 文件结构：
 - 消歧最多 1 轮追问，通过 `{ disambiguation: true }` SSE 事件 + `isDisambiguation` flag 追踪
 - 全量重建：`rebuild-all-embeddings` BullMQ job，BATCH_SIZE=5 并发
 - Prompt 排版规范：加粗结论独立成段、段落最多 2 句、操作路径用代码格式、警告独立成段、列表化、每种 confidence×intent 有视觉模板
+- Answer confidence 模型：当 currentPage 有内容时，retrieval confidence 为 none/tangential 会升级为 partial，确保不会在有上下文时拒绝回答
+- Pipeline 并行：查询理解与初始检索并行执行，exact/high 跳过 groundedness 验证
+- Prompt 风格：自然对话式，引用 [N] 只标关键来源，不每句都标；鼓励善用 markdown（代码块、表格、引用）
+- 图片上下文：检索 chunk 使用 ProseMirror 渲染（buildContextText）保留图片在原文位置，不再末尾追加
+- Sources 过滤：前端 AIChatSources 过滤 image/diagram 类型，只显示 page/attachment/web
 
 ### 设计文档
 
 - **[质量升级设计 Spec](docs/superpowers/specs/2026-03-30-wiki-qa-quality-upgrade-design.md)**：4 模块完整架构（索引→查询→衔接→生成）
 - **[P0-P2 关键改进计划](docs/superpowers/plans/2026-03-30-wiki-qa-critical-improvements.md)**：13 项安全/质量/体验修复
 - **[全面升级计划](docs/superpowers/plans/2026-03-30-wiki-qa-quality-upgrade.md)**：12 Task 五阶段实施
+- **[UX 大修实施计划](docs/superpowers/plans/2026-03-30-wiki-qa-ux-overhaul.md)**：自然对话式 Prompt + Pipeline 提速 + 引用上标 + Answer confidence 模型
 
 ## EE 模块关键约束
 
