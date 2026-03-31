@@ -44,20 +44,10 @@ class Settings(BaseSettings):
     mineru_api_base_url: str = "https://mineru.net"
     mineru_api_token: str = ""
     mineru_poll_interval_seconds: float = 2.0
-    mineru_poll_timeout_seconds: float = 120.0
+    mineru_poll_timeout_seconds: float = 300.0
 
-    # Role-specific model overrides
-    orchestrator_model: str = ""
-    writer_model: str = ""
-    evaluator_model: str = ""
-    fixer_model: str = ""
-    brief_model: str = ""
-    blueprint_model: str = ""
-
-    # PostgreSQL connection string for LangGraph checkpointer
-    database_url: str = ""
+    # Redis for conversation store
     redis_url: str = ""
-    session_backend: str = "postgres_redis"
 
     @property
     def effective_docmost_url(self) -> str:

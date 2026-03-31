@@ -8,7 +8,7 @@ export interface PageEmbeddings {
   modelName: string;
   modelDimensions: number;
   workspaceId: string;
-  attachmentId: string;
+  attachmentId: string | null;
   embedding: number[];
   chunkIndex: Generated<number>;
   chunkStart: Generated<number>;
@@ -16,5 +16,7 @@ export interface PageEmbeddings {
   metadata: Generated<Json>;
   createdAt: Generated<Timestamp>;
   updatedAt: Generated<Timestamp>;
+  directoryId: string | null;
+  topicId: string | null;
   deletedAt: Timestamp | null;
 }
