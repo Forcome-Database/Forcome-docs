@@ -185,13 +185,13 @@ export function useAgentSession(pageId: string): AgentSessionAPI {
   );
 
   const lockEditor = useCallback(() => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     editor.setEditable(false);
     editor.view.dom.classList.add("ai-generating");
   }, [editor]);
 
   const unlockEditor = useCallback(() => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     editor.setEditable(true);
     editor.view.dom.classList.remove("ai-generating");
   }, [editor]);
