@@ -15,7 +15,9 @@ WORKDIR /app
 
 # Install deps first (cached unless pyproject.toml changes)
 COPY pyproject.toml .
-RUN mkdir -p app && touch app/__init__.py && pip install . && rm -rf app
+RUN mkdir -p app && touch app/__init__.py \
+    && pip install -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com . \
+    && rm -rf app
 
 # Source code mounted via volume at runtime, this layer is just a fallback
 COPY app/ ./app/

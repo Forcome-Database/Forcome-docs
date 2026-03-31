@@ -15,7 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install deps first (cached unless pyproject.toml changes)
 COPY pyproject.toml .
-RUN mkdir -p app && touch app/__init__.py && pip install .
+RUN mkdir -p app && touch app/__init__.py \
+    && pip install -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com .
 
 # Copy source after deps are installed
 COPY app/ ./app/
