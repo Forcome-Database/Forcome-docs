@@ -142,6 +142,9 @@ export class SpaceService {
         name: updateSpaceDto.name,
         description: updateSpaceDto.description,
         slug: updateSpaceDto.slug,
+        ...(typeof updateSpaceDto.visibility !== 'undefined'
+          ? { visibility: updateSpaceDto.visibility }
+          : {}),
       },
       updateSpaceDto.spaceId,
       workspaceId,

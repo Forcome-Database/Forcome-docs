@@ -10,6 +10,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { KyselyDB } from '@docmost/db/types/kysely.types';
 import { PageRepo } from '@docmost/db/repos/page/page.repo';
 import { SpaceRepo } from '@docmost/db/repos/space/space.repo';
+import { ResourcePermissionRepo } from '@docmost/db/repos/resource-permission';
 import { TokenService } from '../auth/services/token.service';
 import { EnvironmentService } from '../../integrations/environment/environment.service';
 import { SearchService } from '../search/search.service';
@@ -61,6 +62,7 @@ export class PublicWikiService {
     @InjectKysely() private readonly db: KyselyDB,
     private readonly pageRepo: PageRepo,
     private readonly spaceRepo: SpaceRepo,
+    private readonly resourcePermissionRepo: ResourcePermissionRepo,
     private readonly tokenService: TokenService,
     private readonly environmentService: EnvironmentService,
     private readonly searchService: SearchService,
@@ -90,37 +92,58 @@ export class PublicWikiService {
     return this.environmentService.getWikiPublicSpaceSlugs();
   }
 
-  private isSpacePublic(slug: string): boolean {
-    const slugs = this.getPublicSpaceSlugs();
-    // 空列表 = 所有空间公开
-    if (slugs.length === 0) return true;
-    return slugs.map((s) => s.toLowerCase()).includes(slug.toLowerCase());
+  private async isSpacePublic(slug: string, workspaceId: string): Promise<boolean> {
+    // Priority 1: Database visibility field
+    const space = await this.spaceRepo.findBySlug(slug, workspaceId);
+    if (!space) return false;
+    if (space.visibility === 'open') return true;
+
+    // Priority 2: Environment variable fallback (safe default)
+    const envSlugs = this.getPublicSpaceSlugs();
+    // 空列表 = 所有空间公开（保持现有行为）
+    if (envSlugs.length === 0) return true;
+    return envSlugs.map((s) => s.toLowerCase()).includes(slug.toLowerCase());
   }
 
   private async resolvePublicSpaces(
     workspaceId: string,
     requestedSpaceSlug?: string,
   ): Promise<PublicSpaceScopeEntry[]> {
-    const requestedSlugs = requestedSpaceSlug
-      ? [requestedSpaceSlug]
-      : this.getPublicSpaceSlugs();
+    const envSlugs = this.getPublicSpaceSlugs();
 
-    let query = this.db
-      .selectFrom('spaces')
-      .select(['id', 'slug'])
-      .where('workspaceId', '=', workspaceId);
-
-    if (requestedSlugs.length > 0) {
-      query = query.where((eb) =>
-        eb.or(
-          requestedSlugs.map((slug) =>
-            eb(eb.fn('LOWER', ['slug']), '=', slug.toLowerCase()),
-          ),
-        ),
-      );
+    // If a specific slug is requested (e.g. scoped search), validate it is public first
+    if (requestedSpaceSlug) {
+      const isPublic = await this.isSpacePublic(requestedSpaceSlug, workspaceId);
+      if (!isPublic) return [];
+      return (await this.db
+        .selectFrom('spaces')
+        .select(['id', 'slug'])
+        .where('workspaceId', '=', workspaceId)
+        .where((eb) =>
+          eb(eb.fn('LOWER', ['slug']), '=', requestedSpaceSlug.toLowerCase()),
+        )
+        .execute()) as PublicSpaceScopeEntry[];
     }
 
-    return (await query.execute()) as PublicSpaceScopeEntry[];
+    // No specific slug: return all public spaces (DB-visible OR env-whitelisted)
+    return (await this.db
+      .selectFrom('spaces')
+      .select(['id', 'slug'])
+      .where('workspaceId', '=', workspaceId)
+      .where((eb) => {
+        const dbOpen = eb('visibility', '=', 'open');
+        if (envSlugs.length === 0) {
+          // Env not configured: all spaces are public
+          return eb.or([dbOpen, eb.val(true)]);
+        }
+        const envMatch = eb.or(
+          envSlugs.map((slug) =>
+            eb(eb.fn('LOWER', ['slug']), '=', slug.toLowerCase()),
+          ),
+        );
+        return eb.or([dbOpen, envMatch]);
+      })
+      .execute()) as PublicSpaceScopeEntry[];
   }
 
   private async resolvePublicPageScope(
@@ -271,23 +294,27 @@ export class PublicWikiService {
   async getPublicSpaces(workspaceId: string) {
     const slugs = this.getPublicSpaceSlugs();
 
-    let query = this.db
+    // Return spaces that are public by DB visibility OR by env whitelist
+    const spaces = await this.db
       .selectFrom('spaces')
       .select(['id', 'name', 'slug', 'description'])
-      .where('workspaceId', '=', workspaceId);
-
-    // 有白名单时只返回指定空间，否则返回所有空间
-    if (slugs.length > 0) {
-      query = query.where((eb) =>
-        eb.or(
+      .where('workspaceId', '=', workspaceId)
+      .where((eb) => {
+        // DB-visibility: always include open spaces
+        const dbOpen = eb('visibility', '=', 'open');
+        if (slugs.length === 0) {
+          // Env not configured: all spaces are public (or only DB-open ones — keep backward compat: all)
+          return eb.or([dbOpen, eb.val(true)]);
+        }
+        // Env whitelist provided: include DB-open OR slug-matched
+        const envMatch = eb.or(
           slugs.map((slug) =>
             eb(eb.fn('LOWER', ['slug']), '=', slug.toLowerCase()),
           ),
-        ),
-      );
-    }
-
-    const spaces = await query.execute();
+        );
+        return eb.or([dbOpen, envMatch]);
+      })
+      .execute();
 
     // Check which spaces have directories
     const spaceIds = spaces.map((s) => s.id);
@@ -315,7 +342,7 @@ export class PublicWikiService {
   }
 
   async getDirectories(spaceSlug: string, workspaceId: string) {
-    if (!this.isSpacePublic(spaceSlug)) {
+    if (!await this.isSpacePublic(spaceSlug, workspaceId)) {
       throw new NotFoundException('Space not found');
     }
 
@@ -336,7 +363,7 @@ export class PublicWikiService {
   }
 
   async getSidebarTree(spaceSlug: string, workspaceId: string, directoryId?: string) {
-    if (!this.isSpacePublic(spaceSlug)) {
+    if (!await this.isSpacePublic(spaceSlug, workspaceId)) {
       throw new NotFoundException('Space not found');
     }
 
@@ -347,8 +374,19 @@ export class PublicWikiService {
 
     // When directoryId is provided, build a mixed tree of topics and pages
     if (directoryId) {
-      return this.getDirectorySidebarTree(space, directoryId);
+      return this.getDirectorySidebarTree(space, directoryId, workspaceId);
     }
+
+    // Fetch hidden resources to filter out hidden pages/directories
+    const hiddenResources = await this.resourcePermissionRepo.findHiddenForPublic(
+      space.id,
+      workspaceId,
+    );
+    const hiddenPageIds = new Set(
+      hiddenResources
+        .filter((r) => r.resourceType === 'page')
+        .map((r) => r.resourceId),
+    );
 
     const pages = await this.db
       .selectFrom('pages')
@@ -369,8 +407,11 @@ export class PublicWikiService {
       .orderBy('position', 'asc')
       .execute();
 
+    // Filter hidden pages
+    const visiblePages = pages.filter((p) => !hiddenPageIds.has(p.id));
+
     // Build recursive tree
-    const tree = this.buildTree(pages, null);
+    const tree = this.buildTree(visiblePages, null);
 
     return { space: { id: space.id, name: space.name, slug: space.slug }, items: tree };
   }
@@ -378,6 +419,7 @@ export class PublicWikiService {
   private async getDirectorySidebarTree(
     space: { id: string; name: string; slug: string },
     directoryId: string,
+    workspaceId: string,
   ) {
     // Verify directory exists in this space
     const directory = await this.db
@@ -424,9 +466,32 @@ export class PublicWikiService {
       .orderBy('position', 'asc')
       .execute();
 
+    // Fetch hidden resources to filter out hidden pages and directories
+    const hiddenResources = await this.resourcePermissionRepo.findHiddenForPublic(
+      space.id,
+      workspaceId,
+    );
+    const hiddenPageIds = new Set(
+      hiddenResources
+        .filter((r) => r.resourceType === 'page')
+        .map((r) => r.resourceId),
+    );
+    const hiddenDirectoryIds = new Set(
+      hiddenResources
+        .filter((r) => r.resourceType === 'directory')
+        .map((r) => r.resourceId),
+    );
+
+    // If this directory is hidden, treat as not found
+    if (hiddenDirectoryIds.has(directoryId)) {
+      throw new NotFoundException('Directory not found');
+    }
+
     // Collect pages directly assigned to this directory + all their descendants
     const directIds = new Set(
-      allPages.filter((p) => p.directoryId === directoryId).map((p) => p.id),
+      allPages
+        .filter((p) => p.directoryId === directoryId && !hiddenPageIds.has(p.id))
+        .map((p) => p.id),
     );
     const relevantIds = new Set(directIds);
     let frontier = [...directIds];
@@ -436,7 +501,8 @@ export class PublicWikiService {
         if (
           p.parentPageId &&
           frontier.includes(p.parentPageId) &&
-          !relevantIds.has(p.id)
+          !relevantIds.has(p.id) &&
+          !hiddenPageIds.has(p.id)
         ) {
           relevantIds.add(p.id);
           nextFrontier.push(p.id);
@@ -558,7 +624,7 @@ export class PublicWikiService {
       .where('workspaceId', '=', workspaceId)
       .executeTakeFirst();
 
-    if (!space || !this.isSpacePublic(space.slug)) {
+    if (!space || !await this.isSpacePublic(space.slug, workspaceId)) {
       throw new NotFoundException('Page not found');
     }
 

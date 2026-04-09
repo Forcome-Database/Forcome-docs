@@ -97,6 +97,7 @@ describe('PublicWikiService.aiAnswers', () => {
       db as any,
       { findById: jest.fn() } as any,
       { findBySlug: jest.fn() } as any,
+      { findHiddenForPublic: jest.fn().mockResolvedValue([]) } as any,
       { generateAttachmentToken: jest.fn() } as any,
       environmentService as any,
       { searchPage: jest.fn() } as any,
