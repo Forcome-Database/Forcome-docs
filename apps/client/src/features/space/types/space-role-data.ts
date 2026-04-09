@@ -16,6 +16,11 @@ export const spaceRoleData: IRoleData[] = [
     value: SpaceRole.READER,
     description: "Can view pages in space but not edit.",
   },
+  {
+    label: "Restricted",
+    value: SpaceRole.NONE,
+    description: "Can only access explicitly authorized directories and pages.",
+  },
 ];
 
 export function getSpaceRoleLabel(value: string) {

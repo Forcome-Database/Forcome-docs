@@ -16,6 +16,7 @@ export enum SpaceRole {
   ADMIN = "admin",
   WRITER = "writer",
   READER = "reader",
+  NONE = "none",
 }
 
 export interface IRoleData {
