@@ -434,12 +434,38 @@ export class PageController {
           }
         : undefined;
 
-    return this.pageService.getSidebarPages(
+    const result = await this.pageService.getSidebarPages(
       spaceId,
       pagination,
       dto.pageId,
       containerFilter,
     );
+
+    // Deny-override filtering: hide resources with explicit role='none' override
+    const noneOverrides = await this.resourcePermRepo.getUserOverridesInSpace(
+      user.id,
+      spaceId,
+      workspace.id,
+    );
+    const deniedDirectoryIds = new Set<string>();
+    const deniedPageIds = new Set<string>();
+    for (const override of noneOverrides) {
+      if (override.role !== 'none') continue;
+      if (override.resourceType === 'directory') {
+        deniedDirectoryIds.add(override.resourceId);
+      } else if (override.resourceType === 'page') {
+        deniedPageIds.add(override.resourceId);
+      }
+    }
+    if (deniedDirectoryIds.size > 0 || deniedPageIds.size > 0) {
+      result.items = result.items.filter((page) => {
+        if (deniedPageIds.has(page.id)) return false;
+        if (page.directoryId && deniedDirectoryIds.has(page.directoryId)) return false;
+        return true;
+      });
+    }
+
+    return result;
   }
 
   @HttpCode(HttpStatus.OK)

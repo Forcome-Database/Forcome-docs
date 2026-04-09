@@ -94,11 +94,32 @@ export class DirectoryController {
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Settings)) {
       throw new ForbiddenException();
     }
-    return this.directoryService.getDirectoriesInSpace(
+    const result = await this.directoryService.getDirectoriesInSpace(
       dto.spaceId,
       workspace.id,
       pagination,
     );
+
+    // Deny-override filtering: hide directories with explicit role='none' override
+    const noneOverrides = await this.resourcePermRepo.getUserOverridesInSpace(
+      user.id,
+      dto.spaceId,
+      workspace.id,
+    );
+    const deniedDirectoryIds = new Set<string>();
+    for (const override of noneOverrides) {
+      if (override.role !== 'none') continue;
+      if (override.resourceType === 'directory') {
+        deniedDirectoryIds.add(override.resourceId);
+      }
+    }
+    if (deniedDirectoryIds.size > 0) {
+      result.items = result.items.filter(
+        (dir) => !deniedDirectoryIds.has(dir.id),
+      );
+    }
+
+    return result;
   }
 
   @HttpCode(HttpStatus.OK)
