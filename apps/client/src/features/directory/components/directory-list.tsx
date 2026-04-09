@@ -1,9 +1,10 @@
-import { ActionIcon, Button, Group, Stack, Table, Text } from "@mantine/core";
+import { ActionIcon, Button, Group, Stack, Table, Text, Tooltip } from "@mantine/core";
 import {
   IconEdit,
   IconTrash,
   IconPlus,
   IconFolder,
+  IconShieldLock,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -15,6 +16,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { modals } from "@mantine/modals";
 import { DirectoryFormModal } from "./directory-form-modal";
 import { useState } from "react";
+import { ResourcePermissionModal } from "@/features/resource-permission/components/resource-permission-modal";
 
 interface DirectoryListProps {
   spaceId: string;
@@ -27,6 +29,8 @@ export function DirectoryList({ spaceId, readOnly }: DirectoryListProps) {
   const deleteDir = useDeleteDirectoryMutation(spaceId);
   const [opened, { open, close }] = useDisclosure(false);
   const [editingDir, setEditingDir] = useState<IDirectory | null>(null);
+  const [permDir, setPermDir] = useState<IDirectory | null>(null);
+  const [permOpened, { open: openPerm, close: closePerm }] = useDisclosure(false);
 
   const handleEdit = (dir: IDirectory) => {
     setEditingDir(dir);
@@ -36,6 +40,11 @@ export function DirectoryList({ spaceId, readOnly }: DirectoryListProps) {
   const handleCreate = () => {
     setEditingDir(null);
     open();
+  };
+
+  const handleManagePermissions = (dir: IDirectory) => {
+    setPermDir(dir);
+    openPerm();
   };
 
   const handleDelete = (dir: IDirectory) => {
@@ -105,6 +114,15 @@ export function DirectoryList({ spaceId, readOnly }: DirectoryListProps) {
                 {!readOnly && (
                   <Table.Td>
                     <Group gap="xs">
+                      <Tooltip label={t("Manage permissions")} openDelay={250} withArrow>
+                        <ActionIcon
+                          variant="subtle"
+                          size="sm"
+                          onClick={() => handleManagePermissions(dir)}
+                        >
+                          <IconShieldLock size={16} />
+                        </ActionIcon>
+                      </Tooltip>
                       <ActionIcon
                         variant="subtle"
                         size="sm"
@@ -135,6 +153,16 @@ export function DirectoryList({ spaceId, readOnly }: DirectoryListProps) {
         spaceId={spaceId}
         directory={editingDir}
       />
+
+      {permDir && (
+        <ResourcePermissionModal
+          opened={permOpened}
+          onClose={closePerm}
+          resourceType="directory"
+          resourceId={permDir.id}
+          resourceName={permDir.name}
+        />
+      )}
     </Stack>
   );
 }
