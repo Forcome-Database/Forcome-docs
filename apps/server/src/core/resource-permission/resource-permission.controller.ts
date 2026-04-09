@@ -42,7 +42,7 @@ export class ResourcePermissionController {
   ): Promise<ResourceContext> {
     if (resourceType === 'page') {
       const page = await this.pageRepo.findById(resourceId);
-      if (!page) {
+      if (!page || page.workspaceId !== workspaceId) {
         throw new NotFoundException('Page not found');
       }
       return {

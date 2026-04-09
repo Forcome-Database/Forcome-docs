@@ -96,9 +96,10 @@ export class CommentController {
       throw new NotFoundException('Comment not found');
     }
 
+    const page = await this.pageRepo.findById(comment.pageId);
     const ability = await this.resourceAbility.createForUser(
       user, 'page', comment.pageId,
-      { spaceId: comment.spaceId },
+      { directoryId: page?.directoryId ?? undefined, spaceId: comment.spaceId },
     );
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
@@ -114,9 +115,10 @@ export class CommentController {
       throw new NotFoundException('Comment not found');
     }
 
+    const page = await this.pageRepo.findById(comment.pageId);
     const ability = await this.resourceAbility.createForUser(
       user, 'page', comment.pageId,
-      { spaceId: comment.spaceId },
+      { directoryId: page?.directoryId ?? undefined, spaceId: comment.spaceId },
     );
 
     // must be a space member with edit permission
@@ -137,9 +139,10 @@ export class CommentController {
       throw new NotFoundException('Comment not found');
     }
 
+    const page = await this.pageRepo.findById(comment.pageId);
     const ability = await this.resourceAbility.createForUser(
       user, 'page', comment.pageId,
-      { spaceId: comment.spaceId },
+      { directoryId: page?.directoryId ?? undefined, spaceId: comment.spaceId },
     );
 
     // must be a space member with edit permission

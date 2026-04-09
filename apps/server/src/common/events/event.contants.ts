@@ -8,6 +8,8 @@ export enum EventName {
   PAGE_SOFT_DELETED = 'page.soft_deleted',
   PAGE_RESTORED = 'page.restored',
 
+  DIRECTORY_DELETED = 'directory.deleted',
+
   SPACE_CREATED = 'space.created',
   SPACE_UPDATED = 'space.updated',
   SPACE_DELETED = 'space.deleted',

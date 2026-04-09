@@ -10,6 +10,8 @@ import { KyselyDB } from '@docmost/db/types/kysely.types';
 import { InjectQueue } from '@nestjs/bullmq';
 import { QueueName, QueueJob } from '../../integrations/queue/constants';
 import { Queue } from 'bullmq';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventName } from '../../common/events/event.contants';
 
 @Injectable()
 export class DirectoryService {
@@ -17,6 +19,7 @@ export class DirectoryService {
     private readonly directoryRepo: DirectoryRepo,
     @InjectKysely() private readonly db: KyselyDB,
     @InjectQueue(QueueName.AI_QUEUE) private aiQueue: Queue,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async getDirectoryById(directoryId: string, workspaceId: string) {
@@ -126,7 +129,10 @@ export class DirectoryService {
     // 4. Soft-delete directory
     await this.directoryRepo.deleteDirectory(directoryId, workspaceId);
 
-    // 5. Sync embeddings for affected pages
+    // 5. Emit directory deleted event for permission cleanup
+    this.eventEmitter.emit(EventName.DIRECTORY_DELETED, { directoryId });
+
+    // 6. Sync embeddings for affected pages
     if (affectedPages.length > 0) {
       const pageIds = affectedPages.map((p) => p.id);
       await this.aiQueue.add(QueueJob.PAGE_MOVED_TO_SPACE, {

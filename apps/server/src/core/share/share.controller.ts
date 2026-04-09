@@ -178,9 +178,20 @@ export class ShareController {
       throw new NotFoundException('Share not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, share.spaceId);
-    if (ability.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Share)) {
-      throw new ForbiddenException();
+    if (share.pageId) {
+      const page = await this.pageRepo.findById(share.pageId);
+      const ability = await this.resourceAbility.createForUser(
+        user, 'page', share.pageId,
+        { directoryId: page?.directoryId ?? undefined, spaceId: share.spaceId },
+      );
+      if (ability.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Share)) {
+        throw new ForbiddenException();
+      }
+    } else {
+      const ability = await this.spaceAbility.createForUser(user, share.spaceId);
+      if (ability.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Share)) {
+        throw new ForbiddenException();
+      }
     }
 
     return this.shareService.updateShare(share.id, updateShareDto);
@@ -195,9 +206,20 @@ export class ShareController {
       throw new NotFoundException('Share not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, share.spaceId);
-    if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Share)) {
-      throw new ForbiddenException();
+    if (share.pageId) {
+      const page = await this.pageRepo.findById(share.pageId);
+      const ability = await this.resourceAbility.createForUser(
+        user, 'page', share.pageId,
+        { directoryId: page?.directoryId ?? undefined, spaceId: share.spaceId },
+      );
+      if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Share)) {
+        throw new ForbiddenException();
+      }
+    } else {
+      const ability = await this.spaceAbility.createForUser(user, share.spaceId);
+      if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Share)) {
+        throw new ForbiddenException();
+      }
     }
 
     await this.shareRepo.deleteShare(share.id);

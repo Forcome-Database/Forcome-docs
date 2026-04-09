@@ -315,9 +315,13 @@ export class PageController {
       throw new NotFoundException('Page history not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      history.spaceId,
+    const page = await this.pageRepo.findById(history.pageId);
+    if (!page) {
+      throw new NotFoundException('Page not found');
+    }
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId ?? undefined, spaceId: page.spaceId },
     );
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();

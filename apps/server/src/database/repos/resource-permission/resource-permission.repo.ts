@@ -120,12 +120,26 @@ export class ResourcePermissionRepo {
     spaceId: string,
     workspaceId: string,
   ): Promise<{ resourceType: string; resourceId: string }[]> {
-    return this.db
+    const dirNone = this.db
       .selectFrom('resourcePermissions')
-      .select(['resourceType', 'resourceId'])
-      .where('workspaceId', '=', workspaceId)
-      .where('role', '=', 'none')
-      .where('principalType', '=', 'group')
-      .execute();
+      .innerJoin('directories', 'directories.id', 'resourcePermissions.resourceId')
+      .select(['resourcePermissions.resourceType', 'resourcePermissions.resourceId'])
+      .where('resourcePermissions.workspaceId', '=', workspaceId)
+      .where('resourcePermissions.role', '=', 'none')
+      .where('resourcePermissions.principalType', '=', 'group')
+      .where('resourcePermissions.resourceType', '=', 'directory')
+      .where('directories.spaceId', '=', spaceId);
+
+    const pageNone = this.db
+      .selectFrom('resourcePermissions')
+      .innerJoin('pages', 'pages.id', 'resourcePermissions.resourceId')
+      .select(['resourcePermissions.resourceType', 'resourcePermissions.resourceId'])
+      .where('resourcePermissions.workspaceId', '=', workspaceId)
+      .where('resourcePermissions.role', '=', 'none')
+      .where('resourcePermissions.principalType', '=', 'group')
+      .where('resourcePermissions.resourceType', '=', 'page')
+      .where('pages.spaceId', '=', spaceId);
+
+    return dirNone.unionAll(pageNone).execute();
   }
 }

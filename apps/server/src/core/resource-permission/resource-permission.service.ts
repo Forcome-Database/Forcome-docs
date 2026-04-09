@@ -37,6 +37,17 @@ export class ResourcePermissionService {
     userId: string,
     workspaceId: string,
   ): Promise<ResourcePermission> {
+    // Self-lock prevention: don't let user set their own permission to 'none'
+    if (
+      dto.principalType === 'user' &&
+      dto.principalId === userId &&
+      dto.role === 'none'
+    ) {
+      throw new BadRequestException(
+        'Cannot set your own permission to none',
+      );
+    }
+
     return this.resourcePermRepo.insert({
       resourceType: dto.resourceType,
       resourceId: dto.resourceId,
@@ -98,7 +109,7 @@ export class ResourcePermissionService {
     return this.resourcePermRepo.findById(id);
   }
 
-  @OnEvent('directory.deleted')
+  @OnEvent(EventName.DIRECTORY_DELETED)
   async handleDirectoryDeleted(event: DirectoryDeletedEvent): Promise<void> {
     await this.resourcePermRepo.deleteByResource(
       'directory',

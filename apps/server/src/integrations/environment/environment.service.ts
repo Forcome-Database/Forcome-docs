@@ -305,9 +305,11 @@ export class EnvironmentService {
     );
   }
 
-  getWikiPublicSpaceSlugs(): string[] {
+  getWikiPublicSpaceSlugs(): string[] | undefined {
     const slugs = this.configService.get<string>('WIKI_PUBLIC_SPACE_SLUGS');
-    return slugs ? slugs.split(',').map((s) => s.trim()) : [];
+    if (slugs === undefined || slugs === null) return undefined;
+    if (slugs.trim() === '') return [];
+    return slugs.split(',').map((s) => s.trim());
   }
 
   isPublicWikiAiEnabled(): boolean {

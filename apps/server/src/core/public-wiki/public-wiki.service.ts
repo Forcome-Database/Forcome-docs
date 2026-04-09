@@ -88,7 +88,7 @@ export class PublicWikiService {
     };
   }
 
-  private getPublicSpaceSlugs(): string[] {
+  private getPublicSpaceSlugs(): string[] | undefined {
     return this.environmentService.getWikiPublicSpaceSlugs();
   }
 
@@ -100,7 +100,9 @@ export class PublicWikiService {
 
     // Priority 2: Environment variable fallback (safe default)
     const envSlugs = this.getPublicSpaceSlugs();
-    // 空列表 = 所有空间公开（保持现有行为）
+    // undefined = env not configured → only DB-open spaces are public
+    if (envSlugs === undefined) return false;
+    // 空列表 = 显式设为空 → 所有空间公开（保持现有行为）
     if (envSlugs.length === 0) return true;
     return envSlugs.map((s) => s.toLowerCase()).includes(slug.toLowerCase());
   }
@@ -132,8 +134,12 @@ export class PublicWikiService {
       .where('workspaceId', '=', workspaceId)
       .where((eb) => {
         const dbOpen = eb('visibility', '=', 'open');
+        // undefined = env not configured → only DB-open spaces
+        if (envSlugs === undefined) {
+          return dbOpen;
+        }
+        // empty array = explicitly empty → all spaces are public
         if (envSlugs.length === 0) {
-          // Env not configured: all spaces are public
           return eb.or([dbOpen, eb.val(true)]);
         }
         const envMatch = eb.or(
@@ -326,8 +332,12 @@ export class PublicWikiService {
       .where((eb) => {
         // DB-visibility: always include open spaces
         const dbOpen = eb('visibility', '=', 'open');
+        // undefined = env not configured → only DB-open spaces
+        if (slugs === undefined) {
+          return dbOpen;
+        }
+        // empty array = explicitly empty → all spaces are public
         if (slugs.length === 0) {
-          // Env not configured: all spaces are public (or only DB-open ones — keep backward compat: all)
           return eb.or([dbOpen, eb.val(true)]);
         }
         // Env whitelist provided: include DB-open OR slug-matched

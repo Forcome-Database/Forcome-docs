@@ -174,9 +174,10 @@ export class AttachmentController {
       throw new NotFoundException();
     }
 
+    const attachmentPage = await this.pageRepo.findById(attachment.pageId);
     const attachmentAbility = await this.resourceAbility.createForUser(
       user, 'page', attachment.pageId,
-      { spaceId: attachment.spaceId },
+      { directoryId: attachmentPage?.directoryId ?? undefined, spaceId: attachment.spaceId },
     );
 
     if (attachmentAbility.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
