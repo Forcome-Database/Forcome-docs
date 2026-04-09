@@ -188,8 +188,8 @@ export class ResourcePermissionRepo {
         'resourcePermissions.resourceType',
         'resourcePermissions.resourceId',
         'resourcePermissions.role',
-        sql<string | null>`null`.as('directoryId'),
-        sql<string | null>`null`.as('topicId'),
+        sql<string | null>`null::uuid`.as('directoryId'),
+        sql<string | null>`null::uuid`.as('topicId'),
       ])
       .where('resourcePermissions.workspaceId', '=', workspaceId)
       .where('resourcePermissions.principalType', '=', 'user')
@@ -206,8 +206,8 @@ export class ResourcePermissionRepo {
         'resourcePermissions.resourceType',
         'resourcePermissions.resourceId',
         'resourcePermissions.role',
-        sql<string | null>`null`.as('directoryId'),
-        sql<string | null>`null`.as('topicId'),
+        sql<string | null>`null::uuid`.as('directoryId'),
+        sql<string | null>`null::uuid`.as('topicId'),
       ])
       .where('resourcePermissions.workspaceId', '=', workspaceId)
       .where('resourcePermissions.principalType', '=', 'group')
