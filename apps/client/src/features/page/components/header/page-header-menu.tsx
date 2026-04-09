@@ -45,9 +45,11 @@ import ShareModal from "@/features/share/components/share-modal.tsx";
 import { ResourcePermissionModal } from "@/features/resource-permission/components/resource-permission-modal";
 
 interface PageHeaderMenuProps {
-  readOnly?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  canShare?: boolean;
 }
-export default function PageHeaderMenu({ readOnly }: PageHeaderMenuProps) {
+export default function PageHeaderMenu({ canEdit = false, canDelete = false, canShare = false }: PageHeaderMenuProps) {
   const { t } = useTranslation();
   const toggleAside = useToggleAside();
 
@@ -76,11 +78,11 @@ export default function PageHeaderMenu({ readOnly }: PageHeaderMenuProps) {
     <>
       <ConnectionWarning />
 
-      {!readOnly && <PageStateSegmentedControl size="xs" />}
+      {canEdit && <PageStateSegmentedControl size="xs" />}
 
-      <ShareModal readOnly={readOnly} />
+      <ShareModal readOnly={!canShare} />
 
-      {!readOnly && (
+      {canEdit && (
         <Tooltip label={t("Smart Writer")} openDelay={250} withArrow>
           <ActionIcon
             variant="subtle"
@@ -112,15 +114,16 @@ export default function PageHeaderMenu({ readOnly }: PageHeaderMenuProps) {
         </ActionIcon>
       </Tooltip>
 
-      <PageActionMenu readOnly={readOnly} />
+      <PageActionMenu canEdit={canEdit} canDelete={canDelete} />
     </>
   );
 }
 
 interface PageActionMenuProps {
-  readOnly?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
-function PageActionMenu({ readOnly }: PageActionMenuProps) {
+function PageActionMenu({ canEdit = false, canDelete = false }: PageActionMenuProps) {
   const { t } = useTranslation();
   const [, setHistoryModalOpen] = useAtom(historyAtoms);
   const clipboard = useClipboard({ timeout: 500 });
@@ -221,7 +224,7 @@ function PageActionMenu({ readOnly }: PageActionMenuProps) {
 
           <Menu.Divider />
 
-          {!readOnly && (
+          {canEdit && (
             <Menu.Item
               leftSection={<IconArrowRight size={16} />}
               onClick={openMovePageModal}
@@ -230,7 +233,7 @@ function PageActionMenu({ readOnly }: PageActionMenuProps) {
             </Menu.Item>
           )}
 
-          {!readOnly && (
+          {canEdit && (
             <Menu.Item
               leftSection={<IconShieldLock size={16} />}
               onClick={openPermModal}
@@ -253,7 +256,7 @@ function PageActionMenu({ readOnly }: PageActionMenuProps) {
             {t("Print PDF")}
           </Menu.Item>
 
-          {!readOnly && (
+          {canDelete && (
             <>
               <Menu.Divider />
               <Menu.Item

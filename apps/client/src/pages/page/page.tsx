@@ -61,6 +61,10 @@ function PageContent({ pageSlug }: { pageSlug: string | undefined }) {
   const spaceRules = space?.membership?.permissions;
   const spaceAbility = useSpaceAbility(spaceRules);
 
+  const canEdit = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
+  const canDelete = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
+  const canShare = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Share);
+
   if (isLoading) {
     return <></>;
   }
@@ -102,10 +106,9 @@ function PageContent({ pageSlug }: { pageSlug: string | undefined }) {
         </Helmet>
 
         <MemoizedPageHeader
-          readOnly={spaceAbility.cannot(
-            SpaceCaslAction.Manage,
-            SpaceCaslSubject.Page,
-          )}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          canShare={canShare}
         />
 
         <MemoizedFullEditor
@@ -115,10 +118,7 @@ function PageContent({ pageSlug }: { pageSlug: string | undefined }) {
           content={page.content}
           slugId={page.slugId}
           spaceSlug={page?.space?.slug}
-          editable={spaceAbility.can(
-            SpaceCaslAction.Manage,
-            SpaceCaslSubject.Page,
-          )}
+          editable={canEdit}
         />
         <MemoizedHistoryModal pageId={page.id} />
       </div>

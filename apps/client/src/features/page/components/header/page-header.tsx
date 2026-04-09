@@ -4,16 +4,18 @@ import { Group } from "@mantine/core";
 import Breadcrumb from "@/features/page/components/breadcrumbs/breadcrumb.tsx";
 
 interface Props {
-  readOnly?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  canShare?: boolean;
 }
-export default function PageHeader({ readOnly }: Props) {
+export default function PageHeader({ canEdit, canDelete, canShare }: Props) {
   return (
     <div className={classes.header}>
       <Group justify="space-between" h="100%" px="md" wrap="nowrap" className={classes.group}>
         <Breadcrumb />
 
         <Group justify="flex-end" h="100%" px="md" wrap="nowrap" gap="var(--mantine-spacing-xs)">
-          <PageHeaderMenu readOnly={readOnly} />
+          <PageHeaderMenu canEdit={canEdit} canDelete={canDelete} canShare={canShare} />
         </Group>
       </Group>
     </div>
