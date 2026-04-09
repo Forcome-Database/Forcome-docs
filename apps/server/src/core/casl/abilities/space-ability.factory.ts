@@ -33,7 +33,7 @@ export default class SpaceAbilityFactory {
       case SpaceRole.READER:
         return buildSpaceReaderAbility();
       case SpaceRole.NONE:
-        return buildNoneAbility();
+        return buildRestrictedAbility();
       default:
         throw new NotFoundException('Space permissions not found');
     }
@@ -76,16 +76,25 @@ export function buildSpaceReaderAbility() {
   return build();
 }
 
-export function buildNoneAbility() {
+// Used by SpaceAbilityFactory for space role 'none':
+// allows entering the space and seeing filtered sidebar content.
+export function buildRestrictedAbility() {
   const { can, build } = new AbilityBuilder<MongoAbility<ISpaceAbility>>(
     createMongoAbility,
   );
-  // Restricted role: basic read access to enter the space and see filtered content.
-  // Actual content visibility is controlled by resource_permissions overrides.
   can(SpaceCaslAction.Read, SpaceCaslSubject.Settings);
   can(SpaceCaslAction.Read, SpaceCaslSubject.Member);
   can(SpaceCaslAction.Read, SpaceCaslSubject.Page);
   can(SpaceCaslAction.Read, SpaceCaslSubject.Share);
   can(SpaceCaslAction.Read, SpaceCaslSubject.Directory);
+  return build();
+}
+
+// Used by ResourceAbilityFactory when resolveRole returns 'none':
+// denies all access to the specific resource.
+export function buildNoneAbility() {
+  const { build } = new AbilityBuilder<MongoAbility<ISpaceAbility>>(
+    createMongoAbility,
+  );
   return build();
 }
