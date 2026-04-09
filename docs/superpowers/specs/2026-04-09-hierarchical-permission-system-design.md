@@ -125,6 +125,7 @@ resolvePermission(user, page):
 - 每步合并用户直接角色 + 所属 Group 角色，取最高
 - **命中即返回**，不继续上溯——就近覆盖
 - `role='none'` 命中也算命中——拒绝访问，不上溯
+- **none 优先规则**：同一层级（同一 resourceId）若存在任意一条 `none` 记录（无论来自用户还是 Group），该层级结果**直接为 none**，不参与"取最高"排序。`none` 是显式拒绝（黑名单），语义上优先于任何正向角色
 
 ### 4.2 ResourceAbilityFactory
 
@@ -182,7 +183,10 @@ export class ResourceAbilityFactory {
     const roles = await this.resourcePermRepo.getUserResourceRoles(
       user.id, resourceType, resourceId,
     );
-    return roles.length ? findHighestRole(roles) : null;
+    if (!roles.length) return null;
+    // none 优先：任意一条 none 记录 → 直接返回 none（显式拒绝）
+    if (roles.some(r => r.role === 'none')) return 'none';
+    return findHighestRole(roles);
   }
 }
 ```
@@ -245,7 +249,7 @@ ResourceAbilityFactory → Directory/Page 级操作（内容读写），新增
 // remove
 { id: string }
 
-// resolve
+// resolve（服务端自动从 DB 加载 directoryId/spaceId，调用方无需传递）
 { resourceType: 'directory' | 'page'; resourceId: string; userId: string }
 ```
 
@@ -259,6 +263,7 @@ ResourceAbilityFactory → Directory/Page 级操作（内容读写），新增
 
 | 端点 | 现有检查 | 改造后 |
 |------|---------|--------|
+| `pages/create` | SpaceAbility Manage Page | ResourceAbility(目标 directory) Edit；无 directoryId 时降级到 SpaceAbility |
 | `pages/info` | SpaceAbility Read Page | ResourceAbility(page) Read |
 | `pages/update` | SpaceAbility Edit Page | ResourceAbility(page) Edit |
 | `pages/delete` | SpaceAbility Manage Page | ResourceAbility(page) Manage |
@@ -269,6 +274,7 @@ ResourceAbilityFactory → Directory/Page 级操作（内容读写），新增
 | `comments/create` | SpaceAbility Create Page | ResourceAbility(page) Create |
 | `comments/update` | SpaceAbility Edit Page | ResourceAbility(page) Edit |
 | `comments/delete` | SpaceAbility Edit Page | ResourceAbility(page) Edit |
+| `attachments/upload` | SpaceAbility Edit Page | ResourceAbility(page) Edit；从请求体 pageId 获取上下文 |
 | `export/page` | SpaceAbility Read Page | ResourceAbility(page) Read |
 | `shares/create` | SpaceAbility Create Share | ResourceAbility(page) Manage |
 
@@ -287,7 +293,8 @@ const effectiveRole = await resourceAbilityFactory.resolveRole(
   user, 'page', pageId,
   { directoryId: page.directoryId, spaceId: page.spaceId },
 );
-// role='none' 或 'reader' → readOnly = true
+// role='none' → 抛出 UnauthorizedException，拒绝连接（不可见 = 不可连接）
+// role='reader' → readOnly = true（可看不可编辑）
 // role='admin' 或 'writer' → readOnly = false
 ```
 
@@ -507,9 +514,16 @@ apps/client/src/features/space/permissions/
 
 ## 9. 迁移策略
 
-### 9.1 三步上线
+### 9.1 四步上线
 
 ```
+Step 0: 存量数据预迁移（Step 3 的前置条件）
+  - 将环境变量中的公开空间写入数据库：
+    UPDATE spaces SET visibility='open' 
+    WHERE slug IN (当前 WIKI_PUBLIC_SPACE_SLUGS 列表)
+  - 验证：迁移后 Wiki 可访问性不变
+  - 此步骤在 Step 3 切换前执行，Step 1/2 不依赖
+
 Step 1: 加表加 API（纯新增，零破坏）
   - resource_permissions 表 + CRUD API + ResourceAbilityFactory
   - 表为空时行为等价于现有逻辑
@@ -518,9 +532,10 @@ Step 2: 切换权限检查（逐端点）
   - Controller 从 SpaceAbilityFactory → ResourceAbilityFactory
   - 如有问题切回原 Factory
 
-Step 3: 前端 UI + Wiki 改造
+Step 3: 前端 UI + Wiki 改造（依赖 Step 0 已执行）
   - Directory/Page 权限管理 UI
   - 侧边栏过滤 + Wiki 数据库驱动公开控制
+  - isSpacePublic 优先查 DB，环境变量作 fallback
 ```
 
 ### 9.2 向后兼容
@@ -532,6 +547,7 @@ Step 3: 前端 UI + Wiki 改造
 
 ### 9.3 回滚方案
 
+- Step 0 回滚：无需回滚（visibility=OPEN 不影响现有逻辑，环境变量仍生效）
 - Step 1 回滚：DROP TABLE resource_permissions
 - Step 2 回滚：Controller import 切回 SpaceAbilityFactory
 - Step 3 回滚：前端 revert，Wiki fallback 到环境变量
