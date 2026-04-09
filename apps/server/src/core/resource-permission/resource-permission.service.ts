@@ -9,6 +9,7 @@ import { ResourcePermissionRepo } from '@docmost/db/repos/resource-permission';
 import { ResourcePermission } from '@docmost/db/types/entity.types';
 import { AddResourcePermissionDto } from './dto/add-resource-permission.dto';
 import { EventName } from '../../common/events/event.contants';
+import { SpaceMemberRepo } from '@docmost/db/repos/space/space-member.repo';
 
 export interface DirectoryDeletedEvent {
   directoryId: string;
@@ -23,6 +24,7 @@ export interface PageDeletedEvent {
 export class ResourcePermissionService {
   constructor(
     private readonly resourcePermRepo: ResourcePermissionRepo,
+    private readonly spaceMemberRepo: SpaceMemberRepo,
   ) {}
 
   async list(
@@ -36,6 +38,7 @@ export class ResourcePermissionService {
     dto: AddResourcePermissionDto,
     userId: string,
     workspaceId: string,
+    spaceId: string,
   ): Promise<ResourcePermission> {
     // Self-lock prevention: don't let user set their own permission to 'none'
     if (
@@ -48,6 +51,9 @@ export class ResourcePermissionService {
       );
     }
 
+    // Automatically add the principal as a space Reader if not already a member
+    await this.ensureSpaceMembership(dto.principalType, dto.principalId, spaceId);
+
     return this.resourcePermRepo.insert({
       resourceType: dto.resourceType,
       resourceId: dto.resourceId,
@@ -56,6 +62,30 @@ export class ResourcePermissionService {
       role: dto.role,
       workspaceId,
       createdBy: userId,
+    });
+  }
+
+  private async ensureSpaceMembership(
+    principalType: string,
+    principalId: string,
+    spaceId: string,
+  ): Promise<void> {
+    const opts =
+      principalType === 'user'
+        ? { userId: principalId }
+        : { groupId: principalId };
+
+    const existing = await this.spaceMemberRepo.getSpaceMemberByTypeId(
+      spaceId,
+      opts,
+    );
+    if (existing) return; // Already a space member, no action needed
+
+    await this.spaceMemberRepo.insertSpaceMember({
+      userId: principalType === 'user' ? principalId : null,
+      groupId: principalType === 'group' ? principalId : null,
+      spaceId,
+      role: 'reader',
     });
   }
 

@@ -108,13 +108,21 @@ export class ResourcePermissionController {
     @AuthUser() user: User,
     @AuthWorkspace() workspace: Workspace,
   ) {
-    await this.checkManagePermission(
-      user,
+    const context = await this.resolveContext(
       dto.resourceType,
       dto.resourceId,
       workspace.id,
     );
-    return this.resourcePermissionService.add(dto, user.id, workspace.id);
+    const ability = await this.resourceAbilityFactory.createForUser(
+      user,
+      dto.resourceType,
+      dto.resourceId,
+      context,
+    );
+    if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Settings)) {
+      throw new ForbiddenException();
+    }
+    return this.resourcePermissionService.add(dto, user.id, workspace.id, context.spaceId);
   }
 
   @HttpCode(HttpStatus.OK)
