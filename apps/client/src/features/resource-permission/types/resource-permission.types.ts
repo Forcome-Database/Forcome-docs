@@ -6,4 +6,7 @@ export interface ResourcePermissionRecord {
   principalId: string;
   role: 'admin' | 'writer' | 'reader' | 'none';
   createdAt: string;
+  principalName?: string | null;
+  principalEmail?: string | null;
+  principalAvatarUrl?: string | null;
 }

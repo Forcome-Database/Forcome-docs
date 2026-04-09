@@ -48,13 +48,60 @@ export class ResourcePermissionRepo {
   async listByResource(
     resourceType: string,
     resourceId: string,
-  ): Promise<ResourcePermission[]> {
+  ): Promise<(ResourcePermission & { principalName: string | null; principalEmail: string | null; principalAvatarUrl: string | null })[]> {
     return this.db
       .selectFrom('resourcePermissions')
-      .selectAll()
-      .where('resourceType', '=', resourceType)
-      .where('resourceId', '=', resourceId)
-      .orderBy('createdAt', 'asc')
+      .leftJoin('users', (join) =>
+        join
+          .onRef('users.id', '=', 'resourcePermissions.principalId')
+          .on('resourcePermissions.principalType', '=', 'user'),
+      )
+      .leftJoin('groups', (join) =>
+        join
+          .onRef('groups.id', '=', 'resourcePermissions.principalId')
+          .on('resourcePermissions.principalType', '=', 'group'),
+      )
+      .select([
+        'resourcePermissions.id',
+        'resourcePermissions.resourceType',
+        'resourcePermissions.resourceId',
+        'resourcePermissions.principalType',
+        'resourcePermissions.principalId',
+        'resourcePermissions.role',
+        'resourcePermissions.workspaceId',
+        'resourcePermissions.createdBy',
+        'resourcePermissions.createdAt',
+        'resourcePermissions.updatedAt',
+        (eb) =>
+          eb
+            .case()
+            .when('resourcePermissions.principalType', '=', 'user')
+            .then(eb.ref('users.name'))
+            .when('resourcePermissions.principalType', '=', 'group')
+            .then(eb.ref('groups.name'))
+            .else(eb.val(null))
+            .end()
+            .as('principalName'),
+        (eb) =>
+          eb
+            .case()
+            .when('resourcePermissions.principalType', '=', 'user')
+            .then(eb.ref('users.email'))
+            .else(eb.val(null))
+            .end()
+            .as('principalEmail'),
+        (eb) =>
+          eb
+            .case()
+            .when('resourcePermissions.principalType', '=', 'user')
+            .then(eb.ref('users.avatarUrl'))
+            .else(eb.val(null))
+            .end()
+            .as('principalAvatarUrl'),
+      ])
+      .where('resourcePermissions.resourceType', '=', resourceType)
+      .where('resourcePermissions.resourceId', '=', resourceId)
+      .orderBy('resourcePermissions.createdAt', 'asc')
       .execute();
   }
 

@@ -3,20 +3,22 @@ import {
   Alert,
   Badge,
   Button,
+  ComboboxItem,
   Group,
   Loader,
   Modal,
   Select,
+  SelectProps,
   Stack,
   Table,
   Text,
-  TextInput,
 } from "@mantine/core";
+import { useDebouncedValue } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import { IconInfoCircle, IconTrash, IconUserPlus } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useAddResourcePermissionMutation,
   useRemoveResourcePermissionMutation,
@@ -24,6 +26,11 @@ import {
   useUpdateResourcePermissionMutation,
 } from "@/features/resource-permission/queries/resource-permission-query";
 import { ResourcePermissionRecord } from "@/features/resource-permission/types/resource-permission.types";
+import { useSearchSuggestionsQuery } from "@/features/search/queries/search-query";
+import { IUser } from "@/features/user/types/user.types";
+import { IGroup } from "@/features/group/types/group.types";
+import { CustomAvatar } from "@/components/ui/custom-avatar";
+import { IconGroupCircle } from "@/components/icons/icon-people-circle";
 
 interface ResourcePermissionModalProps {
   opened: boolean;
@@ -31,6 +38,141 @@ interface ResourcePermissionModalProps {
   resourceType: "directory" | "page";
   resourceId: string;
   resourceName: string;
+}
+
+/** A single-item searchable selector for users OR groups depending on principalType. */
+function PrincipalSelect({
+  principalType,
+  value,
+  onChange,
+}: {
+  principalType: "user" | "group";
+  value: string;
+  onChange: (id: string, label: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [searchValue, setSearchValue] = useState("");
+  const [debouncedQuery] = useDebouncedValue(searchValue, 400);
+
+  const { data: suggestion, isLoading } = useSearchSuggestionsQuery({
+    query: debouncedQuery,
+    includeUsers: principalType === "user",
+    includeGroups: principalType === "group",
+  });
+
+  const data = useMemo<ComboboxItem[]>(() => {
+    if (!suggestion) return [];
+    if (principalType === "user") {
+      return (suggestion.users ?? []).map((user: IUser) => ({
+        value: user.id,
+        label: user.name ?? user.email,
+      }));
+    }
+    return (suggestion.groups ?? []).map((group: IGroup) => ({
+      value: group.id,
+      label: group.name,
+    }));
+  }, [suggestion, principalType]);
+
+  const renderOption: SelectProps["renderOption"] = ({ option }) => {
+    if (principalType === "user") {
+      const user = (suggestion?.users ?? []).find(
+        (u: IUser) => u.id === option.value,
+      );
+      return (
+        <Group gap="sm" wrap="nowrap">
+          <CustomAvatar
+            avatarUrl={user?.avatarUrl}
+            size={20}
+            name={option.label}
+          />
+          <div>
+            <Text size="sm" lineClamp={1}>
+              {option.label}
+            </Text>
+            {user?.email && (
+              <Text size="xs" c="dimmed" lineClamp={1}>
+                {user.email}
+              </Text>
+            )}
+          </div>
+        </Group>
+      );
+    }
+    return (
+      <Group gap="sm" wrap="nowrap">
+        <IconGroupCircle />
+        <Text size="sm" lineClamp={1}>
+          {option.label}
+        </Text>
+      </Group>
+    );
+  };
+
+  return (
+    <Select
+      label={principalType === "user" ? t("User") : t("Group")}
+      size="xs"
+      placeholder={
+        principalType === "user"
+          ? t("Search by name or email…")
+          : t("Search groups…")
+      }
+      searchable
+      searchValue={searchValue}
+      onSearchChange={setSearchValue}
+      data={data}
+      value={value || null}
+      onChange={(val) => {
+        if (!val) return;
+        const found = data.find((d) => d.value === val);
+        onChange(val, found?.label ?? val);
+      }}
+      filter={({ options }) => options}
+      rightSection={isLoading ? <Loader size={12} /> : undefined}
+      nothingFoundMessage={
+        debouncedQuery ? t("No results") : t("Type to search…")
+      }
+      renderOption={renderOption}
+      clearable
+      allowDeselect
+    />
+  );
+}
+
+/** Display label for a permission row: name if available, else truncated UUID. */
+function PrincipalLabel({ record }: { record: ResourcePermissionRecord }) {
+  if (record.principalName) {
+    return (
+      <Group gap={6} wrap="nowrap">
+        {record.principalType === "user" ? (
+          <CustomAvatar
+            avatarUrl={record.principalAvatarUrl ?? undefined}
+            size={18}
+            name={record.principalName}
+          />
+        ) : (
+          <IconGroupCircle />
+        )}
+        <div>
+          <Text size="sm" lineClamp={1}>
+            {record.principalName}
+          </Text>
+          {record.principalEmail && (
+            <Text size="xs" c="dimmed" lineClamp={1}>
+              {record.principalEmail}
+            </Text>
+          )}
+        </div>
+      </Group>
+    );
+  }
+  // Fallback: show truncated UUID
+  return (
+    <Text size="sm" ff="monospace" truncate style={{ maxWidth: 200 }}>
+      {record.principalId}
+    </Text>
+  );
 }
 
 export function ResourcePermissionModal({
@@ -70,9 +212,15 @@ export function ResourcePermissionModal({
   const [addForm, setAddForm] = useState({
     principalType: "user" as "user" | "group",
     principalId: "",
+    principalLabel: "",
     role: "reader" as string,
   });
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Reset principalId when type changes so stale selection is cleared.
+  useEffect(() => {
+    setAddForm((f) => ({ ...f, principalId: "", principalLabel: "" }));
+  }, [addForm.principalType]);
 
   const hasOverrides = permissions && permissions.length > 0;
 
@@ -95,7 +243,12 @@ export function ResourcePermissionModal({
       },
       {
         onSuccess: () => {
-          setAddForm({ principalType: "user", principalId: "", role: "reader" });
+          setAddForm({
+            principalType: "user",
+            principalId: "",
+            principalLabel: "",
+            role: "reader",
+          });
           setShowAddForm(false);
         },
       },
@@ -182,9 +335,7 @@ export function ResourcePermissionModal({
               {permissions.map((record) => (
                 <Table.Tr key={record.id}>
                   <Table.Td>
-                    <Text size="sm" ff="monospace" truncate style={{ maxWidth: 200 }}>
-                      {record.principalId}
-                    </Text>
+                    <PrincipalLabel record={record} />
                   </Table.Td>
                   <Table.Td>
                     <Badge size="sm" variant="outline" color="gray">
@@ -223,11 +374,18 @@ export function ResourcePermissionModal({
         )}
 
         {showAddForm ? (
-          <Stack gap="xs" p="sm" style={{ border: "1px solid var(--mantine-color-default-border)", borderRadius: 8 }}>
+          <Stack
+            gap="xs"
+            p="sm"
+            style={{
+              border: "1px solid var(--mantine-color-default-border)",
+              borderRadius: 8,
+            }}
+          >
             <Text size="sm" fw={500}>
               {t("Add permission override")}
             </Text>
-            <Group align="flex-end" grow>
+            <Group align="flex-end" wrap="nowrap">
               <Select
                 label={t("Type")}
                 size="xs"
@@ -246,15 +404,20 @@ export function ResourcePermissionModal({
                 allowDeselect={false}
                 style={{ flex: "0 0 100px" }}
               />
-              <TextInput
-                label={t("User / Group ID (UUID)")}
-                size="xs"
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                value={addForm.principalId}
-                onChange={(e) =>
-                  setAddForm((f) => ({ ...f, principalId: e.target.value }))
-                }
-              />
+              <div style={{ flex: 1 }}>
+                <PrincipalSelect
+                  key={addForm.principalType}
+                  principalType={addForm.principalType}
+                  value={addForm.principalId}
+                  onChange={(id, label) =>
+                    setAddForm((f) => ({
+                      ...f,
+                      principalId: id,
+                      principalLabel: label,
+                    }))
+                  }
+                />
+              </div>
               <Select
                 label={t("Role")}
                 size="xs"
