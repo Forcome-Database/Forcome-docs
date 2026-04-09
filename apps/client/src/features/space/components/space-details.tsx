@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useSpaceQuery } from "@/features/space/queries/space-query.ts";
 import { EditSpaceForm } from "@/features/space/components/edit-space-form.tsx";
-import { Button, Divider, Text } from "@mantine/core";
+import { Button, Divider, Group, Switch, Text } from "@mantine/core";
 import DeleteSpaceModal from "./delete-space-modal";
 import { useDisclosure } from "@mantine/hooks";
 import ExportModal from "@/components/common/export-modal.tsx";
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/responsive-settings-row.tsx";
 import SpacePublicSharingToggle from "@/ee/security/components/space-public-sharing-toggle.tsx";
 import useEnterpriseAccess from "@/ee/hooks/use-enterprise-access.tsx";
+import { useUpdateSpaceMutation } from "@/features/space/queries/space-query.ts";
 
 interface SpaceDetailsProps {
   spaceId: string;
@@ -30,6 +31,7 @@ export default function SpaceDetails({ spaceId, readOnly }: SpaceDetailsProps) {
   const { data: space, isLoading, refetch } = useSpaceQuery(spaceId);
   const hasEnterpriseAccess = useEnterpriseAccess();
   const showSharingToggle = !readOnly && hasEnterpriseAccess;
+  const updateSpaceMutation = useUpdateSpaceMutation();
   const [exportOpened, { open: openExportModal, close: closeExportModal }] =
     useDisclosure(false);
   const [isIconUploading, setIsIconUploading] = useState(false);
@@ -95,6 +97,30 @@ export default function SpaceDetails({ spaceId, readOnly }: SpaceDetailsProps) {
             <>
               <Divider my="lg" />
               <SpacePublicSharingToggle space={space} />
+            </>
+          )}
+
+          {!readOnly && (
+            <>
+              <Divider my="lg" />
+              <Group justify="space-between" wrap="nowrap" gap="xl">
+                <div>
+                  <Text size="md">{t("Wiki public visible")}</Text>
+                  <Text size="sm" c="dimmed">
+                    {t("Allow this space to be displayed in the public wiki")}
+                  </Text>
+                </div>
+                <Switch
+                  checked={space.visibility === "open"}
+                  onChange={(event) => {
+                    updateSpaceMutation.mutate({
+                      spaceId: space.id,
+                      visibility: event.currentTarget.checked ? "open" : "private",
+                    });
+                  }}
+                  aria-label={t("Toggle wiki public visibility")}
+                />
+              </Group>
             </>
           )}
 

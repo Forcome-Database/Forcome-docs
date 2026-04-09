@@ -27,6 +27,7 @@ export interface ISpace {
   spaceId?: string;
   membership?: IMembership;
   settings?: ISpaceSettings;
+  visibility?: string;
   // for updates
   disablePublicSharing?: boolean;
 }
