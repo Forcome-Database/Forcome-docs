@@ -31,6 +31,7 @@ import {
   SpaceCaslSubject,
 } from '../casl/interfaces/space-ability.type';
 import SpaceAbilityFactory from '../casl/abilities/space-ability.factory';
+import { ResourceAbilityFactory } from '../casl/abilities/resource-ability.factory';
 import { PageRepo } from '@docmost/db/repos/page/page.repo';
 import { RecentPageDto } from './dto/recent-page.dto';
 import { DuplicatePageDto } from './dto/duplicate-page.dto';
@@ -49,6 +50,7 @@ export class PageController {
     private readonly pageRepo: PageRepo,
     private readonly pageHistoryService: PageHistoryService,
     private readonly spaceAbility: SpaceAbilityFactory,
+    private readonly resourceAbility: ResourceAbilityFactory,
   ) {}
 
   @HttpCode(HttpStatus.OK)
@@ -66,7 +68,10 @@ export class PageController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
@@ -130,7 +135,10 @@ export class PageController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
     if (ability.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
@@ -169,7 +177,10 @@ export class PageController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
 
     if (deletePageDto.permanentlyDelete) {
       // Permanent deletion requires space admin permissions
@@ -205,7 +216,10 @@ export class PageController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
     if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
@@ -279,7 +293,10 @@ export class PageController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
@@ -368,7 +385,10 @@ export class PageController {
     }
 
     const abilities = await Promise.all([
-      this.spaceAbility.createForUser(user, movedPage.spaceId),
+      this.resourceAbility.createForUser(
+        user, 'page', movedPage.id,
+        { directoryId: movedPage.directoryId, spaceId: movedPage.spaceId },
+      ),
       this.spaceAbility.createForUser(user, dto.spaceId),
     ]);
 
@@ -394,7 +414,10 @@ export class PageController {
     // If spaceId is provided, it's a copy to different space
     if (dto.spaceId) {
       const abilities = await Promise.all([
-        this.spaceAbility.createForUser(user, copiedPage.spaceId),
+        this.resourceAbility.createForUser(
+          user, 'page', copiedPage.id,
+          { directoryId: copiedPage.directoryId, spaceId: copiedPage.spaceId },
+        ),
         this.spaceAbility.createForUser(user, dto.spaceId),
       ]);
 
@@ -409,9 +432,9 @@ export class PageController {
       return this.pageService.duplicatePage(copiedPage, dto.spaceId, user, dto.directoryId, dto.topicId);
     } else {
       // If no spaceId, it's a duplicate in same space
-      const ability = await this.spaceAbility.createForUser(
-        user,
-        copiedPage.spaceId,
+      const ability = await this.resourceAbility.createForUser(
+        user, 'page', copiedPage.id,
+        { directoryId: copiedPage.directoryId, spaceId: copiedPage.spaceId },
       );
       if (ability.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
         throw new ForbiddenException();
@@ -432,7 +455,10 @@ export class PageController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
     if (ability.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
@@ -449,9 +475,9 @@ export class PageController {
       throw new NotFoundException('Moved page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      movedPage.spaceId,
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', movedPage.id,
+      { directoryId: movedPage.directoryId, spaceId: movedPage.spaceId },
     );
     if (ability.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
@@ -468,7 +494,10 @@ export class PageController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
