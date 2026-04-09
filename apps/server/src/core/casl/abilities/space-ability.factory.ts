@@ -32,6 +32,8 @@ export default class SpaceAbilityFactory {
         return buildSpaceWriterAbility();
       case SpaceRole.READER:
         return buildSpaceReaderAbility();
+      case SpaceRole.NONE:
+        return buildNoneAbility();
       default:
         throw new NotFoundException('Space permissions not found');
     }

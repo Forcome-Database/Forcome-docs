@@ -163,6 +163,85 @@ export class ResourcePermissionRepo {
     return Number(result?.count ?? 0);
   }
 
+  /**
+   * Get all resource permission overrides a user has within a given space.
+   * Includes both direct user permissions and permissions via group membership.
+   * Used for efficient sidebar filtering when space role is 'none'.
+   */
+  async getUserOverridesInSpace(
+    userId: string,
+    spaceId: string,
+    workspaceId: string,
+  ): Promise<{ resourceType: string; resourceId: string; role: string }[]> {
+    // Direct user overrides on directories in this space
+    const dirUserOverrides = this.db
+      .selectFrom('resourcePermissions')
+      .innerJoin('directories', 'directories.id', 'resourcePermissions.resourceId')
+      .select([
+        'resourcePermissions.resourceType',
+        'resourcePermissions.resourceId',
+        'resourcePermissions.role',
+      ])
+      .where('resourcePermissions.workspaceId', '=', workspaceId)
+      .where('resourcePermissions.principalType', '=', 'user')
+      .where('resourcePermissions.principalId', '=', userId)
+      .where('resourcePermissions.resourceType', '=', 'directory')
+      .where('directories.spaceId', '=', spaceId);
+
+    // Group overrides on directories in this space
+    const dirGroupOverrides = this.db
+      .selectFrom('resourcePermissions')
+      .innerJoin('directories', 'directories.id', 'resourcePermissions.resourceId')
+      .innerJoin('groupUsers', 'groupUsers.groupId', 'resourcePermissions.principalId')
+      .select([
+        'resourcePermissions.resourceType',
+        'resourcePermissions.resourceId',
+        'resourcePermissions.role',
+      ])
+      .where('resourcePermissions.workspaceId', '=', workspaceId)
+      .where('resourcePermissions.principalType', '=', 'group')
+      .where('resourcePermissions.resourceType', '=', 'directory')
+      .where('groupUsers.userId', '=', userId)
+      .where('directories.spaceId', '=', spaceId);
+
+    // Direct user overrides on pages in this space
+    const pageUserOverrides = this.db
+      .selectFrom('resourcePermissions')
+      .innerJoin('pages', 'pages.id', 'resourcePermissions.resourceId')
+      .select([
+        'resourcePermissions.resourceType',
+        'resourcePermissions.resourceId',
+        'resourcePermissions.role',
+      ])
+      .where('resourcePermissions.workspaceId', '=', workspaceId)
+      .where('resourcePermissions.principalType', '=', 'user')
+      .where('resourcePermissions.principalId', '=', userId)
+      .where('resourcePermissions.resourceType', '=', 'page')
+      .where('pages.spaceId', '=', spaceId);
+
+    // Group overrides on pages in this space
+    const pageGroupOverrides = this.db
+      .selectFrom('resourcePermissions')
+      .innerJoin('pages', 'pages.id', 'resourcePermissions.resourceId')
+      .innerJoin('groupUsers', 'groupUsers.groupId', 'resourcePermissions.principalId')
+      .select([
+        'resourcePermissions.resourceType',
+        'resourcePermissions.resourceId',
+        'resourcePermissions.role',
+      ])
+      .where('resourcePermissions.workspaceId', '=', workspaceId)
+      .where('resourcePermissions.principalType', '=', 'group')
+      .where('resourcePermissions.resourceType', '=', 'page')
+      .where('groupUsers.userId', '=', userId)
+      .where('pages.spaceId', '=', spaceId);
+
+    return dirUserOverrides
+      .unionAll(dirGroupOverrides)
+      .unionAll(pageUserOverrides)
+      .unionAll(pageGroupOverrides)
+      .execute();
+  }
+
   async findHiddenForPublic(
     spaceId: string,
     workspaceId: string,

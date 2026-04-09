@@ -85,7 +85,7 @@ export class ResourcePermissionService {
       userId: principalType === 'user' ? principalId : null,
       groupId: principalType === 'group' ? principalId : null,
       spaceId,
-      role: 'reader',
+      role: 'none',  // Space visible in sidebar but no default content permissions
     });
   }
 

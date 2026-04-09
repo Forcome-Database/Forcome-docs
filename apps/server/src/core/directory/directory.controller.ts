@@ -26,6 +26,9 @@ import {
   DirectoryListDto,
   UpdateDirectoryDto,
 } from './dto/directory.dto';
+import { SpaceMemberRepo } from '@docmost/db/repos/space/space-member.repo';
+import { ResourcePermissionRepo } from '@docmost/db/repos/resource-permission';
+import { findHighestUserSpaceRole } from '@docmost/db/repos/space/utils';
 
 @UseGuards(JwtAuthGuard)
 @Controller('directories')
@@ -34,6 +37,8 @@ export class DirectoryController {
     private readonly directoryService: DirectoryService,
     private readonly spaceAbility: SpaceAbilityFactory,
     private readonly resourceAbility: ResourceAbilityFactory,
+    private readonly spaceMemberRepo: SpaceMemberRepo,
+    private readonly resourcePermRepo: ResourcePermissionRepo,
   ) {}
 
   @HttpCode(HttpStatus.OK)
@@ -44,6 +49,47 @@ export class DirectoryController {
     @AuthUser() user: User,
     @AuthWorkspace() workspace: Workspace,
   ) {
+    // Resolve user's space role to decide whether filtering is needed
+    const userSpaceRoles = await this.spaceMemberRepo.getUserSpaceRoles(
+      user.id,
+      dto.spaceId,
+    );
+    const spaceRole = findHighestUserSpaceRole(userSpaceRoles);
+
+    if (!spaceRole) {
+      throw new ForbiddenException();
+    }
+
+    if (spaceRole === 'none') {
+      // User has space membership with 'none' role — only show explicitly permitted directories
+      const overrides = await this.resourcePermRepo.getUserOverridesInSpace(
+        user.id,
+        dto.spaceId,
+        workspace.id,
+      );
+
+      const allowedDirectoryIds = new Set<string>();
+      for (const override of overrides) {
+        if (override.role === 'none') continue;
+        if (override.resourceType === 'directory') {
+          allowedDirectoryIds.add(override.resourceId);
+        }
+      }
+
+      const result = await this.directoryService.getDirectoriesInSpace(
+        dto.spaceId,
+        workspace.id,
+        pagination,
+      );
+
+      result.items = result.items.filter((dir) =>
+        allowedDirectoryIds.has(dir.id),
+      );
+
+      return result;
+    }
+
+    // Normal flow for reader/writer/admin
     const ability = await this.spaceAbility.createForUser(user, dto.spaceId);
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Settings)) {
       throw new ForbiddenException();

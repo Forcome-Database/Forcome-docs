@@ -33,6 +33,9 @@ import {
 import SpaceAbilityFactory from '../casl/abilities/space-ability.factory';
 import { ResourceAbilityFactory } from '../casl/abilities/resource-ability.factory';
 import { PageRepo } from '@docmost/db/repos/page/page.repo';
+import { SpaceMemberRepo } from '@docmost/db/repos/space/space-member.repo';
+import { ResourcePermissionRepo } from '@docmost/db/repos/resource-permission';
+import { findHighestUserSpaceRole } from '@docmost/db/repos/space/utils';
 import { RecentPageDto } from './dto/recent-page.dto';
 import { DuplicatePageDto } from './dto/duplicate-page.dto';
 import { DeletedPageDto } from './dto/deleted-page.dto';
@@ -51,6 +54,8 @@ export class PageController {
     private readonly pageHistoryService: PageHistoryService,
     private readonly spaceAbility: SpaceAbilityFactory,
     private readonly resourceAbility: ResourceAbilityFactory,
+    private readonly spaceMemberRepo: SpaceMemberRepo,
+    private readonly resourcePermRepo: ResourcePermissionRepo,
   ) {}
 
   @HttpCode(HttpStatus.OK)
@@ -335,6 +340,7 @@ export class PageController {
     @Body() dto: SidebarPageDto,
     @Body() pagination: PaginationOptions,
     @AuthUser() user: User,
+    @AuthWorkspace() workspace: Workspace,
   ) {
     if (!dto.spaceId && !dto.pageId) {
       throw new BadRequestException(
@@ -352,6 +358,68 @@ export class PageController {
       spaceId = page.spaceId;
     }
 
+    // Resolve the user's space role to decide whether filtering is needed
+    const userSpaceRoles = await this.spaceMemberRepo.getUserSpaceRoles(
+      user.id,
+      spaceId,
+    );
+    const spaceRole = findHighestUserSpaceRole(userSpaceRoles);
+
+    if (!spaceRole) {
+      // User is not a member of this space at all
+      throw new ForbiddenException();
+    }
+
+    if (spaceRole === 'none') {
+      // User has space membership with 'none' role — only show explicitly permitted content.
+      // Fetch all resource overrides in one batch query.
+      const overrides = await this.resourcePermRepo.getUserOverridesInSpace(
+        user.id,
+        spaceId,
+        workspace.id,
+      );
+
+      // Build lookup maps for efficient filtering
+      const allowedDirectoryIds = new Set<string>();
+      const allowedPageIds = new Set<string>();
+      for (const override of overrides) {
+        if (override.role === 'none') continue; // Explicit deny
+        if (override.resourceType === 'directory') {
+          allowedDirectoryIds.add(override.resourceId);
+        } else if (override.resourceType === 'page') {
+          allowedPageIds.add(override.resourceId);
+        }
+      }
+
+      const containerFilter =
+        dto.directoryId || dto.topicId || dto.filterUncategorized
+          ? {
+              directoryId: dto.directoryId,
+              topicId: dto.topicId,
+              filterUncategorized: dto.filterUncategorized,
+            }
+          : undefined;
+
+      const result = await this.pageService.getSidebarPages(
+        spaceId,
+        pagination,
+        dto.pageId,
+        containerFilter,
+      );
+
+      // Filter items: keep pages that are explicitly allowed or belong to an allowed directory
+      result.items = result.items.filter((page) => {
+        // Page has a direct override granting access
+        if (allowedPageIds.has(page.id)) return true;
+        // Page belongs to an allowed directory
+        if (page.directoryId && allowedDirectoryIds.has(page.directoryId)) return true;
+        return false;
+      });
+
+      return result;
+    }
+
+    // Normal flow for reader/writer/admin — full access to space content
     const ability = await this.spaceAbility.createForUser(user, spaceId);
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
