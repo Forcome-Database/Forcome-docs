@@ -241,6 +241,19 @@ export interface Pages {
   ydoc: Buffer | null;
 }
 
+export interface ResourcePermissions {
+  id: Generated<string>;
+  resourceType: string;
+  resourceId: string;
+  principalType: string;
+  principalId: string;
+  role: string;
+  workspaceId: string;
+  createdBy: string | null;
+  createdAt: Generated<Timestamp>;
+  updatedAt: Generated<Timestamp>;
+}
+
 export interface Shares {
   createdAt: Generated<Timestamp>;
   creatorId: string | null;
@@ -455,6 +468,7 @@ export interface DB {
   notifications: Notifications;
   pageHistory: PageHistory;
   pages: Pages;
+  resourcePermissions: ResourcePermissions;
   shares: Shares;
   spaceMembers: SpaceMembers;
   spaces: Spaces;

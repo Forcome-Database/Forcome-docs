@@ -25,6 +25,7 @@ import {
   Watchers,
   Directories,
   Topics,
+  ResourcePermissions,
 } from './db';
 import { PageEmbeddings } from '@docmost/db/types/embeddings.types';
 
@@ -161,3 +162,8 @@ export type UpdatableDirectory = Updateable<Omit<Directories, 'id'>>;
 export type Topic = Selectable<Topics>;
 export type InsertableTopic = Insertable<Topics>;
 export type UpdatableTopic = Updateable<Omit<Topics, 'id'>>;
+
+// ResourcePermission
+export type ResourcePermission = Selectable<ResourcePermissions>;
+export type InsertableResourcePermission = Insertable<ResourcePermissions>;
+export type UpdatableResourcePermission = Updateable<Omit<ResourcePermissions, 'id'>>;
