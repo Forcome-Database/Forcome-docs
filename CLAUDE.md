@@ -104,6 +104,42 @@ PydanticAI 双 Agent（Creation + Editing）+ 5 工具 + 选区编辑 + Redis �
 - `AGENT_MAX_TOOL_CALLS` 环境变量控制工具调用上限（默认 10）
 - 前端输入框支持粘贴图片（自动添加到文件列表）
 
+## 层级权限系统（Space → Directory → Page）
+
+三级权限模型，使用统一 `resource_permissions` 覆盖表 + `ResourceAbilityFactory` 三级解析链。
+
+### 核心概念
+
+- **Space 级**：`space_members` 表，角色 ADMIN/WRITER/READER/NONE
+- **Directory/Page 级**：`resource_permissions` 表，就近覆盖
+- **NONE 角色**：在 space 级表示"受限访问"（可进入空间但默认无内容权限），在 resource 级表示"显式拒绝"
+- **解析链**：page override → directory override → space_members fallback
+
+### 关键文件
+
+| 文件 | 作用 |
+|------|------|
+| `resource-ability.factory.ts` | 三级权限解析引擎 |
+| `space-ability.factory.ts` | Space 级能力工厂（含 buildRestrictedAbility / buildNoneAbility） |
+| `resource-permission.repo.ts` | 数据访问层（CRUD + getUserOverridesInSpace + findHiddenForPublic） |
+| `resource-permission.controller.ts` | CRUD API（list/add/update/remove） |
+| `resource-permission.service.ts` | 业务逻辑 + 事件监听 + 自动添加 space 成员 |
+| `resource-permission-modal.tsx` | 前端权限管理弹窗 |
+
+### 关键设计决策
+
+- 就近覆盖（不是只能缩小）：子级设置什么就是什么
+- None 优先规则：同层级有任何 none 记录 → 直接拒绝
+- Space 级 NONE 用 `buildRestrictedAbility`（有 Read），Resource 级 NONE 用 `buildNoneAbility`（空权限）
+- 侧边栏双模式过滤：restricted 用户加法模式 + 普通用户减法模式
+- 设置 resource_permission 时自动添加目标用户为空间 NONE 成员
+- page info API 返回 `effectiveRole`，前端据此控制 UI
+
+### 设计文档
+
+- **[设计 Spec](docs/superpowers/specs/2026-04-09-hierarchical-permission-system-design.md)**
+- **[实施计划](docs/superpowers/plans/2026-04-09-hierarchical-permission-implementation.md)**
+
 ## Docker 部署与环境管理
 
 支持手动启动和 Docker 两种模式，通过 `setup.sh` / `setup.bat` + `dev` / `prod` 参数切换。详细文档：

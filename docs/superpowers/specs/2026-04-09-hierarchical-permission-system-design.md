@@ -1,6 +1,6 @@
 # 层级权限系统设计方案
 
-> **状态**：设计已批准，待实施  
+> **状态**：已实施（feature/hierarchical-permissions 分支，2026-04-09）  
 > **日期**：2026-04-09  
 > **作者**：Leo / Claude  
 > **范围**：Docmost 权限体系扩展——三级权限 + 统一覆盖表 + Wiki 数据库驱动公开控制
@@ -28,6 +28,22 @@ Docmost 当前权限体系为两层模型：
 ### 1.3 目标
 
 引入三级权限模型（Space → Directory → Page），支持就近覆盖，同时保持对现有系统的零破坏兼容。
+
+---
+
+## 1.4 实施变更说明（对比原始设计）
+
+以下是实施过程中对原始设计的重大调整，反映最终代码的实际行为：
+
+| # | 原始设计 | 实际实现 | 原因 |
+|---|---------|---------|------|
+| 1 | `buildNoneAbility`（单一函数，空权限） | 拆分为 `buildRestrictedAbility`（space 级，有 Read 权限）+ `buildNoneAbility`（resource 级，空权限） | space 级 NONE 语义是"受限访问"而非"完全拒绝"，需要保留 Read 以便用户通过 resource 级 override 访问被显式授权的内容 |
+| 2 | 侧边栏仅 spaceRole=none 时过滤（单模式） | 双模式过滤：restricted 用户加法模式（仅显示有权限的节点）+ 普通用户减法模式（隐藏 none override 的节点） | 普通用户也可能存在局部 none override，需要从完整树中减去不可见节点 |
+| 3 | 自动添加 space 成员使用 'reader' 角色 | 自动添加使用 'none' 角色 | 避免意外暴露该空间中其他未授权内容；用户只能通过 resource 级 override 访问被显式授权的资源 |
+| 4 | 前端通过 `/resolve` 端点查询权限 | page info API 直接返回 `effectiveRole` 字段 | 减少额外 API 请求；前端 canEdit/canDelete/canShare 增加 `effectiveRole='none'` 短路逻辑 |
+| 5 | 页面级 override 与侧边栏独立 | 页面级 override 自动在侧边栏显示父目录和主题（即使父级对该用户不可见） | 确保用户能导航到被显式授权的页面 |
+| 6 | Topic controller 无特殊处理 | Topic controller 增加了 restricted 用户的过滤逻辑 | restricted 用户（spaceRole=none）的 topic 列表需要基于实际权限过滤 |
+| 7 | 搜索/Recent/Wiki 端点未显式提及权限过滤 | 搜索、Recent、Wiki getPage/search 全部增加了资源级权限过滤 | 防止权限绕过：内容搜索结果须经 resource-level 过滤 |
 
 ---
 
@@ -195,7 +211,7 @@ export class ResourceAbilityFactory {
 
 ### 4.3 角色 → Ability 映射
 
-复用现有 build 函数，新增 `none` 分支：
+复用现有 build 函数，新增 `none` 分支。**实施中拆分了两个 none 函数**（见变更说明 #1）：
 
 ```typescript
 function buildAbilityByRole(role: string): MongoAbility<ISpaceAbility> {
@@ -203,16 +219,28 @@ function buildAbilityByRole(role: string): MongoAbility<ISpaceAbility> {
     case 'admin':  return buildSpaceAdminAbility();
     case 'writer': return buildSpaceWriterAbility();
     case 'reader': return buildSpaceReaderAbility();
-    case 'none':   return buildNoneAbility();
+    case 'none':   return buildNoneAbility();     // resource 级：空权限
     default:       throw new NotFoundException('Unknown role');
   }
 }
 
+// Resource 级 NONE：完全空权限（显式拒绝）
 function buildNoneAbility() {
   const { build } = new AbilityBuilder<MongoAbility<ISpaceAbility>>(createMongoAbility);
   return build(); // 空 ability，所有操作 cannot
 }
+
+// Space 级 NONE（buildRestrictedAbility）：保留 Read 权限
+// 用于 spaceRole=none 的用户——他们可以进入空间，但仅能读取被显式授权的资源
+function buildRestrictedAbility() {
+  const { can, build } = new AbilityBuilder<MongoAbility<ISpaceAbility>>(createMongoAbility);
+  can(SpaceAction.Read, SpaceCaslSubject.Page);
+  can(SpaceAction.Read, SpaceCaslSubject.Directory);
+  return build();
+}
 ```
+
+`SpaceAbilityFactory` 在 spaceRole='none' 时调用 `buildRestrictedAbility`；`ResourceAbilityFactory` 在 resource 级 resolveRole 返回 'none' 时调用 `buildNoneAbility`。
 
 ### 4.4 Factory 共存关系
 
@@ -341,7 +369,7 @@ async isSpacePublic(slug: string, workspaceId: string): Promise<boolean> {
 
 ### 6.2 侧边栏过滤
 
-**Wiki 公开前端**：
+**Wiki 公开前端**（无变更）：
 
 ```typescript
 async getSidebarTree(spaceId: string, workspaceId: string) {
@@ -351,15 +379,26 @@ async getSidebarTree(spaceId: string, workspaceId: string) {
 }
 ```
 
-**Docmost 后台**：
+**Docmost 后台——双模式过滤**（实施变更 #2）：
 
 ```typescript
 async getSidebarTree(user: User, spaceId: string) {
   const tree = await pageRepo.getSidebarTree(spaceId);
-  const userOverrides = await resourcePermRepo.getUserOverrides(user.id, spaceId);
-  return filterTreeForUser(tree, userOverrides, userSpaceRole);
+  const spaceRole = await getUserSpaceRole(user.id, spaceId);
+
+  if (spaceRole === 'none') {
+    // 加法模式（restricted 用户）：仅显示有显式 override 的节点
+    const allowedResources = await resourcePermRepo.getUserAllowedOverridesInSpace(user.id, spaceId);
+    return filterTreeAdditive(tree, allowedResources);
+  } else {
+    // 减法模式（普通用户）：从完整树中隐藏被 none override 的节点
+    const hiddenResources = await resourcePermRepo.getUserNoneOverridesInSpace(user.id, spaceId);
+    return filterTreeSubtractive(tree, hiddenResources);
+  }
 }
 ```
+
+注：页面级 override 在加法模式下还会自动"冒泡"显示其父目录和主题（变更 #5）。
 
 ### 6.3 搜索与 AI 问答
 
@@ -568,6 +607,8 @@ Step 3: 前端 UI + Wiki 改造（依赖 Step 0 已执行）
 
 ## 10. Future 项
 
+### 10.1 原始设计中的 Future 项（参考）
+
 | 项目 | 依赖 |
 |------|------|
 | WebSocket 实时权限撤销 | Step 2 |
@@ -580,3 +621,25 @@ Step 3: 前端 UI + Wiki 改造（依赖 Step 0 已执行）
 | Redis 权限缓存 | Step 2 |
 | Topic 级权限（加 resource_type='topic'） | Step 2 |
 | 批量权限管理 API | Step 1 |
+
+### 10.2 实施后新增的后续迭代清单
+
+以下为 feature/hierarchical-permissions 实施完成后识别的后续工作：
+
+**稳定性 / 数据完整性**（I 系列）：
+
+| ID | 项目 | 优先级 |
+|----|------|--------|
+| I3 | 删除 space member 时清理其 resource_permissions（防孤儿记录） | 高 |
+| I4 | exportPage 子页面递归权限检查（当前仅检查根页面） | 中 |
+| I5 | 孤儿 resource_permissions 定期清理 Job（防止 resource 删除事件丢失时数据堆积） | 低 |
+
+**架构改善**（A 系列）：
+
+| ID | 项目 | 优先级 |
+|----|------|--------|
+| A1 | 抽取 `ResourceVisibilityService` 统一侧边栏/搜索/Recent/Wiki 过滤逻辑（当前各端点独立实现） | 中 |
+| A2 | 请求作用域内 `resolveRole` 缓存（同一请求多次调用 resolveRole 重复查 DB） | 中 |
+| A3 | `findHighestUserSpaceRole` 中 `!highestRole` 对 none(rank=0) 潜在风险审计（JS `0 > undefined = false` 类型转换陷阱） | 中 |
+| A4 | UNION ALL null vs uuid 类型兼容性测试（PostgreSQL 严格类型检查，`null::uuid` 显式转换） | 低 |
+| A5 | WebSocket 实时权限撤销（Hocuspocus 断开 none 用户的协作连接） | 低 |
