@@ -77,8 +77,15 @@ export function buildSpaceReaderAbility() {
 }
 
 export function buildNoneAbility() {
-  const { build } = new AbilityBuilder<MongoAbility<ISpaceAbility>>(
+  const { can, build } = new AbilityBuilder<MongoAbility<ISpaceAbility>>(
     createMongoAbility,
   );
+  // Restricted role: basic read access to enter the space and see filtered content.
+  // Actual content visibility is controlled by resource_permissions overrides.
+  can(SpaceCaslAction.Read, SpaceCaslSubject.Settings);
+  can(SpaceCaslAction.Read, SpaceCaslSubject.Member);
+  can(SpaceCaslAction.Read, SpaceCaslSubject.Page);
+  can(SpaceCaslAction.Read, SpaceCaslSubject.Share);
+  can(SpaceCaslAction.Read, SpaceCaslSubject.Directory);
   return build();
 }
