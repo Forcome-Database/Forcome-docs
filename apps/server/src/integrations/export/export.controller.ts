@@ -14,6 +14,7 @@ import { ExportPageDto, ExportSpaceDto } from './dto/export-dto';
 import { AuthUser } from '../../common/decorators/auth-user.decorator';
 import { User } from '@docmost/db/types/entity.types';
 import SpaceAbilityFactory from '../../core/casl/abilities/space-ability.factory';
+import { ResourceAbilityFactory } from '../../core/casl/abilities/resource-ability.factory';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PageRepo } from '@docmost/db/repos/page/page.repo';
 import {
@@ -32,6 +33,7 @@ export class ExportController {
     private readonly exportService: ExportService,
     private readonly pageRepo: PageRepo,
     private readonly spaceAbility: SpaceAbilityFactory,
+    private readonly resourceAbility: ResourceAbilityFactory,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -50,7 +52,10 @@ export class ExportController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }

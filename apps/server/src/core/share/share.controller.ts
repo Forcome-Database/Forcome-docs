@@ -17,6 +17,7 @@ import {
 } from '../casl/interfaces/space-ability.type';
 import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator';
 import SpaceAbilityFactory from '../casl/abilities/space-ability.factory';
+import { ResourceAbilityFactory } from '../casl/abilities/resource-ability.factory';
 import { ShareService } from './share.service';
 import {
   CreateShareDto,
@@ -39,6 +40,7 @@ export class ShareController {
   constructor(
     private readonly shareService: ShareService,
     private readonly spaceAbility: SpaceAbilityFactory,
+    private readonly resourceAbility: ResourceAbilityFactory,
     private readonly shareRepo: ShareRepo,
     private readonly pageRepo: PageRepo,
     private readonly environmentService: EnvironmentService,
@@ -119,7 +121,10 @@ export class ShareController {
       throw new NotFoundException('Shared page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Share)) {
       throw new ForbiddenException();
     }
@@ -140,7 +145,10 @@ export class ShareController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
     if (ability.cannot(SpaceCaslAction.Create, SpaceCaslSubject.Share)) {
       throw new ForbiddenException();
     }

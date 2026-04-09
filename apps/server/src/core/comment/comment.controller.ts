@@ -17,13 +17,13 @@ import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PaginationOptions } from '@docmost/db/pagination/pagination-options';
 import { User, Workspace } from '@docmost/db/types/entity.types';
-import SpaceAbilityFactory from '../casl/abilities/space-ability.factory';
 import { PageRepo } from '@docmost/db/repos/page/page.repo';
 import {
   SpaceCaslAction,
   SpaceCaslSubject,
 } from '../casl/interfaces/space-ability.type';
 import { CommentRepo } from '@docmost/db/repos/comment/comment.repo';
+import { ResourceAbilityFactory } from '../casl/abilities/resource-ability.factory';
 
 @UseGuards(JwtAuthGuard)
 @Controller('comments')
@@ -32,7 +32,7 @@ export class CommentController {
     private readonly commentService: CommentService,
     private readonly commentRepo: CommentRepo,
     private readonly pageRepo: PageRepo,
-    private readonly spaceAbility: SpaceAbilityFactory,
+    private readonly resourceAbility: ResourceAbilityFactory,
   ) {}
 
   @HttpCode(HttpStatus.OK)
@@ -47,7 +47,10 @@ export class CommentController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
     if (ability.cannot(SpaceCaslAction.Create, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
@@ -75,7 +78,10 @@ export class CommentController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(user, page.spaceId);
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
+    );
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
@@ -90,9 +96,9 @@ export class CommentController {
       throw new NotFoundException('Comment not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      comment.spaceId,
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', comment.pageId,
+      { spaceId: comment.spaceId },
     );
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
@@ -108,9 +114,9 @@ export class CommentController {
       throw new NotFoundException('Comment not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      comment.spaceId,
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', comment.pageId,
+      { spaceId: comment.spaceId },
     );
 
     // must be a space member with edit permission
@@ -131,9 +137,9 @@ export class CommentController {
       throw new NotFoundException('Comment not found');
     }
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      comment.spaceId,
+    const ability = await this.resourceAbility.createForUser(
+      user, 'page', comment.pageId,
+      { spaceId: comment.spaceId },
     );
 
     // must be a space member with edit permission

@@ -40,6 +40,7 @@ import {
   SpaceCaslSubject,
 } from '../casl/interfaces/space-ability.type';
 import SpaceAbilityFactory from '../casl/abilities/space-ability.factory';
+import { ResourceAbilityFactory } from '../casl/abilities/resource-ability.factory';
 import {
   WorkspaceCaslAction,
   WorkspaceCaslSubject,
@@ -63,6 +64,7 @@ export class AttachmentController {
     private readonly storageService: StorageService,
     private readonly workspaceAbility: WorkspaceAbilityFactory,
     private readonly spaceAbility: SpaceAbilityFactory,
+    private readonly resourceAbility: ResourceAbilityFactory,
     private readonly pageRepo: PageRepo,
     private readonly attachmentRepo: AttachmentRepo,
     private readonly environmentService: EnvironmentService,
@@ -111,11 +113,11 @@ export class AttachmentController {
       throw new NotFoundException('Page not found');
     }
 
-    const spaceAbility = await this.spaceAbility.createForUser(
-      user,
-      page.spaceId,
+    const pageAbility = await this.resourceAbility.createForUser(
+      user, 'page', page.id,
+      { directoryId: page.directoryId, spaceId: page.spaceId },
     );
-    if (spaceAbility.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Page)) {
+    if (pageAbility.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
 
@@ -172,12 +174,12 @@ export class AttachmentController {
       throw new NotFoundException();
     }
 
-    const spaceAbility = await this.spaceAbility.createForUser(
-      user,
-      attachment.spaceId,
+    const attachmentAbility = await this.resourceAbility.createForUser(
+      user, 'page', attachment.pageId,
+      { spaceId: attachment.spaceId },
     );
 
-    if (spaceAbility.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
+    if (attachmentAbility.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
 

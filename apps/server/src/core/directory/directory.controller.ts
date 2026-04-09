@@ -13,6 +13,7 @@ import { AuthUser } from '../../common/decorators/auth-user.decorator';
 import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator';
 import { DirectoryService } from './directory.service';
 import SpaceAbilityFactory from '../casl/abilities/space-ability.factory';
+import { ResourceAbilityFactory } from '../casl/abilities/resource-ability.factory';
 import {
   SpaceCaslAction,
   SpaceCaslSubject,
@@ -32,6 +33,7 @@ export class DirectoryController {
   constructor(
     private readonly directoryService: DirectoryService,
     private readonly spaceAbility: SpaceAbilityFactory,
+    private readonly resourceAbility: ResourceAbilityFactory,
   ) {}
 
   @HttpCode(HttpStatus.OK)
@@ -66,9 +68,9 @@ export class DirectoryController {
     );
     if (!directory) throw new NotFoundException('Directory not found');
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      directory.spaceId,
+    const ability = await this.resourceAbility.createForUser(
+      user, 'directory', directory.id,
+      { spaceId: directory.spaceId },
     );
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Settings)) {
       throw new ForbiddenException();
@@ -103,9 +105,9 @@ export class DirectoryController {
     );
     if (!directory) throw new NotFoundException('Directory not found');
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      directory.spaceId,
+    const ability = await this.resourceAbility.createForUser(
+      user, 'directory', directory.id,
+      { spaceId: directory.spaceId },
     );
     if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Settings)) {
       throw new ForbiddenException();
@@ -126,9 +128,9 @@ export class DirectoryController {
     );
     if (!directory) throw new NotFoundException('Directory not found');
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      directory.spaceId,
+    const ability = await this.resourceAbility.createForUser(
+      user, 'directory', directory.id,
+      { spaceId: directory.spaceId },
     );
     if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Settings)) {
       throw new ForbiddenException();
