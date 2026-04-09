@@ -183,6 +183,28 @@ export class PublicWikiService {
       }
     }
 
+    // Collect hidden directories and pages across all public spaces
+    const hiddenResources = await Promise.all(
+      allowedSpaceIds.map((spaceId) =>
+        this.resourcePermissionRepo.findHiddenForPublic(spaceId, workspaceId),
+      ),
+    ).then((results) => results.flat());
+
+    const excludedDirectoryIds = [
+      ...new Set(
+        hiddenResources
+          .filter((r) => r.resourceType === 'directory')
+          .map((r) => r.resourceId),
+      ),
+    ];
+    const excludedPageIds = [
+      ...new Set(
+        hiddenResources
+          .filter((r) => r.resourceType === 'page')
+          .map((r) => r.resourceId),
+      ),
+    ];
+
     return {
       spaces,
       page,
@@ -190,6 +212,8 @@ export class PublicWikiService {
         isPublicWiki: true,
         allowedSpaceIds,
         currentPageId: page?.id,
+        ...(excludedDirectoryIds.length > 0 && { excludedDirectoryIds }),
+        ...(excludedPageIds.length > 0 && { excludedPageIds }),
       },
     };
   }

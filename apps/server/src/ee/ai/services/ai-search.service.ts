@@ -43,6 +43,8 @@ export interface RetrievalScope {
   allowedSpaceIds?: string[];
   allowedPageIds?: string[];
   currentPageId?: string;
+  excludedDirectoryIds?: string[];
+  excludedPageIds?: string[];
 }
 
 export interface AiCitation {
@@ -190,6 +192,18 @@ export class AiSearchService {
       );
     }
 
+    if (scope?.excludedPageIds?.length) {
+      conditions.push(
+        sql`${sql.raw(`${alias}.id`)} not in (${this.buildInClause(scope.excludedPageIds)})`,
+      );
+    }
+
+    if (scope?.excludedDirectoryIds?.length) {
+      conditions.push(
+        sql`${sql.raw(`${alias}.directory_id`)} not in (${this.buildInClause(scope.excludedDirectoryIds)})`,
+      );
+    }
+
     if (filters?.spaceId) {
       conditions.push(sql`${sql.raw(`${alias}.space_id`)} = ${filters.spaceId}`);
     }
@@ -228,6 +242,18 @@ export class AiSearchService {
       }
       conditions.push(
         sql`${sql.raw(`${pageAlias}.id`)} in (${this.buildInClause(scope.allowedPageIds)})`,
+      );
+    }
+
+    if (scope?.excludedPageIds?.length) {
+      conditions.push(
+        sql`${sql.raw(`${pageAlias}.id`)} not in (${this.buildInClause(scope.excludedPageIds)})`,
+      );
+    }
+
+    if (scope?.excludedDirectoryIds?.length) {
+      conditions.push(
+        sql`${sql.raw(`${embeddingAlias}."directoryId"`)} not in (${this.buildInClause(scope.excludedDirectoryIds)})`,
       );
     }
 
