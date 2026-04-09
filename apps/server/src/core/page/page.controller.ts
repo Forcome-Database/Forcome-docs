@@ -73,10 +73,11 @@ export class PageController {
       throw new NotFoundException('Page not found');
     }
 
-    const ability = await this.resourceAbility.createForUser(
+    const effectiveRole = await this.resourceAbility.resolveRole(
       user, 'page', page.id,
-      { directoryId: page.directoryId, spaceId: page.spaceId },
+      { directoryId: page.directoryId ?? undefined, spaceId: page.spaceId },
     );
+    const ability = this.resourceAbility.buildAbilityByRole(effectiveRole);
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
@@ -89,10 +90,11 @@ export class PageController {
       return {
         ...page,
         content: contentOutput,
+        effectiveRole,
       };
     }
 
-    return page;
+    return { ...page, effectiveRole };
   }
 
   @HttpCode(HttpStatus.OK)

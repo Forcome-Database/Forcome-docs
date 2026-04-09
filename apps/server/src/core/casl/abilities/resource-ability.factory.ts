@@ -96,7 +96,7 @@ export class ResourceAbilityFactory {
     return highest;
   }
 
-  private buildAbilityByRole(role: string): MongoAbility<ISpaceAbility> {
+  buildAbilityByRole(role: string): MongoAbility<ISpaceAbility> {
     switch (role) {
       case 'admin':
         return buildSpaceAdminAbility();

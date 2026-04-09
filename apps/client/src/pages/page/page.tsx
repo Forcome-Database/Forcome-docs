@@ -61,9 +61,19 @@ function PageContent({ pageSlug }: { pageSlug: string | undefined }) {
   const spaceRules = space?.membership?.permissions;
   const spaceAbility = useSpaceAbility(spaceRules);
 
-  const canEdit = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
-  const canDelete = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
-  const canShare = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Share);
+  // effectiveRole reflects resource-level permission overrides (e.g. directory grant
+  // when space role is 'none'). It takes priority over the space-level CASL check.
+  const effectiveRole = page?.effectiveRole;
+
+  const canEdit =
+    effectiveRole === 'admin' || effectiveRole === 'writer' ||
+    spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
+  const canDelete =
+    effectiveRole === 'admin' ||
+    spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
+  const canShare =
+    effectiveRole === 'admin' || effectiveRole === 'writer' ||
+    spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Share);
   const canManagePermissions = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Settings);
 
   if (isLoading) {

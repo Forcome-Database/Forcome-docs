@@ -20,6 +20,7 @@ export interface IPage {
   deletedAt: Date;
   position: string;
   hasChildren: boolean;
+  effectiveRole?: string;
   creator: ICreator;
   lastUpdatedBy: ILastUpdatedBy;
   deletedBy: IDeletedBy;
