@@ -8,6 +8,7 @@ export enum SpaceRole {
   ADMIN = 'admin', // can manage space settings, members, and delete space
   WRITER = 'writer', // can read and write pages in space
   READER = 'reader', // can only read pages in space
+  NONE = 'none',  // Explicit deny — resource invisible to user
 }
 
 export enum SpaceVisibility {

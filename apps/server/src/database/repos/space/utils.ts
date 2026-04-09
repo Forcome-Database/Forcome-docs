@@ -10,6 +10,7 @@ export function findHighestUserSpaceRole(userSpaceRoles: UserSpaceRole[]) {
     [SpaceRole.ADMIN]: 3,
     [SpaceRole.WRITER]: 2,
     [SpaceRole.READER]: 1,
+    [SpaceRole.NONE]: 0,
   };
   let highestRole: string;
 
