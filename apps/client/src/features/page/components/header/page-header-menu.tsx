@@ -13,6 +13,7 @@ import {
   IconTrash,
   IconWifiOff,
   IconBrain,
+  IconShieldLock,
 } from "@tabler/icons-react";
 import React, { useEffect, useRef, useState } from "react";
 import useToggleAside from "@/hooks/use-toggle-aside.tsx";
@@ -41,6 +42,7 @@ import { PageStateSegmentedControl } from "@/features/user/components/page-state
 import MovePageModal from "@/features/page/components/move-page-modal.tsx";
 import { useTimeAgo } from "@/hooks/use-time-ago.tsx";
 import ShareModal from "@/features/share/components/share-modal.tsx";
+import { ResourcePermissionModal } from "@/features/resource-permission/components/resource-permission-modal";
 
 interface PageHeaderMenuProps {
   readOnly?: boolean;
@@ -134,6 +136,10 @@ function PageActionMenu({ readOnly }: PageActionMenuProps) {
     movePageModalOpened,
     { open: openMovePageModal, close: closeMoveSpaceModal },
   ] = useDisclosure(false);
+  const [
+    permModalOpened,
+    { open: openPermModal, close: closePermModal },
+  ] = useDisclosure(false);
   const [pageEditor] = useAtom(pageEditorAtom);
   const pageUpdatedAt = useTimeAgo(page?.updatedAt);
 
@@ -224,6 +230,15 @@ function PageActionMenu({ readOnly }: PageActionMenuProps) {
             </Menu.Item>
           )}
 
+          {!readOnly && (
+            <Menu.Item
+              leftSection={<IconShieldLock size={16} />}
+              onClick={openPermModal}
+            >
+              {t("Permissions")}
+            </Menu.Item>
+          )}
+
           <Menu.Item
             leftSection={<IconFileExport size={16} />}
             onClick={openExportModal}
@@ -302,6 +317,16 @@ function PageActionMenu({ readOnly }: PageActionMenuProps) {
         onClose={closeMoveSpaceModal}
         open={movePageModalOpened}
       />
+
+      {page && (
+        <ResourcePermissionModal
+          opened={permModalOpened}
+          onClose={closePermModal}
+          resourceType="page"
+          resourceId={page.id}
+          resourceName={page.title || t("Untitled")}
+        />
+      )}
     </>
   );
 }
