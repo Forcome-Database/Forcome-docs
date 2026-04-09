@@ -12,11 +12,11 @@ export function findHighestUserSpaceRole(userSpaceRoles: UserSpaceRole[]) {
     [SpaceRole.READER]: 1,
     [SpaceRole.NONE]: 0,
   };
-  let highestRole: string;
+  let highestRole: string = undefined;
 
   for (const userSpaceRole of userSpaceRoles) {
     const currentRole = userSpaceRole.role;
-    if (!highestRole || roleOrder[currentRole] > roleOrder[highestRole]) {
+    if (highestRole === undefined || roleOrder[currentRole] > roleOrder[highestRole]) {
       highestRole = currentRole;
     }
   }
