@@ -64,6 +64,7 @@ function PageContent({ pageSlug }: { pageSlug: string | undefined }) {
   const canEdit = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
   const canDelete = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
   const canShare = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Share);
+  const canManagePermissions = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Settings);
 
   if (isLoading) {
     return <></>;
@@ -109,6 +110,7 @@ function PageContent({ pageSlug }: { pageSlug: string | undefined }) {
           canEdit={canEdit}
           canDelete={canDelete}
           canShare={canShare}
+          canManagePermissions={canManagePermissions}
         />
 
         <MemoizedFullEditor

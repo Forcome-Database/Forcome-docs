@@ -48,8 +48,9 @@ interface PageHeaderMenuProps {
   canEdit?: boolean;
   canDelete?: boolean;
   canShare?: boolean;
+  canManagePermissions?: boolean;
 }
-export default function PageHeaderMenu({ canEdit = false, canDelete = false, canShare = false }: PageHeaderMenuProps) {
+export default function PageHeaderMenu({ canEdit = false, canDelete = false, canShare = false, canManagePermissions = false }: PageHeaderMenuProps) {
   const { t } = useTranslation();
   const toggleAside = useToggleAside();
 
@@ -114,7 +115,7 @@ export default function PageHeaderMenu({ canEdit = false, canDelete = false, can
         </ActionIcon>
       </Tooltip>
 
-      <PageActionMenu canEdit={canEdit} canDelete={canDelete} />
+      <PageActionMenu canEdit={canEdit} canDelete={canDelete} canManagePermissions={canManagePermissions} />
     </>
   );
 }
@@ -122,8 +123,9 @@ export default function PageHeaderMenu({ canEdit = false, canDelete = false, can
 interface PageActionMenuProps {
   canEdit?: boolean;
   canDelete?: boolean;
+  canManagePermissions?: boolean;
 }
-function PageActionMenu({ canEdit = false, canDelete = false }: PageActionMenuProps) {
+function PageActionMenu({ canEdit = false, canDelete = false, canManagePermissions = false }: PageActionMenuProps) {
   const { t } = useTranslation();
   const [, setHistoryModalOpen] = useAtom(historyAtoms);
   const clipboard = useClipboard({ timeout: 500 });
@@ -233,7 +235,7 @@ function PageActionMenu({ canEdit = false, canDelete = false }: PageActionMenuPr
             </Menu.Item>
           )}
 
-          {canEdit && (
+          {canManagePermissions && (
             <Menu.Item
               leftSection={<IconShieldLock size={16} />}
               onClick={openPermModal}

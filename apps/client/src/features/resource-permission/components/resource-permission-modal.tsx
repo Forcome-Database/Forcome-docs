@@ -12,9 +12,11 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { IconInfoCircle, IconTrash, IconUserPlus } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   useAddResourcePermissionMutation,
   useRemoveResourcePermissionMutation,
@@ -31,13 +33,6 @@ interface ResourcePermissionModalProps {
   resourceName: string;
 }
 
-const ROLE_OPTIONS = [
-  { value: "admin", label: "Admin" },
-  { value: "writer", label: "Writer" },
-  { value: "reader", label: "Reader" },
-  { value: "none", label: "None (deny)" },
-];
-
 export function ResourcePermissionModal({
   opened,
   onClose,
@@ -46,6 +41,17 @@ export function ResourcePermissionModal({
   resourceName,
 }: ResourcePermissionModalProps) {
   const { t } = useTranslation();
+
+  const roleOptions = useMemo(
+    () => [
+      { value: "admin", label: t("Admin") },
+      { value: "writer", label: t("Writer") },
+      { value: "reader", label: t("Reader") },
+      { value: "none", label: t("None (deny)") },
+    ],
+    [t],
+  );
+
   const { data: permissions, isLoading } = useResourcePermissionsQuery(
     resourceType,
     resourceId,
@@ -66,6 +72,7 @@ export function ResourcePermissionModal({
     principalId: "",
     role: "reader" as string,
   });
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const hasOverrides = permissions && permissions.length > 0;
 
@@ -74,7 +81,8 @@ export function ResourcePermissionModal({
   };
 
   const handleRemove = (id: string) => {
-    removeMutation.mutate(id);
+    setDeletingId(id);
+    removeMutation.mutate(id, { onSettled: () => setDeletingId(null) });
   };
 
   const handleAdd = () => {
@@ -96,9 +104,36 @@ export function ResourcePermissionModal({
 
   const handleClearOverrides = () => {
     if (!permissions) return;
-    Promise.all(permissions.map((p) => removeMutation.mutateAsync(p.id))).catch(
-      () => {},
-    );
+    modals.openConfirmModal({
+      title: t("Clear overrides (revert to inherited)"),
+      children: (
+        <Text size="sm">
+          {t(
+            "Are you sure you want to clear all permission overrides? This {{type}} will revert to inheriting space permissions.",
+            { type: resourceType },
+          )}
+        </Text>
+      ),
+      centered: true,
+      labels: { confirm: t("Clear"), cancel: t("Cancel") },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        try {
+          for (const p of permissions) {
+            await removeMutation.mutateAsync(p.id);
+          }
+          notifications.show({
+            message: t("All overrides cleared"),
+            color: "green",
+          });
+        } catch {
+          notifications.show({
+            message: t("Failed to clear some overrides"),
+            color: "red",
+          });
+        }
+      },
+    });
   };
 
   return (
@@ -159,7 +194,7 @@ export function ResourcePermissionModal({
                   <Table.Td>
                     <Select
                       size="xs"
-                      data={ROLE_OPTIONS}
+                      data={roleOptions}
                       value={record.role}
                       onChange={(val) => val && handleRoleChange(record, val)}
                       w={130}
@@ -172,7 +207,7 @@ export function ResourcePermissionModal({
                       size="sm"
                       color="red"
                       onClick={() => handleRemove(record.id)}
-                      loading={removeMutation.isPending}
+                      loading={deletingId === record.id}
                     >
                       <IconTrash size={15} />
                     </ActionIcon>
@@ -223,7 +258,7 @@ export function ResourcePermissionModal({
               <Select
                 label={t("Role")}
                 size="xs"
-                data={ROLE_OPTIONS}
+                data={roleOptions}
                 value={addForm.role}
                 onChange={(val) =>
                   val && setAddForm((f) => ({ ...f, role: val }))
@@ -267,7 +302,6 @@ export function ResourcePermissionModal({
                 size="xs"
                 color="red"
                 onClick={handleClearOverrides}
-                loading={removeMutation.isPending}
               >
                 {t("Clear overrides (revert to inherited)")}
               </Button>
