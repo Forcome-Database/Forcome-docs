@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectKysely } from 'nestjs-kysely';
+import { sql } from 'kysely';
 import { KyselyDB } from '@docmost/db/types/kysely.types';
 import {
   InsertableResourcePermission,
@@ -172,7 +173,13 @@ export class ResourcePermissionRepo {
     userId: string,
     spaceId: string,
     workspaceId: string,
-  ): Promise<{ resourceType: string; resourceId: string; role: string }[]> {
+  ): Promise<{
+    resourceType: string;
+    resourceId: string;
+    role: string;
+    directoryId: string | null;
+    topicId: string | null;
+  }[]> {
     // Direct user overrides on directories in this space
     const dirUserOverrides = this.db
       .selectFrom('resourcePermissions')
@@ -181,6 +188,8 @@ export class ResourcePermissionRepo {
         'resourcePermissions.resourceType',
         'resourcePermissions.resourceId',
         'resourcePermissions.role',
+        sql<string | null>`null`.as('directoryId'),
+        sql<string | null>`null`.as('topicId'),
       ])
       .where('resourcePermissions.workspaceId', '=', workspaceId)
       .where('resourcePermissions.principalType', '=', 'user')
@@ -197,6 +206,8 @@ export class ResourcePermissionRepo {
         'resourcePermissions.resourceType',
         'resourcePermissions.resourceId',
         'resourcePermissions.role',
+        sql<string | null>`null`.as('directoryId'),
+        sql<string | null>`null`.as('topicId'),
       ])
       .where('resourcePermissions.workspaceId', '=', workspaceId)
       .where('resourcePermissions.principalType', '=', 'group')
@@ -204,7 +215,7 @@ export class ResourcePermissionRepo {
       .where('groupUsers.userId', '=', userId)
       .where('directories.spaceId', '=', spaceId);
 
-    // Direct user overrides on pages in this space
+    // Direct user overrides on pages in this space (include parent directoryId + topicId)
     const pageUserOverrides = this.db
       .selectFrom('resourcePermissions')
       .innerJoin('pages', 'pages.id', 'resourcePermissions.resourceId')
@@ -212,6 +223,8 @@ export class ResourcePermissionRepo {
         'resourcePermissions.resourceType',
         'resourcePermissions.resourceId',
         'resourcePermissions.role',
+        'pages.directoryId',
+        'pages.topicId',
       ])
       .where('resourcePermissions.workspaceId', '=', workspaceId)
       .where('resourcePermissions.principalType', '=', 'user')
@@ -228,6 +241,8 @@ export class ResourcePermissionRepo {
         'resourcePermissions.resourceType',
         'resourcePermissions.resourceId',
         'resourcePermissions.role',
+        'pages.directoryId',
+        'pages.topicId',
       ])
       .where('resourcePermissions.workspaceId', '=', workspaceId)
       .where('resourcePermissions.principalType', '=', 'group')

@@ -26,6 +26,9 @@ import {
   TopicListDto,
   UpdateTopicDto,
 } from './dto/topic.dto';
+import { SpaceMemberRepo } from '@docmost/db/repos/space/space-member.repo';
+import { ResourcePermissionRepo } from '@docmost/db/repos/resource-permission';
+import { findHighestUserSpaceRole } from '@docmost/db/repos/space/utils';
 
 @UseGuards(JwtAuthGuard)
 @Controller('topics')
@@ -34,6 +37,8 @@ export class TopicController {
     private readonly topicService: TopicService,
     private readonly directoryRepo: DirectoryRepo,
     private readonly spaceAbility: SpaceAbilityFactory,
+    private readonly spaceMemberRepo: SpaceMemberRepo,
+    private readonly resourcePermRepo: ResourcePermissionRepo,
   ) {}
 
   @HttpCode(HttpStatus.OK)
@@ -51,18 +56,43 @@ export class TopicController {
     );
     if (!directory) throw new NotFoundException('Directory not found');
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
+    const userSpaceRoles = await this.spaceMemberRepo.getUserSpaceRoles(
+      user.id,
       directory.spaceId,
     );
-    if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Settings)) {
-      throw new ForbiddenException();
-    }
-    return this.topicService.getTopicsInDirectory(
+    const spaceRole = findHighestUserSpaceRole(userSpaceRoles);
+    if (!spaceRole) throw new ForbiddenException();
+
+    const result = await this.topicService.getTopicsInDirectory(
       dto.directoryId,
       workspace.id,
       pagination,
     );
+
+    // For restricted users: only show topics that contain pages the user has access to
+    if (spaceRole === 'none') {
+      const overrides = await this.resourcePermRepo.getUserOverridesInSpace(
+        user.id,
+        directory.spaceId,
+        workspace.id,
+      );
+      const allowedTopicIds = new Set<string>();
+      for (const override of overrides) {
+        if (override.role === 'none') continue;
+        if (override.resourceType === 'page' && override.topicId) {
+          allowedTopicIds.add(override.topicId);
+        }
+      }
+      // If user has directory-level access, show all topics under it
+      const hasDirectoryAccess = overrides.some(
+        (o) => o.resourceType === 'directory' && o.resourceId === dto.directoryId && o.role !== 'none',
+      );
+      if (!hasDirectoryAccess) {
+        result.items = result.items.filter((topic) => allowedTopicIds.has(topic.id));
+      }
+    }
+
+    return result;
   }
 
   @HttpCode(HttpStatus.OK)

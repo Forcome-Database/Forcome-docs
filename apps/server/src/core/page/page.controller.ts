@@ -390,6 +390,10 @@ export class PageController {
           allowedDirectoryIds.add(override.resourceId);
         } else if (override.resourceType === 'page') {
           allowedPageIds.add(override.resourceId);
+          // Page override: also allow its parent directory as navigation container
+          if (override.directoryId) {
+            allowedDirectoryIds.add(override.directoryId);
+          }
         }
       }
 

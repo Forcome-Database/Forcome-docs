@@ -74,6 +74,10 @@ export class DirectoryController {
         if (override.resourceType === 'directory') {
           allowedDirectoryIds.add(override.resourceId);
         }
+        // Page override: also show its parent directory as a navigation container
+        if (override.resourceType === 'page' && override.directoryId) {
+          allowedDirectoryIds.add(override.directoryId);
+        }
       }
 
       const result = await this.directoryService.getDirectoriesInSpace(
