@@ -662,6 +662,20 @@ export class PublicWikiService {
       throw new NotFoundException('Page not found');
     }
 
+    // Check if page or its directory is hidden from public wiki
+    const hiddenResources = await this.resourcePermissionRepo.findHiddenForPublic(
+      space.id, workspaceId,
+    );
+    const hiddenPageIds = new Set(
+      hiddenResources.filter(r => r.resourceType === 'page').map(r => r.resourceId),
+    );
+    const hiddenDirIds = new Set(
+      hiddenResources.filter(r => r.resourceType === 'directory').map(r => r.resourceId),
+    );
+    if (hiddenPageIds.has(page.id) || (page.directoryId && hiddenDirIds.has(page.directoryId))) {
+      throw new NotFoundException('Page not found');
+    }
+
     // Process attachments for public access
     const processedContent = await this.updatePublicAttachments(page);
 
@@ -753,6 +767,20 @@ export class PublicWikiService {
       return { items: [] };
     }
 
+    // Collect hidden resources across all public spaces
+    const allSpaceIds = spaces.map(s => s.id);
+    const hiddenResources = await Promise.all(
+      allSpaceIds.map(spaceId =>
+        this.resourcePermissionRepo.findHiddenForPublic(spaceId, workspaceId),
+      ),
+    ).then(results => results.flat());
+    const hiddenPageIds = new Set(
+      hiddenResources.filter(r => r.resourceType === 'page').map(r => r.resourceId),
+    );
+    const hiddenDirIds = new Set(
+      hiddenResources.filter(r => r.resourceType === 'directory').map(r => r.resourceId),
+    );
+
     // Search across all public spaces one by one and merge
     const allResults = [];
     for (const space of spaces) {
@@ -768,9 +796,15 @@ export class PublicWikiService {
       }
     }
 
+    // Filter hidden pages and pages in hidden directories
+    const visibleResults = allResults.filter(page =>
+      !hiddenPageIds.has(page.id) &&
+      !((page as any).directoryId && hiddenDirIds.has((page as any).directoryId))
+    );
+
     // Sort by rank desc, limit
-    allResults.sort((a, b) => (b as any).rank - (a as any).rank);
-    return { items: allResults.slice(0, limit || 25) };
+    visibleResults.sort((a, b) => (b as any).rank - (a as any).rank);
+    return { items: visibleResults.slice(0, limit || 25) };
   }
 
   async *aiAnswers(input: PublicWikiAiAnswerInput): AsyncGenerator<string> {

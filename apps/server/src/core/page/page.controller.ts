@@ -244,6 +244,7 @@ export class PageController {
     @Body() recentPageDto: RecentPageDto,
     @Body() pagination: PaginationOptions,
     @AuthUser() user: User,
+    @AuthWorkspace() workspace: Workspace,
   ) {
     if (recentPageDto.spaceId) {
       const ability = await this.spaceAbility.createForUser(
@@ -255,13 +256,27 @@ export class PageController {
         throw new ForbiddenException();
       }
 
-      return this.pageService.getRecentSpacePages(
+      const result = await this.pageService.getRecentSpacePages(
         recentPageDto.spaceId,
         pagination,
       );
+
+      // Apply resource-level permission filtering
+      result.items = await this.filterRecentPagesByPermission(
+        result.items, user.id, workspace.id,
+      );
+
+      return result;
     }
 
-    return this.pageService.getRecentPages(user.id, pagination);
+    const result = await this.pageService.getRecentPages(user.id, pagination);
+
+    // Apply resource-level permission filtering
+    result.items = await this.filterRecentPagesByPermission(
+      result.items, user.id, workspace.id,
+    );
+
+    return result;
   }
 
   @HttpCode(HttpStatus.OK)
@@ -606,5 +621,67 @@ export class PageController {
       throw new ForbiddenException();
     }
     return this.pageService.getPageBreadCrumbs(page.id);
+  }
+
+  /**
+   * Filter recent pages by resource-level permissions.
+   * - restricted (spaceRole='none'): only return pages with explicit override
+   * - normal users: filter out pages with 'none' override
+   */
+  private async filterRecentPagesByPermission<T extends { id: string; spaceId: string; directoryId?: string | null }>(
+    items: T[],
+    userId: string,
+    workspaceId: string,
+  ): Promise<T[]> {
+    if (items.length === 0) return items;
+
+    // Collect unique spaceIds from the results
+    const spaceIds = [...new Set(items.map(item => item.spaceId))];
+
+    // For each space, determine user's role and overrides
+    const spaceOverridesMap = new Map<string, {
+      spaceRole: string | undefined;
+      overrides: { resourceType: string; resourceId: string; role: string; directoryId: string | null }[];
+    }>();
+
+    await Promise.all(
+      spaceIds.map(async (spaceId) => {
+        const userSpaceRoles = await this.spaceMemberRepo.getUserSpaceRoles(userId, spaceId);
+        const spaceRole = findHighestUserSpaceRole(userSpaceRoles);
+        const overrides = await this.resourcePermRepo.getUserOverridesInSpace(userId, spaceId, workspaceId);
+        spaceOverridesMap.set(spaceId, { spaceRole, overrides });
+      }),
+    );
+
+    return items.filter(item => {
+      const entry = spaceOverridesMap.get(item.spaceId);
+      if (!entry) return true;
+
+      const { spaceRole, overrides } = entry;
+
+      if (spaceRole === 'none') {
+        // Restricted user: only show pages with explicit non-none override
+        const allowedPageIds = new Set<string>();
+        const allowedDirIds = new Set<string>();
+        for (const o of overrides) {
+          if (o.role === 'none') continue;
+          if (o.resourceType === 'page') allowedPageIds.add(o.resourceId);
+          if (o.resourceType === 'directory') allowedDirIds.add(o.resourceId);
+        }
+        return allowedPageIds.has(item.id) || (item.directoryId && allowedDirIds.has(item.directoryId));
+      } else {
+        // Normal user: hide pages with 'none' override
+        const deniedPageIds = new Set<string>();
+        const deniedDirIds = new Set<string>();
+        for (const o of overrides) {
+          if (o.role !== 'none') continue;
+          if (o.resourceType === 'page') deniedPageIds.add(o.resourceId);
+          if (o.resourceType === 'directory') deniedDirIds.add(o.resourceId);
+        }
+        if (deniedPageIds.has(item.id)) return false;
+        if (item.directoryId && deniedDirIds.has(item.directoryId)) return false;
+        return true;
+      }
+    });
   }
 }

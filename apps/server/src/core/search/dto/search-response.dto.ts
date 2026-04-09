@@ -5,6 +5,8 @@ export class SearchResponseDto {
   title: string;
   icon: string;
   parentPageId: string;
+  spaceId: string;
+  directoryId: string | null;
   creatorId: string;
   rank: number;
   highlight: string;
