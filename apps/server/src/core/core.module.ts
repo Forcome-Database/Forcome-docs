@@ -21,6 +21,7 @@ import { WatcherModule } from './watcher/watcher.module';
 import { PublicWikiModule } from './public-wiki/public-wiki.module';
 import { DirectoryModule } from './directory/directory.module';
 import { TopicModule } from './topic/topic.module';
+import { ResourcePermissionModule } from './resource-permission/resource-permission.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { TopicModule } from './topic/topic.module';
     CaslModule,
     DirectoryModule,
     TopicModule,
+    ResourcePermissionModule,
     ShareModule,
     NotificationModule,
     WatcherModule,
