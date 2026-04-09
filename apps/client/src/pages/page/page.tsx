@@ -65,16 +65,20 @@ function PageContent({ pageSlug }: { pageSlug: string | undefined }) {
   // when space role is 'none'). It takes priority over the space-level CASL check.
   const effectiveRole = page?.effectiveRole;
 
-  const canEdit =
+  const canEdit = effectiveRole !== 'none' && (
     effectiveRole === 'admin' || effectiveRole === 'writer' ||
-    spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
-  const canDelete =
+    spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page)
+  );
+  const canDelete = effectiveRole !== 'none' && (
     effectiveRole === 'admin' ||
-    spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
-  const canShare =
+    spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Page)
+  );
+  const canShare = effectiveRole !== 'none' && (
     effectiveRole === 'admin' || effectiveRole === 'writer' ||
-    spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Share);
-  const canManagePermissions = spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Settings);
+    spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Share)
+  );
+  const canManagePermissions = effectiveRole === 'admin' ||
+    spaceAbility.can(SpaceCaslAction.Manage, SpaceCaslSubject.Settings);
 
   if (isLoading) {
     return <></>;
