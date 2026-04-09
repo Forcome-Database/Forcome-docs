@@ -8,9 +8,7 @@ import {
 import { TokenService } from '../../core/auth/services/token.service';
 import { UserRepo } from '@docmost/db/repos/user/user.repo';
 import { PageRepo } from '@docmost/db/repos/page/page.repo';
-import { SpaceMemberRepo } from '@docmost/db/repos/space/space-member.repo';
-import { findHighestUserSpaceRole } from '@docmost/db/repos/space/utils';
-import { SpaceRole } from '../../common/helpers/types/permission';
+import { ResourceAbilityFactory } from '../../core/casl/abilities/resource-ability.factory';
 import { getPageId } from '../collaboration.util';
 import { JwtCollabPayload, JwtType } from '../../core/auth/dto/jwt-payload';
 
@@ -22,7 +20,7 @@ export class AuthenticationExtension implements Extension {
     private tokenService: TokenService,
     private userRepo: UserRepo,
     private pageRepo: PageRepo,
-    private readonly spaceMemberRepo: SpaceMemberRepo,
+    private readonly resourceAbility: ResourceAbilityFactory,
   ) {}
 
   async onAuthenticate(data: onAuthenticatePayload) {
@@ -56,19 +54,28 @@ export class AuthenticationExtension implements Extension {
       throw new NotFoundException('Page not found');
     }
 
-    const userSpaceRoles = await this.spaceMemberRepo.getUserSpaceRoles(
-      user.id,
-      page.spaceId,
-    );
-
-    const userSpaceRole = findHighestUserSpaceRole(userSpaceRoles);
-
-    if (!userSpaceRole) {
-      this.logger.warn(`User not authorized to access page: ${pageId}`);
-      throw new UnauthorizedException();
+    let effectiveRole: string;
+    try {
+      effectiveRole = await this.resourceAbility.resolveRole(
+        user,
+        'page',
+        pageId,
+        { directoryId: page.directoryId ?? undefined, spaceId: page.spaceId },
+      );
+    } catch (err) {
+      if (err instanceof NotFoundException) {
+        this.logger.warn(`User not authorized to access page: ${pageId}`);
+        throw new UnauthorizedException('Access denied');
+      }
+      throw err;
     }
 
-    if (userSpaceRole === SpaceRole.READER) {
+    if (effectiveRole === 'none') {
+      this.logger.warn(`User explicitly denied access to page: ${pageId}`);
+      throw new UnauthorizedException('Access denied');
+    }
+
+    if (effectiveRole === 'reader') {
       data.connectionConfig.readOnly = true;
       this.logger.debug(`User granted readonly access to page: ${pageId}`);
     }
