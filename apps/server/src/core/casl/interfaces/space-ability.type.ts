@@ -10,10 +10,12 @@ export enum SpaceCaslSubject {
   Member = 'member',
   Page = 'page',
   Share = 'share',
+  Directory = 'directory',
 }
 
 export type ISpaceAbility =
   | [SpaceCaslAction, SpaceCaslSubject.Settings]
   | [SpaceCaslAction, SpaceCaslSubject.Member]
   | [SpaceCaslAction, SpaceCaslSubject.Page]
-  | [SpaceCaslAction, SpaceCaslSubject.Share];
+  | [SpaceCaslAction, SpaceCaslSubject.Share]
+  | [SpaceCaslAction, SpaceCaslSubject.Directory];

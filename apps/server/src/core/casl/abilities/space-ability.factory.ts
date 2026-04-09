@@ -38,7 +38,7 @@ export default class SpaceAbilityFactory {
   }
 }
 
-function buildSpaceAdminAbility() {
+export function buildSpaceAdminAbility() {
   const { can, build } = new AbilityBuilder<MongoAbility<ISpaceAbility>>(
     createMongoAbility,
   );
@@ -46,10 +46,11 @@ function buildSpaceAdminAbility() {
   can(SpaceCaslAction.Manage, SpaceCaslSubject.Member);
   can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
   can(SpaceCaslAction.Manage, SpaceCaslSubject.Share);
+  can(SpaceCaslAction.Manage, SpaceCaslSubject.Directory);
   return build();
 }
 
-function buildSpaceWriterAbility() {
+export function buildSpaceWriterAbility() {
   const { can, build } = new AbilityBuilder<MongoAbility<ISpaceAbility>>(
     createMongoAbility,
   );
@@ -57,10 +58,11 @@ function buildSpaceWriterAbility() {
   can(SpaceCaslAction.Read, SpaceCaslSubject.Member);
   can(SpaceCaslAction.Manage, SpaceCaslSubject.Page);
   can(SpaceCaslAction.Manage, SpaceCaslSubject.Share);
+  can(SpaceCaslAction.Manage, SpaceCaslSubject.Directory);
   return build();
 }
 
-function buildSpaceReaderAbility() {
+export function buildSpaceReaderAbility() {
   const { can, build } = new AbilityBuilder<MongoAbility<ISpaceAbility>>(
     createMongoAbility,
   );
@@ -68,5 +70,13 @@ function buildSpaceReaderAbility() {
   can(SpaceCaslAction.Read, SpaceCaslSubject.Member);
   can(SpaceCaslAction.Read, SpaceCaslSubject.Page);
   can(SpaceCaslAction.Read, SpaceCaslSubject.Share);
+  can(SpaceCaslAction.Read, SpaceCaslSubject.Directory);
+  return build();
+}
+
+export function buildNoneAbility() {
+  const { build } = new AbilityBuilder<MongoAbility<ISpaceAbility>>(
+    createMongoAbility,
+  );
   return build();
 }
