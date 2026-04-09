@@ -126,6 +126,8 @@ resolvePermission(user, page):
 - **命中即返回**，不继续上溯——就近覆盖
 - `role='none'` 命中也算命中——拒绝访问，不上溯
 - **none 优先规则**：同一层级（同一 resourceId）若存在任意一条 `none` 记录（无论来自用户还是 Group），该层级结果**直接为 none**，不参与"取最高"排序。`none` 是显式拒绝（黑名单），语义上优先于任何正向角色
+  - 示例：用户张三直接被赋予 page 层级 `writer`，同时张三所属 Group「外包组」在同一 page 被设为 `none` → 结果为 `none`（Group 的拒绝覆盖个人的正向授权）
+  - 若需要给张三单独开放，应先移除 Group 的 `none` 记录，或将张三从该 Group 移出
 
 ### 4.2 ResourceAbilityFactory
 
@@ -249,13 +251,18 @@ ResourceAbilityFactory → Directory/Page 级操作（内容读写），新增
 // remove
 { id: string }
 
-// resolve（服务端自动从 DB 加载 directoryId/spaceId，调用方无需传递）
+// resolve - 查询自己的有效权限（userId 从 JWT 提取，不接受请求体传入）
+{ resourceType: 'directory' | 'page'; resourceId: string }
+// resolve - 工作区 ADMIN 查询他人权限（需先验证调用者是工作区 ADMIN）
 { resourceType: 'directory' | 'page'; resourceId: string; userId: string }
 ```
+
+服务端实现：若请求体含 `userId` 且与当前用户不同，先验证调用者是工作区 ADMIN，否则 403。服务端自动从 DB 加载 `directoryId`/`spaceId`。
 
 安全约束：
 - 不能给自己设置 `none`（防止自锁）
 - 不能移除资源的最后一个 `admin`（防止孤儿资源）
+- `resolve` 端点查询他人权限仅限工作区 ADMIN（防止权限枚举）
 
 ### 5.2 现有端点改造
 
@@ -318,14 +325,19 @@ async isSpacePublic(slug: string, workspaceId: string): Promise<boolean> {
   const space = await spaceRepo.findBySlug(slug, workspaceId);
   if (!space) return false;
   
+  // 优先查数据库（Step 0 预迁移后，公开空间已写入 visibility=OPEN）
   if (space.visibility === SpaceVisibility.OPEN) return true;
   
-  // fallback：兼容旧环境变量
+  // fallback：兼容尚未执行 Step 0 的部署
+  // 仅当环境变量显式配置时才生效；未配置 = 安全默认（不公开）
   const envSlugs = this.env.getPublicSpaceSlugs();
-  if (envSlugs.length === 0) return true;
+  if (envSlugs === undefined || envSlugs === null) return false; // 未配置 → 不公开
+  if (envSlugs.length === 0) return true; // 显式空列表 → 全部公开（保持现有行为）
   return envSlugs.includes(slug.toLowerCase());
 }
 ```
+
+> **安全默认原则**：环境变量未设置时返回 false（不公开），而非 true。只有显式配置空列表（`WIKI_PUBLIC_SPACE_SLUGS=`）才触发全部公开的兼容行为。
 
 ### 6.2 侧边栏过滤
 
