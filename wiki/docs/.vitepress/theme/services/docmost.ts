@@ -34,7 +34,16 @@ export class DocmostService {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      credentials: 'include',
     })
+
+    if (response.status === 401) {
+      if (typeof document !== 'undefined') {
+        document.cookie = 'authMarker=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
+        window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname)
+      }
+      throw AppError.api('未登录或登录已过期')
+    }
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '')
@@ -138,12 +147,21 @@ export class DocmostService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         signal: this.abortController.signal,
+        credentials: 'include',
       })
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         return
       }
       throw AppError.network('网络请求失败，请检查网络连接', error as Error)
+    }
+
+    if (response.status === 401) {
+      if (typeof document !== 'undefined') {
+        document.cookie = 'authMarker=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
+        window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname)
+      }
+      throw AppError.api('未登录或登录已过期')
     }
 
     if (!response.ok) {
