@@ -438,6 +438,17 @@ export class PageRepo {
       .as('hasChildren');
   }
 
+  async findPageIdsByDirectoryIds(directoryIds: string[]): Promise<string[]> {
+    if (directoryIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('pages')
+      .select('id')
+      .where('directoryId', 'in', directoryIds)
+      .where('deletedAt', 'is', null)
+      .execute();
+    return rows.map(r => r.id);
+  }
+
   async getPageAndDescendants(
     parentPageId: string,
     opts: { includeContent: boolean },

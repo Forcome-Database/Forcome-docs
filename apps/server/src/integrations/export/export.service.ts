@@ -100,6 +100,7 @@ export class ExportService {
     format: string,
     includeAttachments: boolean,
     includeChildren: boolean,
+    excludedPageIds?: Set<string>,
   ) {
     let pages: Page[];
 
@@ -108,6 +109,10 @@ export class ExportService {
       pages = await this.pageRepo.getPageAndDescendants(pageId, {
         includeContent: true,
       });
+      // Filter out denied pages
+      if (excludedPageIds?.size) {
+        pages = pages.filter(p => !excludedPageIds.has(p.id));
+      }
     } else {
       // Only fetch the single page when includeChildren is false
       const page = await this.pageRepo.findById(pageId, {

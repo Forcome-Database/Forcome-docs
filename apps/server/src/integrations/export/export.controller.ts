@@ -12,11 +12,13 @@ import {
 import { ExportService } from './export.service';
 import { ExportPageDto, ExportSpaceDto } from './dto/export-dto';
 import { AuthUser } from '../../common/decorators/auth-user.decorator';
-import { User } from '@docmost/db/types/entity.types';
+import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator';
+import { User, Workspace } from '@docmost/db/types/entity.types';
 import SpaceAbilityFactory from '../../core/casl/abilities/space-ability.factory';
 import { ResourceAbilityFactory } from '../../core/casl/abilities/resource-ability.factory';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PageRepo } from '@docmost/db/repos/page/page.repo';
+import { ResourcePermissionRepo } from '@docmost/db/repos/resource-permission';
 import {
   SpaceCaslAction,
   SpaceCaslSubject,
@@ -34,6 +36,7 @@ export class ExportController {
     private readonly pageRepo: PageRepo,
     private readonly spaceAbility: SpaceAbilityFactory,
     private readonly resourceAbility: ResourceAbilityFactory,
+    private readonly resourcePermRepo: ResourcePermissionRepo,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -42,6 +45,7 @@ export class ExportController {
   async exportPage(
     @Body() dto: ExportPageDto,
     @AuthUser() user: User,
+    @AuthWorkspace() workspace: Workspace,
     @Res() res: FastifyReply,
   ) {
     const page = await this.pageRepo.findById(dto.pageId, {
@@ -60,11 +64,38 @@ export class ExportController {
       throw new ForbiddenException();
     }
 
+    // Build denied set for child page filtering
+    let excludedPageIds: Set<string> | undefined;
+    if (dto.includeChildren) {
+      const overrides = await this.resourcePermRepo.getUserOverridesInSpace(
+        user.id, page.spaceId, workspace.id,
+      );
+      const deniedPageIds = new Set<string>();
+      const deniedDirIds = new Set<string>();
+      for (const o of overrides) {
+        if (o.role !== 'none') continue;
+        if (o.resourceType === 'page') deniedPageIds.add(o.resourceId);
+        if (o.resourceType === 'directory') deniedDirIds.add(o.resourceId);
+      }
+      if (deniedPageIds.size > 0 || deniedDirIds.size > 0) {
+        excludedPageIds = new Set(deniedPageIds);
+        if (deniedDirIds.size > 0) {
+          const pagesInDeniedDirs = await this.pageRepo.findPageIdsByDirectoryIds(
+            [...deniedDirIds],
+          );
+          for (const pid of pagesInDeniedDirs) {
+            excludedPageIds.add(pid);
+          }
+        }
+      }
+    }
+
     const zipFileStream = await this.exportService.exportPages(
       dto.pageId,
       dto.format,
       dto.includeAttachments,
       dto.includeChildren,
+      excludedPageIds,
     );
 
     const fileName = sanitize(page.title || 'untitled') + '.zip';
