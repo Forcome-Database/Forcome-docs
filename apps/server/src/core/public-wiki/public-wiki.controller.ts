@@ -12,7 +12,8 @@ import {
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator';
-import { Workspace } from '@docmost/db/types/entity.types';
+import { AuthUser } from '../../common/decorators/auth-user.decorator';
+import { User, Workspace } from '@docmost/db/types/entity.types';
 import { PublicWikiService } from './public-wiki.service';
 import {
   PublicSidebarDto,
@@ -37,54 +38,58 @@ export class PublicWikiController {
     return this.publicWikiService.getSettings(workspace.id);
   }
 
-  @Public()
   @HttpCode(HttpStatus.OK)
   @Post('spaces')
-  async getPublicSpaces(@AuthWorkspace() workspace: Workspace) {
-    return this.publicWikiService.getPublicSpaces(workspace.id);
+  async getSpaces(
+    @AuthUser() user: User,
+    @AuthWorkspace() workspace: Workspace,
+  ) {
+    return this.publicWikiService.getSpaces(user, workspace.id);
   }
 
-  @Public()
   @HttpCode(HttpStatus.OK)
   @Post('directories')
   async getDirectories(
+    @AuthUser() user: User,
     @Body() dto: PublicDirectoriesDto,
     @AuthWorkspace() workspace: Workspace,
   ) {
-    return this.publicWikiService.getDirectories(dto.spaceSlug, workspace.id);
+    return this.publicWikiService.getDirectories(user, dto.spaceSlug, workspace.id);
   }
 
-  @Public()
   @HttpCode(HttpStatus.OK)
   @Post('sidebar')
   async getSidebar(
+    @AuthUser() user: User,
     @Body() dto: PublicSidebarDto,
     @AuthWorkspace() workspace: Workspace,
   ) {
-    return this.publicWikiService.getSidebarTree(dto.spaceSlug, workspace.id, dto.directoryId);
+    return this.publicWikiService.getSidebarTree(user, dto.spaceSlug, workspace.id, dto.directoryId);
   }
 
-  @Public()
   @HttpCode(HttpStatus.OK)
   @Post('page')
   async getPage(
+    @AuthUser() user: User,
     @Body() dto: PublicPageDto,
     @AuthWorkspace() workspace: Workspace,
   ) {
     return this.publicWikiService.getPage(
+      user,
       { pageId: dto.pageId, slugId: dto.slugId, format: dto.format },
       workspace.id,
     );
   }
 
-  @Public()
   @HttpCode(HttpStatus.OK)
   @Post('search')
   async search(
+    @AuthUser() user: User,
     @Body() dto: PublicSearchDto,
     @AuthWorkspace() workspace: Workspace,
   ) {
-    return this.publicWikiService.searchPublicPages(
+    return this.publicWikiService.searchPages(
+      user,
       dto.query,
       workspace.id,
       dto.spaceSlug,
@@ -92,9 +97,9 @@ export class PublicWikiController {
     );
   }
 
-  @Public()
   @Post('ai/answers')
   async aiAnswers(
+    @AuthUser() user: User,
     @Body() dto: PublicAiAnswerDto,
     @AuthWorkspace() workspace: Workspace,
     @Req() req: FastifyRequest,
@@ -120,18 +125,13 @@ export class PublicWikiController {
     });
 
     try {
-      const forwardedFor = req.headers['x-forwarded-for'];
-      const requesterKey = Array.isArray(forwardedFor)
-        ? forwardedFor[0]
-        : forwardedFor || req.ip;
-
       for await (const chunk of this.publicWikiService.aiAnswers({
         query: dto.query,
         workspaceId: workspace.id,
         pageSlugId: dto.pageSlugId,
         images: dto.images,
         history: dto.history,
-        requesterKey,
+        userId: user.id,
         sessionId: dto.sessionId,
         deepResearch: dto.deepResearch,
       })) {

@@ -97,7 +97,10 @@ describe('PublicWikiService.aiAnswers', () => {
       db as any,
       { findById: jest.fn() } as any,
       { findBySlug: jest.fn() } as any,
-      { findHiddenForPublic: jest.fn().mockResolvedValue([]) } as any,
+      { getUserSpaceIds: jest.fn().mockResolvedValue(['space-public']), getUserSpaceRoles: jest.fn().mockResolvedValue([{ userId: 'user-1', role: 'reader' }]), getUserSpaceIdsQuery: jest.fn() } as any,
+      { getUserOverridesInSpace: jest.fn().mockResolvedValue([]) } as any,
+      { createForUser: jest.fn() } as any,
+      { filterByPermissions: jest.fn().mockImplementation((items: any[]) => Promise.resolve(items)) } as any,
       { generateAttachmentToken: jest.fn() } as any,
       environmentService as any,
       { searchPage: jest.fn() } as any,
@@ -130,7 +133,7 @@ describe('PublicWikiService.aiAnswers', () => {
         query: 'where is the runbook',
         workspaceId: 'workspace-1',
         pageSlugId: 'deploy',
-        requesterKey: '127.0.0.1',
+        userId: 'user-1',
       }),
     );
 
@@ -147,19 +150,30 @@ describe('PublicWikiService.aiAnswers', () => {
     );
   });
 
-  it('rejects non-public current pages', async () => {
-    const { service } = createService({ publicPage: null });
+  it('proceeds without current page when page is inaccessible', async () => {
+    const { service, aiSearchService } = createService({ publicPage: null });
 
-    await expect(
-      collect(
-        service.aiAnswers({
-          query: 'where is the runbook',
-          workspaceId: 'workspace-1',
-          pageSlugId: 'private-page',
-          requesterKey: '127.0.0.1',
+    await collect(
+      service.aiAnswers({
+        query: 'where is the runbook',
+        workspaceId: 'workspace-1',
+        pageSlugId: 'private-page',
+        userId: 'user-1',
+      }),
+    );
+
+    // Should still call AI search, but without a pageSlugId / currentPageId
+    expect(aiSearchService.answerWithContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'workspace-1',
+        pageSlugId: undefined,
+        scope: expect.objectContaining({
+          isPublicWiki: true,
+          allowedSpaceIds: ['space-public'],
+          currentPageId: undefined,
         }),
-      ),
-    ).rejects.toBeInstanceOf(NotFoundException);
+      }),
+    );
   });
 
   it('enforces public ai rate limit via Redis', async () => {
@@ -173,7 +187,7 @@ describe('PublicWikiService.aiAnswers', () => {
         service.aiAnswers({
           query: 'should be rate limited',
           workspaceId: 'workspace-1',
-          requesterKey: '127.0.0.1',
+          userId: 'user-1',
         }),
       ),
     ).rejects.toMatchObject({
@@ -191,7 +205,7 @@ describe('PublicWikiService.aiAnswers', () => {
         service.aiAnswers({
           query: 'where is the runbook',
           workspaceId: 'workspace-1',
-          requesterKey: '127.0.0.1',
+          userId: 'user-1',
           history: Array.from({ length: 11 }, (_, index) => ({
             role: 'user',
             content: `history-${index}`,
