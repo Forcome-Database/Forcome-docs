@@ -6,11 +6,12 @@ import { TrashCleanupService } from './services/trash-cleanup.service';
 import { StorageModule } from '../../integrations/storage/storage.module';
 import { CollaborationModule } from '../../collaboration/collaboration.module';
 import { WatcherModule } from '../watcher/watcher.module';
+import { ResourcePermissionModule } from '../resource-permission/resource-permission.module';
 
 @Module({
   controllers: [PageController],
   providers: [PageService, PageHistoryService, TrashCleanupService],
   exports: [PageService, PageHistoryService],
-  imports: [StorageModule, CollaborationModule, WatcherModule],
+  imports: [StorageModule, CollaborationModule, WatcherModule, ResourcePermissionModule],
 })
 export class PageModule {}
