@@ -23,6 +23,7 @@ import { updateAttachmentAttr } from './share.util';
 import { Page } from '@docmost/db/types/entity.types';
 import { validate as isValidUUID } from 'uuid';
 import { sql } from 'kysely';
+import { ResourcePermissionRepo } from '@docmost/db/repos/resource-permission';
 
 @Injectable()
 export class ShareService {
@@ -33,6 +34,7 @@ export class ShareService {
     private readonly pageRepo: PageRepo,
     @InjectKysely() private readonly db: KyselyDB,
     private readonly tokenService: TokenService,
+    private readonly resourcePermRepo: ResourcePermissionRepo,
   ) {}
 
   async getShareTree(shareId: string, workspaceId: string) {
@@ -46,7 +48,23 @@ export class ShareService {
         includeContent: false,
       });
 
-      return { share, pageTree: pageList };
+      // Filter out pages hidden via group NONE permission
+      const hiddenResources = await this.resourcePermRepo.findHiddenForPublic(
+        share.spaceId,
+        share.workspaceId,
+      );
+      const hiddenPageIds = new Set(
+        hiddenResources.filter(r => r.resourceType === 'page').map(r => r.resourceId),
+      );
+      const hiddenDirIds = new Set(
+        hiddenResources.filter(r => r.resourceType === 'directory').map(r => r.resourceId),
+      );
+      const filteredPages = pageList.filter(p =>
+        !hiddenPageIds.has(p.id) &&
+        !(p.directoryId && hiddenDirIds.has(p.directoryId))
+      );
+
+      return { share, pageTree: filteredPages };
     } else {
       return { share, pageTree: [] };
     }
@@ -109,6 +127,11 @@ export class ShareService {
     });
 
     if (!page || page.deletedAt) {
+      throw new NotFoundException('Shared page not found');
+    }
+
+    // Check resource permissions — block access to hidden pages
+    if (await this.isPageHiddenFromPublic(page, workspaceId)) {
       throw new NotFoundException('Shared page not found');
     }
 
@@ -287,6 +310,27 @@ export class ShareService {
       (result.spaceSettings as any)?.sharing?.disabled === true;
 
     return !workspaceDisabled && !spaceDisabled;
+  }
+
+  /**
+   * Check if a page (or its directory) is hidden from public via group NONE permission.
+   */
+  private async isPageHiddenFromPublic(
+    page: { id: string; spaceId: string; directoryId?: string | null },
+    workspaceId: string,
+  ): Promise<boolean> {
+    const hiddenResources = await this.resourcePermRepo.findHiddenForPublic(
+      page.spaceId,
+      workspaceId,
+    );
+    const hiddenPageIds = new Set(
+      hiddenResources.filter(r => r.resourceType === 'page').map(r => r.resourceId),
+    );
+    const hiddenDirIds = new Set(
+      hiddenResources.filter(r => r.resourceType === 'directory').map(r => r.resourceId),
+    );
+    return hiddenPageIds.has(page.id) ||
+      !!(page.directoryId && hiddenDirIds.has(page.directoryId));
   }
 
   async updatePublicAttachments(page: Page): Promise<any> {
