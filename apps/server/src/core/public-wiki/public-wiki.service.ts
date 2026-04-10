@@ -444,6 +444,20 @@ export class PublicWikiService {
     // Filter hidden pages
     const visiblePages = pages.filter((p) => !hiddenPageIds.has(p.id));
 
+    // Re-parent orphans: if a page's parent was hidden, promote to nearest visible ancestor
+    const pageMap = new Map(pages.map((p) => [p.id, p])); // original unfiltered pages for ancestor lookup
+    for (const page of visiblePages) {
+      if (page.parentPageId && hiddenPageIds.has(page.parentPageId)) {
+        let ancestor = pageMap.get(page.parentPageId);
+        while (ancestor && hiddenPageIds.has(ancestor.id)) {
+          ancestor = ancestor.parentPageId
+            ? pageMap.get(ancestor.parentPageId)
+            : undefined;
+        }
+        (page as any).parentPageId = ancestor ? ancestor.id : null;
+      }
+    }
+
     // Build recursive tree
     const tree = this.buildTree(visiblePages, null);
 
@@ -522,12 +536,21 @@ export class PublicWikiService {
     }
 
     // Collect pages directly assigned to this directory + all their descendants
+    // Hidden pages participate as "pass-through" nodes in BFS (added to frontier
+    // so their children are discovered) but NOT included in the final result.
     const directIds = new Set(
       allPages
-        .filter((p) => p.directoryId === directoryId && !hiddenPageIds.has(p.id))
+        .filter((p) => p.directoryId === directoryId)
         .map((p) => p.id),
     );
-    const relevantIds = new Set(directIds);
+    const relevantIds = new Set<string>();
+    const visitedIds = new Set<string>();
+    for (const id of directIds) {
+      visitedIds.add(id);
+      if (!hiddenPageIds.has(id)) {
+        relevantIds.add(id);
+      }
+    }
     let frontier = [...directIds];
     while (frontier.length > 0) {
       const nextFrontier: string[] = [];
@@ -535,16 +558,33 @@ export class PublicWikiService {
         if (
           p.parentPageId &&
           frontier.includes(p.parentPageId) &&
-          !relevantIds.has(p.id) &&
-          !hiddenPageIds.has(p.id)
+          !visitedIds.has(p.id)
         ) {
-          relevantIds.add(p.id);
+          visitedIds.add(p.id);
+          if (!hiddenPageIds.has(p.id)) {
+            relevantIds.add(p.id); // visible child → include in result
+          }
+          // Hidden or not, add to frontier so its children can be discovered
           nextFrontier.push(p.id);
         }
       }
       frontier = nextFrontier;
     }
     const pages = allPages.filter((p) => relevantIds.has(p.id));
+
+    // Re-parent orphans whose parent was hidden (now they ARE in pages thanks to pass-through BFS)
+    const allPageMap = new Map(allPages.map((p) => [p.id, p]));
+    for (const page of pages) {
+      if (page.parentPageId && hiddenPageIds.has(page.parentPageId)) {
+        let ancestor = allPageMap.get(page.parentPageId);
+        while (ancestor && hiddenPageIds.has(ancestor.id)) {
+          ancestor = ancestor.parentPageId
+            ? allPageMap.get(ancestor.parentPageId)
+            : undefined;
+        }
+        (page as any).parentPageId = ancestor ? ancestor.id : null;
+      }
+    }
 
     // Build topic nodes with their pages
     const topicNodes = topics.map((topic) => {
