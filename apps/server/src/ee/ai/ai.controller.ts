@@ -13,9 +13,13 @@ import { AiService } from './services/ai.service';
 import { AiSearchService } from './services/ai-search.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator';
-import { Workspace } from '@docmost/db/types/entity.types';
+import { AuthUser } from '../../common/decorators/auth-user.decorator';
+import { User, Workspace } from '@docmost/db/types/entity.types';
 import { AiGenerateDto, AiAnswerDto } from './dto/ai.dto';
 import { FastifyReply } from 'fastify';
+import { SpaceMemberRepo } from '@docmost/db/repos/space/space-member.repo';
+import { ResourcePermissionRepo } from '@docmost/db/repos/resource-permission';
+import { findHighestUserSpaceRole } from '@docmost/db/repos/space/utils';
 
 @Controller('ai')
 export class AiController {
@@ -24,6 +28,8 @@ export class AiController {
   constructor(
     private readonly aiService: AiService,
     private readonly aiSearchService: AiSearchService,
+    private readonly spaceMemberRepo: SpaceMemberRepo,
+    private readonly resourcePermRepo: ResourcePermissionRepo,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -75,10 +81,40 @@ export class AiController {
   @Post('answers')
   async aiAnswers(
     @Body() dto: AiAnswerDto,
+    @AuthUser() user: User,
     @AuthWorkspace() workspace: Workspace,
     @Res() res: FastifyReply,
   ) {
     this.checkAiSearchEnabled(workspace);
+
+    // Build user-scoped retrieval scope: collect denied resources across user's spaces
+    const excludedPageIds: string[] = [];
+    const excludedDirectoryIds: string[] = [];
+
+    const userSpaceIds = await this.spaceMemberRepo.getUserSpaceIds(user.id);
+    await Promise.all(
+      userSpaceIds.map(async (spaceId) => {
+        const userSpaceRoles = await this.spaceMemberRepo.getUserSpaceRoles(user.id, spaceId);
+        const spaceRole = findHighestUserSpaceRole(userSpaceRoles);
+        if (!spaceRole || spaceRole === 'none') return;
+
+        const overrides = await this.resourcePermRepo.getUserOverridesInSpace(
+          user.id, spaceId, workspace.id,
+        );
+        for (const o of overrides) {
+          if (o.role !== 'none') continue;
+          if (o.resourceType === 'page') excludedPageIds.push(o.resourceId);
+          if (o.resourceType === 'directory') excludedDirectoryIds.push(o.resourceId);
+        }
+      }),
+    );
+
+    const scope = (excludedPageIds.length > 0 || excludedDirectoryIds.length > 0)
+      ? {
+          ...(excludedPageIds.length > 0 && { excludedPageIds }),
+          ...(excludedDirectoryIds.length > 0 && { excludedDirectoryIds }),
+        }
+      : undefined;
 
     res.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -90,6 +126,7 @@ export class AiController {
       for await (const chunk of this.aiSearchService.answerWithContext({
         query: dto.query,
         workspaceId: workspace.id,
+        scope,
       })) {
         res.raw.write(`data: ${chunk}\n\n`);
       }
