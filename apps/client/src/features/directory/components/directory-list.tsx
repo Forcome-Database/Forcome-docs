@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Group, Stack, Table, Text, Tooltip } from "@mantine/core";
+import { ActionIcon, Button, Code, Group, Stack, Table, Text, Tooltip } from "@mantine/core";
 import {
   IconEdit,
   IconTrash,
@@ -22,6 +22,11 @@ interface DirectoryListProps {
   spaceId: string;
   readOnly?: boolean;
 }
+
+const rowActionStyle: React.CSSProperties = {
+  opacity: 0,
+  transition: "opacity 150ms",
+};
 
 export function DirectoryList({ spaceId, readOnly }: DirectoryListProps) {
   const { t } = useTranslation();
@@ -90,31 +95,42 @@ export function DirectoryList({ spaceId, readOnly }: DirectoryListProps) {
             <Table.Tr>
               <Table.Th>{t("Name")}</Table.Th>
               <Table.Th>{t("Slug")}</Table.Th>
-              {!readOnly && <Table.Th w={100}>{t("Actions")}</Table.Th>}
+              {!readOnly && <Table.Th w={120} ta="right">{t("Actions")}</Table.Th>}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {directories.map((dir) => (
-              <Table.Tr key={dir.id}>
+              <Table.Tr
+                key={dir.id}
+                style={{ cursor: "default" }}
+                onMouseEnter={(e) => {
+                  const actions = e.currentTarget.querySelector<HTMLElement>("[data-actions]");
+                  if (actions) actions.style.opacity = "1";
+                }}
+                onMouseLeave={(e) => {
+                  const actions = e.currentTarget.querySelector<HTMLElement>("[data-actions]");
+                  if (actions) actions.style.opacity = "0";
+                }}
+              >
                 <Table.Td>
-                  <Group gap="xs">
+                  <Group gap="xs" wrap="nowrap">
                     {dir.icon ? (
                       <span>{dir.icon}</span>
                     ) : (
-                      <IconFolder size={16} />
+                      <IconFolder size={16} style={{ flexShrink: 0 }} />
                     )}
-                    <Text size="sm">{dir.name}</Text>
+                    <Text size="sm" lineClamp={1}>{dir.name}</Text>
                   </Group>
                 </Table.Td>
                 <Table.Td>
-                  <Text size="sm" c="dimmed">
+                  <Code style={{ fontSize: "var(--mantine-font-size-xs)", background: "transparent" }}>
                     {dir.slug}
-                  </Text>
+                  </Code>
                 </Table.Td>
                 {!readOnly && (
                   <Table.Td>
-                    <Group gap="xs">
-                      <Tooltip label={t("Manage permissions")} openDelay={250} withArrow>
+                    <Group gap={4} wrap="nowrap" justify="flex-end" data-actions style={rowActionStyle}>
+                      <Tooltip label={t("Manage permissions")} openDelay={300} withArrow>
                         <ActionIcon
                           variant="subtle"
                           size="sm"
@@ -123,21 +139,25 @@ export function DirectoryList({ spaceId, readOnly }: DirectoryListProps) {
                           <IconShieldLock size={16} />
                         </ActionIcon>
                       </Tooltip>
-                      <ActionIcon
-                        variant="subtle"
-                        size="sm"
-                        onClick={() => handleEdit(dir)}
-                      >
-                        <IconEdit size={16} />
-                      </ActionIcon>
-                      <ActionIcon
-                        variant="subtle"
-                        size="sm"
-                        color="red"
-                        onClick={() => handleDelete(dir)}
-                      >
-                        <IconTrash size={16} />
-                      </ActionIcon>
+                      <Tooltip label={t("Edit")} openDelay={300} withArrow>
+                        <ActionIcon
+                          variant="subtle"
+                          size="sm"
+                          onClick={() => handleEdit(dir)}
+                        >
+                          <IconEdit size={16} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip label={t("Delete")} openDelay={300} withArrow>
+                        <ActionIcon
+                          variant="subtle"
+                          size="sm"
+                          color="red"
+                          onClick={() => handleDelete(dir)}
+                        >
+                          <IconTrash size={16} />
+                        </ActionIcon>
+                      </Tooltip>
                     </Group>
                   </Table.Td>
                 )}

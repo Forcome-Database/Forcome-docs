@@ -258,12 +258,11 @@ export function ResourcePermissionModal({
   const handleClearOverrides = () => {
     if (!permissions) return;
     modals.openConfirmModal({
-      title: t("Clear overrides (revert to inherited)"),
+      title: t("Clear all overrides"),
       children: (
         <Text size="sm">
           {t(
-            "Are you sure you want to clear all permission overrides? This {{type}} will revert to inheriting space permissions.",
-            { type: resourceType },
+            "Are you sure? This will revert to inheriting space permissions.",
           )}
         </Text>
       ),
@@ -305,16 +304,13 @@ export function ResourcePermissionModal({
           icon={<IconInfoCircle size={16} />}
           color={hasOverrides ? "blue" : "gray"}
           variant="light"
+          py="xs"
         >
-          {hasOverrides
-            ? t(
-                "This {{type}} has custom permission overrides. These override inherited space permissions.",
-                { type: resourceType },
-              )
-            : t(
-                "This {{type}} inherits permissions from its space. Add overrides below to customize access.",
-                { type: resourceType },
-              )}
+          <Text size="sm">
+            {hasOverrides
+              ? t("Custom overrides are active. These replace inherited space permissions.")
+              : t("Inheriting from space. Add overrides below to customize.")}
+          </Text>
         </Alert>
 
         {isLoading ? (
@@ -322,70 +318,79 @@ export function ResourcePermissionModal({
             <Loader size="sm" />
           </Group>
         ) : hasOverrides ? (
-          <Table highlightOnHover verticalSpacing={8}>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>{t("Principal")}</Table.Th>
-                <Table.Th>{t("Type")}</Table.Th>
-                <Table.Th>{t("Role")}</Table.Th>
-                <Table.Th w={50}></Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {permissions.map((record) => (
-                <Table.Tr key={record.id}>
-                  <Table.Td>
-                    <PrincipalLabel record={record} />
-                  </Table.Td>
-                  <Table.Td>
-                    <Badge size="sm" variant="outline" color="gray">
-                      {record.principalType}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    <Select
-                      size="xs"
-                      data={roleOptions}
-                      value={record.role}
-                      onChange={(val) => val && handleRoleChange(record, val)}
-                      w={130}
-                      allowDeselect={false}
-                    />
-                  </Table.Td>
-                  <Table.Td>
-                    <ActionIcon
-                      variant="subtle"
-                      size="sm"
-                      color="red"
-                      onClick={() => handleRemove(record.id)}
-                      loading={deletingId === record.id}
-                    >
-                      <IconTrash size={15} />
-                    </ActionIcon>
-                  </Table.Td>
+          <>
+            <Table highlightOnHover verticalSpacing={8}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>{t("Member")}</Table.Th>
+                  <Table.Th>{t("Role")}</Table.Th>
+                  <Table.Th w={40}></Table.Th>
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {permissions.map((record) => (
+                  <Table.Tr key={record.id}>
+                    <Table.Td>
+                      <Group gap={8} wrap="nowrap">
+                        <PrincipalLabel record={record} />
+                        <Badge size="xs" variant="light" color="gray" style={{ flexShrink: 0 }}>
+                          {record.principalType === "user" ? t("User") : t("Group")}
+                        </Badge>
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>
+                      <Select
+                        size="xs"
+                        data={roleOptions}
+                        value={record.role}
+                        onChange={(val) => val && handleRoleChange(record, val)}
+                        w={140}
+                        allowDeselect={false}
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <ActionIcon
+                        variant="subtle"
+                        size="sm"
+                        color="red"
+                        onClick={() => handleRemove(record.id)}
+                        loading={deletingId === record.id}
+                      >
+                        <IconTrash size={15} />
+                      </ActionIcon>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+
+            <Group justify="flex-end">
+              <Button
+                variant="subtle"
+                size="xs"
+                color="red"
+                onClick={handleClearOverrides}
+              >
+                {t("Clear all overrides")}
+              </Button>
+            </Group>
+          </>
         ) : (
-          <Text c="dimmed" ta="center" py="sm" size="sm">
-            {t("No permission overrides. Access is inherited from the space.")}
+          <Text c="dimmed" ta="center" py="md" size="sm">
+            {t("No overrides. Access is inherited from the space.")}
           </Text>
         )}
 
         {showAddForm ? (
           <Stack
-            gap="xs"
+            gap="sm"
             p="sm"
             style={{
               border: "1px solid var(--mantine-color-default-border)",
               borderRadius: 8,
             }}
           >
-            <Text size="sm" fw={500}>
-              {t("Add permission override")}
-            </Text>
-            <Group align="flex-end" wrap="nowrap">
+            <Group align="flex-end" wrap="nowrap" gap="sm">
               <Select
                 label={t("Type")}
                 size="xs"
@@ -402,7 +407,7 @@ export function ResourcePermissionModal({
                   }))
                 }
                 allowDeselect={false}
-                style={{ flex: "0 0 100px" }}
+                style={{ flex: "0 0 90px" }}
               />
               <div style={{ flex: 1 }}>
                 <PrincipalSelect
@@ -427,7 +432,7 @@ export function ResourcePermissionModal({
                   val && setAddForm((f) => ({ ...f, role: val }))
                 }
                 allowDeselect={false}
-                style={{ flex: "0 0 130px" }}
+                style={{ flex: "0 0 120px" }}
               />
             </Group>
             <Group justify="flex-end" gap="xs">
@@ -449,36 +454,14 @@ export function ResourcePermissionModal({
             </Group>
           </Stack>
         ) : (
-          <Group justify="space-between">
-            <Button
-              variant="light"
-              size="xs"
-              leftSection={<IconUserPlus size={15} />}
-              onClick={() => setShowAddForm(true)}
-            >
-              {t("Add member / group")}
-            </Button>
-
-            {hasOverrides && (
-              <Button
-                variant="subtle"
-                size="xs"
-                color="red"
-                onClick={handleClearOverrides}
-              >
-                {t("Clear overrides (revert to inherited)")}
-              </Button>
-            )}
-          </Group>
-        )}
-
-        {!hasOverrides && !showAddForm && (
-          <Text size="xs" c="dimmed" ta="center">
-            {t(
-              "When all overrides are removed, this {{type}} reverts to inheriting space permissions.",
-              { type: resourceType },
-            )}
-          </Text>
+          <Button
+            variant="light"
+            size="xs"
+            leftSection={<IconUserPlus size={15} />}
+            onClick={() => setShowAddForm(true)}
+          >
+            {t("Add member / group")}
+          </Button>
         )}
       </Stack>
     </Modal>

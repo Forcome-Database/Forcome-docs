@@ -809,5 +809,14 @@
   "None (deny)": "无权限（拒绝）",
   "Manage permissions": "管理权限",
   "Clear": "清除",
-  "Permissions": "权限管理"
+  "Permissions": "权限管理",
+  "Custom overrides are active. These replace inherited space permissions.": "已设置自定义权限覆盖，将替代继承自空间的权限。",
+  "Inheriting from space. Add overrides below to customize.": "继承空间权限。可在下方添加覆盖以自定义访问。",
+  "No overrides. Access is inherited from the space.": "无权限覆盖，访问权限继承自空间。",
+  "Clear all overrides": "清除所有覆盖",
+  "Are you sure? This will revert to inheriting space permissions.": "确定要清除吗？将恢复继承空间权限。",
+  "Search by name or email…": "按姓名或邮箱搜索…",
+  "Search groups…": "搜索群组…",
+  "Type to search…": "输入以搜索…",
+  "No results": "无结果"
 }

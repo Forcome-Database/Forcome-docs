@@ -124,7 +124,11 @@ PydanticAI 双 Agent（Creation + Editing）+ 5 工具 + 选区编辑 + Redis �
 | `resource-permission.repo.ts` | 数据访问层（CRUD + getUserOverridesInSpace + findHiddenForPublic） |
 | `resource-permission.controller.ts` | CRUD API（list/add/update/remove） |
 | `resource-permission.service.ts` | 业务逻辑 + 事件监听 + 自动添加 space 成员 |
-| `resource-permission-modal.tsx` | 前端权限管理弹窗 |
+| `resource-permission-modal.tsx` | 前端权限管理弹窗（3列布局：成员+类型badge / 角色 / 删除） |
+| `settings-modal.tsx` | 空间设置弹窗（4 tabs：设置/成员/目录/主题，统一 panelStyle） |
+| `space-members.tsx` | 成员列表（搜索+添加同行、直接删除图标替代 ... 菜单） |
+| `directory-list.tsx` | 目录列表（hover 显示操作按钮、Code slug 样式） |
+| `topic-list.tsx` | 主题列表（与目录列表交互模式一致） |
 
 ### 关键设计决策
 

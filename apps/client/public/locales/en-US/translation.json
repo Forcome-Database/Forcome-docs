@@ -807,5 +807,14 @@
   "None (deny)": "None (deny)",
   "Manage permissions": "Manage permissions",
   "Clear": "Clear",
-  "Permissions": "Permissions"
+  "Permissions": "Permissions",
+  "Custom overrides are active. These replace inherited space permissions.": "Custom overrides are active. These replace inherited space permissions.",
+  "Inheriting from space. Add overrides below to customize.": "Inheriting from space. Add overrides below to customize.",
+  "No overrides. Access is inherited from the space.": "No overrides. Access is inherited from the space.",
+  "Clear all overrides": "Clear all overrides",
+  "Are you sure? This will revert to inheriting space permissions.": "Are you sure? This will revert to inheriting space permissions.",
+  "Search by name or email…": "Search by name or email…",
+  "Search groups…": "Search groups…",
+  "Type to search…": "Type to search…",
+  "No results": "No results"
 }

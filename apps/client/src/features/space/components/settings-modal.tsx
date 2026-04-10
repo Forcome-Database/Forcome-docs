@@ -1,4 +1,4 @@
-import { Modal, Tabs, rem, Group, ScrollArea, Text } from "@mantine/core";
+import { Modal, Tabs, rem, ScrollArea, Text } from "@mantine/core";
 import SpaceMembersList from "@/features/space/components/space-members.tsx";
 import AddSpaceMembersModal from "@/features/space/components/add-space-members-modal.tsx";
 import React from "react";
@@ -30,109 +30,108 @@ export default function SpaceSettingsModal({
   const spaceRules = space?.membership?.permissions;
   const spaceAbility = useSpaceAbility(spaceRules);
 
+  const panelStyle: React.CSSProperties = { paddingTop: 16, paddingBottom: 60 };
+
   return (
-    <>
-      <Modal.Root
-        opened={opened}
-        onClose={onClose}
-        size={600}
-        padding="xl"
-        yOffset="10vh"
-        xOffset={0}
-        mah={400}
-      >
-        <Modal.Overlay />
-        <Modal.Content style={{ overflow: "hidden" }}>
-          <Modal.Header py={0}>
-            <Modal.Title>
-              <Text fw={500} lineClamp={1}>
-                {space?.name}
-              </Text>
-            </Modal.Title>
-            <Modal.CloseButton />
-          </Modal.Header>
-          <Modal.Body>
-            <div style={{ height: rem(600) }}>
-              <Tabs defaultValue="members">
-                <Tabs.List>
-                  <Tabs.Tab fw={500} value="general">
-                    {t("Settings")}
-                  </Tabs.Tab>
-                  <Tabs.Tab fw={500} value="members">
-                    {t("Members")}
-                  </Tabs.Tab>
-                  <Tabs.Tab fw={500} value="directories">
-                    {t("Directories")}
-                  </Tabs.Tab>
-                  <Tabs.Tab fw={500} value="topics">
-                    {t("Topics")}
-                  </Tabs.Tab>
-                </Tabs.List>
+    <Modal.Root
+      opened={opened}
+      onClose={onClose}
+      size={620}
+      padding="xl"
+      yOffset="8vh"
+      xOffset={0}
+    >
+      <Modal.Overlay />
+      <Modal.Content style={{ overflow: "hidden" }}>
+        <Modal.Header py={0}>
+          <Modal.Title>
+            <Text fw={500} lineClamp={1}>
+              {space?.name}
+            </Text>
+          </Modal.Title>
+          <Modal.CloseButton />
+        </Modal.Header>
+        <Modal.Body>
+          <div style={{ height: rem(560) }}>
+            <Tabs defaultValue="members">
+              <Tabs.List>
+                <Tabs.Tab fw={500} value="general">
+                  {t("Settings")}
+                </Tabs.Tab>
+                <Tabs.Tab fw={500} value="members">
+                  {t("Members")}
+                </Tabs.Tab>
+                <Tabs.Tab fw={500} value="directories">
+                  {t("Directories")}
+                </Tabs.Tab>
+                <Tabs.Tab fw={500} value="topics">
+                  {t("Topics")}
+                </Tabs.Tab>
+              </Tabs.List>
 
-                <Tabs.Panel value="general">
-                  <ScrollArea h={580} scrollbarSize={5} pr={8}>
-                    <div style={{ paddingBottom: "100px"}}>
-                      <SpaceDetails
-                        spaceId={space?.id}
-                        readOnly={spaceAbility.cannot(
-                          SpaceCaslAction.Manage,
-                          SpaceCaslSubject.Settings,
-                        )}
-                      />
-                    </div>
+              <Tabs.Panel value="general">
+                <ScrollArea h={530} scrollbarSize={5} pr={8}>
+                  <div style={panelStyle}>
+                    <SpaceDetails
+                      spaceId={space?.id}
+                      readOnly={spaceAbility.cannot(
+                        SpaceCaslAction.Manage,
+                        SpaceCaslSubject.Settings,
+                      )}
+                    />
+                  </div>
+                </ScrollArea>
+              </Tabs.Panel>
 
-                  </ScrollArea>
-                </Tabs.Panel>
-
-                <Tabs.Panel value="members">
-                  <Group my="md" justify="flex-end">
-                    {spaceAbility.can(
-                      SpaceCaslAction.Manage,
-                      SpaceCaslSubject.Member,
-                    ) && <AddSpaceMembersModal spaceId={space?.id} />}
-                  </Group>
-
+              <Tabs.Panel value="members">
+                <div style={panelStyle}>
                   <SpaceMembersList
                     spaceId={space?.id}
                     readOnly={spaceAbility.cannot(
                       SpaceCaslAction.Manage,
                       SpaceCaslSubject.Member,
                     )}
+                    headerRight={
+                      spaceAbility.can(
+                        SpaceCaslAction.Manage,
+                        SpaceCaslSubject.Member,
+                      ) ? <AddSpaceMembersModal spaceId={space?.id} /> : undefined
+                    }
                   />
-                </Tabs.Panel>
+                </div>
+              </Tabs.Panel>
 
-                <Tabs.Panel value="directories">
-                  <ScrollArea h={580} scrollbarSize={5} pr={8}>
-                    <div style={{ paddingTop: "16px", paddingBottom: "100px" }}>
-                      <DirectoryList
-                        spaceId={space?.id}
-                        readOnly={spaceAbility.cannot(
-                          SpaceCaslAction.Manage,
-                          SpaceCaslSubject.Settings,
-                        )}
-                      />
-                    </div>
-                  </ScrollArea>
-                </Tabs.Panel>
+              <Tabs.Panel value="directories">
+                <ScrollArea h={530} scrollbarSize={5} pr={8}>
+                  <div style={panelStyle}>
+                    <DirectoryList
+                      spaceId={space?.id}
+                      readOnly={spaceAbility.cannot(
+                        SpaceCaslAction.Manage,
+                        SpaceCaslSubject.Settings,
+                      )}
+                    />
+                  </div>
+                </ScrollArea>
+              </Tabs.Panel>
 
-                <Tabs.Panel value="topics">
-                  <ScrollArea h={580} scrollbarSize={5} pr={8}>
-                    <div style={{ paddingTop: "16px", paddingBottom: "100px" }}>
-                      <TopicList
-                        spaceId={space?.id}
-                        readOnly={spaceAbility.cannot(
-                          SpaceCaslAction.Manage,
-                          SpaceCaslSubject.Settings,
-                        )}
-                      />
-                    </div>
-                  </ScrollArea>
-                </Tabs.Panel>
-              </Tabs>
-            </div>
-          </Modal.Body>
-        </Modal.Content>
-      </Modal.Root>
-    </>
+              <Tabs.Panel value="topics">
+                <ScrollArea h={530} scrollbarSize={5} pr={8}>
+                  <div style={panelStyle}>
+                    <TopicList
+                      spaceId={space?.id}
+                      readOnly={spaceAbility.cannot(
+                        SpaceCaslAction.Manage,
+                        SpaceCaslSubject.Settings,
+                      )}
+                    />
+                  </div>
+                </ScrollArea>
+              </Tabs.Panel>
+            </Tabs>
+          </div>
+        </Modal.Body>
+      </Modal.Content>
+    </Modal.Root>
   );
 }

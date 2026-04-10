@@ -2,12 +2,12 @@ import {
   Group,
   Table,
   Text,
-  Menu,
   ActionIcon,
   ScrollArea,
+  Tooltip,
 } from "@mantine/core";
 import React from "react";
-import { IconDots } from "@tabler/icons-react";
+import { IconTrash } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { CustomAvatar } from "@/components/ui/custom-avatar.tsx";
 import {
@@ -34,11 +34,13 @@ type MemberType = "user" | "group";
 interface SpaceMembersProps {
   spaceId: string;
   readOnly?: boolean;
+  headerRight?: React.ReactNode;
 }
 
 export default function SpaceMembersList({
   spaceId,
   readOnly,
+  headerRight,
 }: SpaceMembersProps) {
   const { t } = useTranslation();
   const { search, cursor, goNext, goPrev, handleSearch } = usePaginateAndSearch();
@@ -113,95 +115,89 @@ export default function SpaceMembersList({
 
   return (
     <>
-      <SearchInput onSearch={handleSearch} />
+      <Group gap="sm" mb="sm" align="flex-end" wrap="nowrap">
+        <div style={{ flex: 1 }}>
+          <SearchInput onSearch={handleSearch} mb={0} />
+        </div>
+        {headerRight}
+      </Group>
       <ScrollArea h={450}>
-        <Table.ScrollContainer minWidth={500}>
-          <Table highlightOnHover verticalSpacing={8}>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>{t("Member")}</Table.Th>
-                <Table.Th>{t("Role")}</Table.Th>
-                <Table.Th></Table.Th>
-              </Table.Tr>
-            </Table.Thead>
+        <Table highlightOnHover verticalSpacing={8}>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>{t("Member")}</Table.Th>
+              <Table.Th>{t("Role")}</Table.Th>
+              {!readOnly && <Table.Th w={50}></Table.Th>}
+            </Table.Tr>
+          </Table.Thead>
 
-            <Table.Tbody>
-              {data?.items.map((member, index) => (
-                <Table.Tr key={index}>
-                  <Table.Td>
-                    <Group gap="sm" wrap="nowrap">
-                      {member.type === "user" && (
-                        <CustomAvatar
-                          avatarUrl={member?.avatarUrl}
-                          name={member.name}
-                        />
-                      )}
-
-                      {member.type === "group" && <IconGroupCircle />}
-
-                      <div style={{ minWidth: 0, overflow: "hidden", maxWidth: 260 }}>
-                        <AutoTooltipText fz="sm" fw={500}>
-                          {member?.name}
-                        </AutoTooltipText>
-                        <Text fz="xs" c="dimmed">
-                          {member.type == "user" && member?.email}
-
-                          {member.type == "group" &&
-                            `${t("Group")} - ${formatMemberCount(member?.memberCount, t)}`}
-                        </Text>
-                      </div>
-                    </Group>
-                  </Table.Td>
-
-                  <Table.Td>
-                    <RoleSelectMenu
-                      roles={spaceRoleData}
-                      roleName={getSpaceRoleLabel(member.role)}
-                      onChange={(newRole) =>
-                        handleRoleChange(
-                          member.id,
-                          member.type,
-                          newRole,
-                          member.role,
-                        )
-                      }
-                      disabled={readOnly}
-                    />
-                  </Table.Td>
-
-                  <Table.Td>
-                    {!readOnly && (
-                      <Menu
-                        shadow="xl"
-                        position="bottom-end"
-                        offset={20}
-                        width={200}
-                        withArrow
-                        arrowPosition="center"
-                      >
-                        <Menu.Target>
-                          <ActionIcon variant="subtle" c="gray">
-                            <IconDots size={20} stroke={2} />
-                          </ActionIcon>
-                        </Menu.Target>
-
-                        <Menu.Dropdown>
-                          <Menu.Item
-                            onClick={() =>
-                              openRemoveModal(member.id, member.type)
-                            }
-                          >
-                            {t("Remove space member")}
-                          </Menu.Item>
-                        </Menu.Dropdown>
-                      </Menu>
+          <Table.Tbody>
+            {data?.items.map((member, index) => (
+              <Table.Tr key={index}>
+                <Table.Td>
+                  <Group gap="sm" wrap="nowrap">
+                    {member.type === "user" && (
+                      <CustomAvatar
+                        avatarUrl={member?.avatarUrl}
+                        name={member.name}
+                      />
                     )}
+
+                    {member.type === "group" && <IconGroupCircle />}
+
+                    <div style={{ minWidth: 0, overflow: "hidden", maxWidth: 260 }}>
+                      <AutoTooltipText fz="sm" fw={500}>
+                        {member?.name}
+                      </AutoTooltipText>
+                      <Text fz="xs" c="dimmed">
+                        {member.type == "user" && member?.email}
+
+                        {member.type == "group" &&
+                          `${t("Group")} - ${formatMemberCount(member?.memberCount, t)}`}
+                      </Text>
+                    </div>
+                  </Group>
+                </Table.Td>
+
+                <Table.Td>
+                  <RoleSelectMenu
+                    roles={spaceRoleData}
+                    roleName={getSpaceRoleLabel(member.role)}
+                    onChange={(newRole) =>
+                      handleRoleChange(
+                        member.id,
+                        member.type,
+                        newRole,
+                        member.role,
+                      )
+                    }
+                    disabled={readOnly}
+                  />
+                </Table.Td>
+
+                {!readOnly && (
+                  <Table.Td>
+                    <Tooltip label={t("Remove")} openDelay={300} withArrow>
+                      <ActionIcon
+                        variant="subtle"
+                        size="sm"
+                        color="red"
+                        onClick={() =>
+                          openRemoveModal(member.id, member.type)
+                        }
+                        style={{ opacity: 0.5, transition: "opacity 150ms" }}
+                        onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.5"; }}
+                      >
+                        <IconTrash size={16} />
+                      </ActionIcon>
+                    </Tooltip>
                   </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+                )}
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
       </ScrollArea>
 
       {data?.items.length > 0 && (
