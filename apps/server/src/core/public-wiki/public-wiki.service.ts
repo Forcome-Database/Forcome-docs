@@ -701,7 +701,7 @@ export class PublicWikiService {
       title: page.title,
       icon: page.icon,
       content,
-      breadcrumbs,
+      breadcrumbs: breadcrumbs.filter(crumb => !hiddenPageIds.has(crumb.id)),
       spaceSlug: space.slug,
       spaceName: space.name,
       updatedAt: page.updatedAt,

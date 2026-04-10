@@ -607,7 +607,11 @@ export class PageController {
 
   @HttpCode(HttpStatus.OK)
   @Post('/breadcrumbs')
-  async getPageBreadcrumbs(@Body() dto: PageIdDto, @AuthUser() user: User) {
+  async getPageBreadcrumbs(
+    @Body() dto: PageIdDto,
+    @AuthUser() user: User,
+    @AuthWorkspace() workspace: Workspace,
+  ) {
     const page = await this.pageRepo.findById(dto.pageId);
     if (!page) {
       throw new NotFoundException('Page not found');
@@ -620,7 +624,22 @@ export class PageController {
     if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
     }
-    return this.pageService.getPageBreadCrumbs(page.id);
+
+    const ancestors = await this.pageService.getPageBreadCrumbs(page.id);
+
+    // Filter out denied ancestors (pages with none override)
+    const overrides = await this.resourcePermRepo.getUserOverridesInSpace(
+      user.id, page.spaceId, workspace.id,
+    );
+    const deniedPageIds = new Set<string>();
+    for (const o of overrides) {
+      if (o.role !== 'none') continue;
+      if (o.resourceType === 'page') deniedPageIds.add(o.resourceId);
+    }
+
+    return deniedPageIds.size > 0
+      ? ancestors.filter((a: any) => !deniedPageIds.has(a.id))
+      : ancestors;
   }
 
   /**
