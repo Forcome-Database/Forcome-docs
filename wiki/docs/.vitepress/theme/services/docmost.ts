@@ -38,7 +38,7 @@ export class DocmostService {
     })
 
     if (response.status === 401) {
-      if (typeof document !== 'undefined') {
+      if (typeof document !== 'undefined' && !window.location.pathname.startsWith('/login')) {
         document.cookie = 'authMarker=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
         window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname)
       }
@@ -157,7 +157,7 @@ export class DocmostService {
     }
 
     if (response.status === 401) {
-      if (typeof document !== 'undefined') {
+      if (typeof document !== 'undefined' && !window.location.pathname.startsWith('/login')) {
         document.cookie = 'authMarker=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
         window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname)
       }
