@@ -643,3 +643,20 @@ Step 3: 前端 UI + Wiki 改造（依赖 Step 0 已执行）
 | A3 | `findHighestUserSpaceRole` 中 `!highestRole` 对 none(rank=0) 潜在风险审计（JS `0 > undefined = false` 类型转换陷阱） | 中 |
 | A4 | UNION ALL null vs uuid 类型兼容性测试（PostgreSQL 严格类型检查，`null::uuid` 显式转换） | 低 |
 | A5 | WebSocket 实时权限撤销（Hocuspocus 断开 none 用户的协作连接） | 低 |
+
+## Known Limitations
+
+### None-Priority Rule
+When a user has multiple resource permissions on the same resource (direct + via groups), any `none` role causes immediate deny, even if a higher role (e.g. `writer`) exists via another path. To restore access, the `none` record must be explicitly removed from the `resource_permissions` table — adding a higher role via another group does not override it. This is by design (fail-closed security model). See `ResourceAbilityFactory.findEffectiveRole()`.
+
+### Real-Time Permission Revocation (Hocuspocus)
+Hocuspocus checks permissions at WebSocket connection time only (`AuthenticationExtension.onAuthenticate`). If a user's permission is downgraded to NONE while they have an active editing session, they are NOT disconnected. Changes made during this window are persisted via Yjs. Users must refresh to see updated permissions. Implementing real-time revocation would require periodic re-auth or a permission-change event → disconnect mechanism.
+
+### Wiki Directory NONE Semantics
+In the public wiki, directory-level group NONE hides ALL pages in that directory, even if individual pages have explicit non-NONE group overrides. This differs from the internal API where page-level overrides take precedence over directory (ResourceAbilityFactory.resolveRole Step 1). This is intentional — the public wiki treats directories as atomic visibility units for anonymous access.
+
+### Topic Visibility
+Topics have no independent permission control. A topic is visible whenever its parent directory is visible. To hide content within a visible directory, set NONE on individual pages, not topics.
+
+### WebSocket Sidebar Sync
+When resource permissions change, no real-time WebSocket event is emitted to update other users' sidebars. Users must refresh to see permission changes reflected in their navigation. The `ResourcePermissionController` does not emit socket events after CRUD operations.

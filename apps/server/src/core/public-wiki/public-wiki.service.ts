@@ -712,6 +712,12 @@ export class PublicWikiService {
     const hiddenDirIds = new Set(
       hiddenResources.filter(r => r.resourceType === 'directory').map(r => r.resourceId),
     );
+
+    // Design decision: directory NONE hides ALL contained pages from public wiki,
+    // even if individual pages have explicit non-NONE overrides via resource_permissions.
+    // This differs from the internal API where page-level overrides take precedence
+    // (ResourceAbilityFactory.resolveRole Step 1 returns page override before checking directory).
+    // Rationale: the public wiki treats directories as atomic visibility units for anonymous access.
     if (hiddenPageIds.has(page.id) || (page.directoryId && hiddenDirIds.has(page.directoryId))) {
       throw new NotFoundException('Page not found');
     }
