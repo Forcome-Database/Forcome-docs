@@ -105,12 +105,16 @@ export class PublicWikiController {
     @Req() req: FastifyRequest,
     @Res() res: FastifyReply,
   ) {
-    // No need for enforceOrigin — JWT auth is the access control now.
-    // CORS is handled by Fastify CORS plugin (origin: true, credentials: true).
+    // SSE bypasses Fastify response pipeline, so CORS headers must be set manually.
+    // (Fastify CORS plugin only adds headers to responses going through its pipeline,
+    // but res.raw.writeHead() writes directly to the Node.js socket.)
+    const origin = req.headers.origin as string | undefined;
     res.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': origin || '*',
+      'Access-Control-Allow-Credentials': 'true',
     });
 
     try {
