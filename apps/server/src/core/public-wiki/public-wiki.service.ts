@@ -653,14 +653,18 @@ export class PublicWikiService {
       throw new NotFoundException('Page not found');
     }
 
-    // Check user permission on this specific page via ResourceAbilityFactory
-    const ability = await this.resourceAbility.createForUser(
-      user,
-      'page',
-      page.id,
-      { directoryId: page.directoryId, spaceId: space.id },
-    );
-    if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Page)) {
+    // Check user permission using the same resolveUserSpaceAccess path
+    // as getSpaces/getDirectories/getSidebarTree (handles open spaces).
+    // DO NOT use ResourceAbilityFactory directly — it doesn't handle
+    // visibility='open' spaces where user isn't in space_members.
+    const access = await this.resolveUserSpaceAccess(user, space.id, workspaceId);
+    if (!access) {
+      throw new NotFoundException('Page not found');
+    }
+
+    // Check if this specific page is hidden for the user
+    const hiddenPageIds = this.buildHiddenPageIds([page], access);
+    if (hiddenPageIds.has(page.id)) {
       throw new NotFoundException('Page not found');
     }
 
@@ -682,25 +686,17 @@ export class PublicWikiService {
       content = jsonToHtml(processedContent);
     }
 
-    // Get breadcrumbs and filter denied ancestors
+    // Get breadcrumbs and filter denied ancestors (reuse 'access' from above)
     const breadcrumbs = await this.getPageBreadcrumbs(page.id);
-
-    // Filter breadcrumbs: resolve user's overrides in this space
-    const access = await this.resolveUserSpaceAccess(user, space.id, workspaceId);
-    let filteredBreadcrumbs = breadcrumbs;
-    if (access) {
-      const deniedPageIds = new Set<string>();
-      for (const o of access.overrides) {
-        if (o.role === 'none' && o.resourceType === 'page') {
-          deniedPageIds.add(o.resourceId);
-        }
-      }
-      if (deniedPageIds.size > 0) {
-        filteredBreadcrumbs = breadcrumbs.filter(
-          (crumb) => !deniedPageIds.has(crumb.id),
-        );
+    const deniedAncestorIds = new Set<string>();
+    for (const o of access.overrides) {
+      if (o.role === 'none' && o.resourceType === 'page') {
+        deniedAncestorIds.add(o.resourceId);
       }
     }
+    const filteredBreadcrumbs = deniedAncestorIds.size > 0
+      ? breadcrumbs.filter((crumb) => !deniedAncestorIds.has(crumb.id))
+      : breadcrumbs;
 
     return {
       id: page.id,
