@@ -20,6 +20,19 @@ export interface PageDeletedEvent {
   workspaceId: string;
 }
 
+export interface SpaceMemberRemovedEvent {
+  principalType: 'user' | 'group';
+  principalId: string;
+  spaceId: string;
+  workspaceId: string;
+}
+
+export interface WorkspaceUserDeletedEvent {
+  principalType: 'user' | 'group';
+  principalId: string;
+  workspaceId: string;
+}
+
 @Injectable()
 export class ResourcePermissionService {
   constructor(
@@ -152,5 +165,24 @@ export class ResourcePermissionService {
     for (const pageId of event.pageIds) {
       await this.resourcePermRepo.deleteByResource('page', pageId);
     }
+  }
+
+  @OnEvent(EventName.SPACE_MEMBER_REMOVED)
+  async handleSpaceMemberRemoved(event: SpaceMemberRemovedEvent): Promise<void> {
+    await this.resourcePermRepo.deleteByPrincipalInSpace(
+      event.principalType,
+      event.principalId,
+      event.spaceId,
+      event.workspaceId,
+    );
+  }
+
+  @OnEvent(EventName.WORKSPACE_USER_DELETED)
+  async handleWorkspaceUserDeleted(event: WorkspaceUserDeletedEvent): Promise<void> {
+    await this.resourcePermRepo.deleteByPrincipalInWorkspace(
+      event.principalType,
+      event.principalId,
+      event.workspaceId,
+    );
   }
 }

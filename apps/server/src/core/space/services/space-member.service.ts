@@ -17,6 +17,8 @@ import { SpaceRole } from '../../../common/helpers/types/permission';
 import { CursorPaginationResult } from '@docmost/db/pagination/cursor-pagination';
 import { WatcherRepo } from '@docmost/db/repos/watcher/watcher.repo';
 import { executeTx } from '@docmost/db/utils';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventName } from '../../../common/events/event.contants';
 
 @Injectable()
 export class SpaceMemberService {
@@ -26,6 +28,7 @@ export class SpaceMemberService {
     private spaceRepo: SpaceRepo,
     private watcherRepo: WatcherRepo,
     @InjectKysely() private readonly db: KyselyDB,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async addUserToSpace(
@@ -229,6 +232,13 @@ export class SpaceMemberService {
         dto.spaceId,
         { trx },
       );
+    });
+
+    this.eventEmitter.emit(EventName.SPACE_MEMBER_REMOVED, {
+      principalType: dto.userId ? 'user' : 'group',
+      principalId: dto.userId || dto.groupId,
+      spaceId: dto.spaceId,
+      workspaceId,
     });
   }
 

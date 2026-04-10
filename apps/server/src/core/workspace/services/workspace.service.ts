@@ -37,6 +37,8 @@ import { isPageEmbeddingsTableExists } from '@docmost/db/helpers/helpers';
 import { CursorPaginationResult } from '@docmost/db/pagination/cursor-pagination';
 import { ShareRepo } from '@docmost/db/repos/share/share.repo';
 import { WatcherRepo } from '@docmost/db/repos/watcher/watcher.repo';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventName } from '../../../common/events/event.contants';
 
 @Injectable()
 export class WorkspaceService {
@@ -58,6 +60,7 @@ export class WorkspaceService {
     @InjectQueue(QueueName.ATTACHMENT_QUEUE) private attachmentQueue: Queue,
     @InjectQueue(QueueName.BILLING_QUEUE) private billingQueue: Queue,
     @InjectQueue(QueueName.AI_QUEUE) private aiQueue: Queue,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async findById(workspaceId: string) {
@@ -574,6 +577,12 @@ export class WorkspaceService {
       await this.watcherRepo.deleteByUserAndWorkspace(userId, workspaceId, {
         trx,
       });
+    });
+
+    this.eventEmitter.emit(EventName.WORKSPACE_USER_DELETED, {
+      principalType: 'user' as const,
+      principalId: userId,
+      workspaceId,
     });
 
     try {

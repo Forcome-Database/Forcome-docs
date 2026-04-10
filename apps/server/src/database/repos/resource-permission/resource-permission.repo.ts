@@ -257,6 +257,67 @@ export class ResourcePermissionRepo {
       .execute();
   }
 
+  /**
+   * Delete all resource permissions for a principal within a space.
+   * Uses select+delete pattern for Kysely compatibility.
+   */
+  async deleteByPrincipalInSpace(
+    principalType: 'user' | 'group',
+    principalId: string,
+    spaceId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    const dirPerms = await this.db
+      .selectFrom('resourcePermissions')
+      .innerJoin('directories', 'directories.id', 'resourcePermissions.resourceId')
+      .select('resourcePermissions.id')
+      .where('resourcePermissions.principalType', '=', principalType)
+      .where('resourcePermissions.principalId', '=', principalId)
+      .where('resourcePermissions.workspaceId', '=', workspaceId)
+      .where('resourcePermissions.resourceType', '=', 'directory')
+      .where('directories.spaceId', '=', spaceId)
+      .execute();
+
+    const pagePerms = await this.db
+      .selectFrom('resourcePermissions')
+      .innerJoin('pages', 'pages.id', 'resourcePermissions.resourceId')
+      .select('resourcePermissions.id')
+      .where('resourcePermissions.principalType', '=', principalType)
+      .where('resourcePermissions.principalId', '=', principalId)
+      .where('resourcePermissions.workspaceId', '=', workspaceId)
+      .where('resourcePermissions.resourceType', '=', 'page')
+      .where('pages.spaceId', '=', spaceId)
+      .execute();
+
+    const idsToDelete = [
+      ...dirPerms.map((r) => r.id),
+      ...pagePerms.map((r) => r.id),
+    ];
+
+    if (idsToDelete.length > 0) {
+      await this.db
+        .deleteFrom('resourcePermissions')
+        .where('id', 'in', idsToDelete)
+        .execute();
+    }
+  }
+
+  /**
+   * Delete all resource permissions for a principal across the workspace.
+   */
+  async deleteByPrincipalInWorkspace(
+    principalType: 'user' | 'group',
+    principalId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    await this.db
+      .deleteFrom('resourcePermissions')
+      .where('principalType', '=', principalType)
+      .where('principalId', '=', principalId)
+      .where('workspaceId', '=', workspaceId)
+      .execute();
+  }
+
   async findHiddenForPublic(
     spaceId: string,
     workspaceId: string,
