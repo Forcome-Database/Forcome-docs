@@ -98,12 +98,10 @@ export class PublicWikiService {
     if (!space) return false;
     if (space.visibility === 'open') return true;
 
-    // Priority 2: Environment variable fallback (safe default)
+    // Priority 2: Environment variable whitelist
     const envSlugs = this.getPublicSpaceSlugs();
-    // undefined = env not configured → only DB-open spaces are public
-    if (envSlugs === undefined) return false;
-    // 空列表 = 显式设为空 → 所有空间公开（保持现有行为）
-    if (envSlugs.length === 0) return true;
+    // undefined (not configured or empty) → only DB-open spaces are public
+    if (!envSlugs || envSlugs.length === 0) return false;
     return envSlugs.map((s) => s.toLowerCase()).includes(slug.toLowerCase());
   }
 
@@ -134,14 +132,11 @@ export class PublicWikiService {
       .where('workspaceId', '=', workspaceId)
       .where((eb) => {
         const dbOpen = eb('visibility', '=', 'open');
-        // undefined = env not configured → only DB-open spaces
-        if (envSlugs === undefined) {
+        // No env whitelist → only DB-open spaces
+        if (!envSlugs || envSlugs.length === 0) {
           return dbOpen;
         }
-        // empty array = explicitly empty → all spaces are public
-        if (envSlugs.length === 0) {
-          return eb.or([dbOpen, eb.val(true)]);
-        }
+        // Env whitelist provided: include DB-open OR slug-matched
         const envMatch = eb.or(
           envSlugs.map((slug) =>
             eb(eb.fn('LOWER', ['slug']), '=', slug.toLowerCase()),
@@ -330,15 +325,10 @@ export class PublicWikiService {
       .select(['id', 'name', 'slug', 'description'])
       .where('workspaceId', '=', workspaceId)
       .where((eb) => {
-        // DB-visibility: always include open spaces
         const dbOpen = eb('visibility', '=', 'open');
-        // undefined = env not configured → only DB-open spaces
-        if (slugs === undefined) {
+        // No env whitelist → only DB-open spaces
+        if (!slugs || slugs.length === 0) {
           return dbOpen;
-        }
-        // empty array = explicitly empty → all spaces are public
-        if (slugs.length === 0) {
-          return eb.or([dbOpen, eb.val(true)]);
         }
         // Env whitelist provided: include DB-open OR slug-matched
         const envMatch = eb.or(
@@ -359,6 +349,7 @@ export class PublicWikiService {
           .select((eb) => eb.fn.countAll().as('count'))
           .where('spaceId', 'in', spaceIds)
           .where('deletedAt', 'is', null)
+          .where('visibility', '=', 'open')
           .groupBy('spaceId')
           .execute()
       : [];
@@ -390,10 +381,26 @@ export class PublicWikiService {
       .select(['id', 'name', 'slug', 'icon', 'position'])
       .where('spaceId', '=', space.id)
       .where('deletedAt', 'is', null)
+      .where('visibility', '=', 'open')
       .orderBy('position', 'asc')
       .execute();
 
-    return { items: directories };
+    // Filter out directories hidden via group NONE permission
+    const hiddenResources = await this.resourcePermissionRepo.findHiddenForPublic(
+      space.id,
+      workspaceId,
+    );
+    const hiddenDirIds = new Set(
+      hiddenResources
+        .filter((r) => r.resourceType === 'directory')
+        .map((r) => r.resourceId),
+    );
+
+    const visibleDirectories = hiddenDirIds.size > 0
+      ? directories.filter((d) => !hiddenDirIds.has(d.id))
+      : directories;
+
+    return { items: visibleDirectories };
   }
 
   async getSidebarTree(spaceSlug: string, workspaceId: string, directoryId?: string) {
@@ -469,16 +476,16 @@ export class PublicWikiService {
     directoryId: string,
     workspaceId: string,
   ) {
-    // Verify directory exists in this space
+    // Verify directory exists in this space and is publicly visible
     const directory = await this.db
       .selectFrom('directories')
-      .select(['id', 'name'])
+      .select(['id', 'name', 'visibility'])
       .where('id', '=', directoryId)
       .where('spaceId', '=', space.id)
       .where('deletedAt', 'is', null)
       .executeTakeFirst();
 
-    if (!directory) {
+    if (!directory || directory.visibility !== 'open') {
       throw new NotFoundException('Directory not found');
     }
 

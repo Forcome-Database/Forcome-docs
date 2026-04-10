@@ -72,7 +72,7 @@ export function useUpdateDirectoryMutation() {
   return useMutation<
     IDirectory,
     Error,
-    { directoryId: string; name?: string; description?: string; icon?: string }
+    { directoryId: string; name?: string; description?: string; icon?: string; visibility?: string }
   >({
     mutationFn: (data) => updateDirectory(data),
     onSuccess: (data) => {

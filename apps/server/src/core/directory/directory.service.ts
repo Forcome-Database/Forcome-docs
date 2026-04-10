@@ -93,6 +93,7 @@ export class DirectoryService {
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.icon !== undefined) updateData.icon = dto.icon;
     if (dto.position !== undefined) updateData.position = dto.position;
+    if (dto.visibility !== undefined) updateData.visibility = dto.visibility;
 
     return this.directoryRepo.updateDirectory(
       updateData,

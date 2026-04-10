@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Code, Group, Stack, Table, Text, Tooltip } from "@mantine/core";
+import { ActionIcon, Button, Code, Group, Stack, Switch, Table, Text, Tooltip } from "@mantine/core";
 import {
   IconEdit,
   IconTrash,
@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import {
   useGetDirectoriesQuery,
   useDeleteDirectoryMutation,
+  useUpdateDirectoryMutation,
 } from "../queries/directory-query";
 import { IDirectory } from "../types/directory.types";
 import { useDisclosure } from "@mantine/hooks";
@@ -32,6 +33,7 @@ export function DirectoryList({ spaceId, readOnly }: DirectoryListProps) {
   const { t } = useTranslation();
   const { data } = useGetDirectoriesQuery(spaceId);
   const deleteDir = useDeleteDirectoryMutation(spaceId);
+  const updateDir = useUpdateDirectoryMutation();
   const [opened, { open, close }] = useDisclosure(false);
   const [editingDir, setEditingDir] = useState<IDirectory | null>(null);
   const [permDir, setPermDir] = useState<IDirectory | null>(null);
@@ -95,6 +97,7 @@ export function DirectoryList({ spaceId, readOnly }: DirectoryListProps) {
             <Table.Tr>
               <Table.Th>{t("Name")}</Table.Th>
               <Table.Th>{t("Slug")}</Table.Th>
+              {!readOnly && <Table.Th w={80}>{t("Wiki")}</Table.Th>}
               {!readOnly && <Table.Th w={120} ta="right">{t("Actions")}</Table.Th>}
             </Table.Tr>
           </Table.Thead>
@@ -127,6 +130,21 @@ export function DirectoryList({ spaceId, readOnly }: DirectoryListProps) {
                     {dir.slug}
                   </Code>
                 </Table.Td>
+                {!readOnly && (
+                  <Table.Td>
+                    <Switch
+                      size="xs"
+                      checked={dir.visibility === "open"}
+                      onChange={(event) => {
+                        updateDir.mutate({
+                          directoryId: dir.id,
+                          visibility: event.currentTarget.checked ? "open" : "private",
+                        });
+                      }}
+                      aria-label={t("Toggle wiki visibility")}
+                    />
+                  </Table.Td>
+                )}
                 {!readOnly && (
                   <Table.Td>
                     <Group gap={4} wrap="nowrap" justify="flex-end" data-actions style={rowActionStyle}>
