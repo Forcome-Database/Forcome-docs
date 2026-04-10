@@ -428,7 +428,6 @@ export interface Directories {
   icon: string | null;
   slug: string;
   position: string | null;
-  visibility: Generated<string>;
   spaceId: string;
   workspaceId: string;
   creatorId: string | null;

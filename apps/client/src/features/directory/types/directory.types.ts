@@ -5,7 +5,6 @@ export interface IDirectory {
   icon?: string;
   slug: string;
   position: string;
-  visibility?: string;
   spaceId: string;
   workspaceId: string;
   creatorId: string;
