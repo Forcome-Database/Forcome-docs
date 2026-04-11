@@ -39,10 +39,28 @@ Docmost v0.25.3 是一个开源协作文档管理系统（类 Notion / Confluenc
 
 ## Wiki × Docmost 深度集成
 
-VitePress 知识库（`wiki/`）已深度集成 Docmost，作为公开只读前端。详细文档：
+VitePress 知识库（`wiki/`）已深度集成 Docmost，作为需要钉钉登录的内部前端（非公开匿名访问）。Wiki 权限与 Docmost 完全统一，使用同一套权限引擎（`ResourceAbilityFactory` + `SpaceMemberRepo` + `resource_permissions`）。详细文档：
 
 - **[集成细节](docs/wiki-integration-details.md)**：架构设计、API 端点、新建/修改文件清单、数据流、部署方案
 - **[踩坑记录](docs/wiki-integration-pitfalls.md)**：VitePress 路由拦截、CORS、SSR 兼容、Vue 响应式、API 响应格式等问题及解决方案
+- **[权限统一设计](docs/superpowers/specs/2026-04-10-wiki-permission-unification-design.md)**：Wiki 从公开端点迁移到用户认证权限引擎的设计方案
+
+### Wiki 权限统一（2026-04-10）
+
+Wiki 不再是公开只读前端——所有端点要求钉钉 JWT 认证，权限判断与 Docmost 内部完全一致。
+
+**核心变更：**
+- `public-wiki.controller.ts`：各数据端点移除 `@Public()`，加 `@AuthUser() user: User`（`settings` 端点例外，仍保留 `@Public()`）
+- `public-wiki.service.ts`：用 `space_members + visibility='open' UNION` + `getUserOverridesInSpace` 双模式过滤替换原全局开关逻辑
+- `wiki/docs/.vitepress/theme/services/docmost.ts`：`post()` 加 `credentials: 'include'`，401 时重定向到 `/login`
+- `WIKI_PUBLIC_SPACE_SLUGS` 环境变量已废弃，不再控制 Wiki 可见性
+- `directory.visibility` 字段已移除（由 `resource_permissions` 控制）
+- `findHiddenForPublic()` 保留，但仅用于 share link 端点，不再用于 Wiki
+
+**生产环境配置要求：**
+- `.env.prod` 需加 `COOKIE_DOMAIN=.forcome.com`（让 `docs-admin.forcome.com` 设置的 cookie 对 `docs.forcome.com` 也可见）
+
+**关键方法：`resolveUserSpaceAccess()`** — open 空间对非成员自动授予 reader 访问权（无需显式加入）。
 
 ## AI 提示词与模板管理
 
@@ -121,7 +139,7 @@ PydanticAI 双 Agent（Creation + Editing）+ 5 工具 + 选区编辑 + Redis �
 |------|------|
 | `resource-ability.factory.ts` | 三级权限解析引擎 |
 | `space-ability.factory.ts` | Space 级能力工厂（含 buildRestrictedAbility / buildNoneAbility） |
-| `resource-permission.repo.ts` | 数据访问层（CRUD + getUserOverridesInSpace + findHiddenForPublic） |
+| `resource-permission.repo.ts` | 数据访问层（CRUD + getUserOverridesInSpace + findHiddenForPublic（仅用于 share link 端点）） |
 | `resource-permission.controller.ts` | CRUD API（list/add/update/remove） |
 | `resource-permission.service.ts` | 业务逻辑 + 事件监听 + 自动添加 space 成员 |
 | `resource-permission-modal.tsx` | 前端权限管理弹窗（3列布局：成员+类型badge / 角色 / 删除） |
@@ -255,7 +273,7 @@ Docker 文件结构：
 - HNSW 索引参数 m=16, ef_construction=200；查询时 SET LOCAL hnsw.ef_search=100（需在事务内）
 - 图片节点必须有 `attachmentId`：`persistence.extension.ts` 的 `ensureImageAttachmentIds()` 在保存时从 src URL 提取
 - jiebacfg 搜索通过 `checkJiebaAvailable()` 条件启用（pg_jieba 未安装时自动回退到 English-only）
-- Wiki 公共 AI 问答用完整 JWT 签名 URL（不可用短 URL 替代，LLM 不保证原样输出 URL）
+- Wiki AI 问答用完整 JWT 签名 URL（不可用短 URL 替代，LLM 不保证原样输出 URL）；AI 限流键和会话键均改为 `user.id`（不再用 IP）
 - Adaptive 策略：HyDE（normalizedScore < 0.008）、CRAG（partial/tangential + entityCoverage < 0.5）、上下文标注（partial/tangential）——好查询零额外开销
 - 消歧最多 1 轮追问，通过 `{ disambiguation: true }` SSE 事件 + `isDisambiguation` flag 追踪
 - 全量重建：`rebuild-all-embeddings` BullMQ job，BATCH_SIZE=5 并发

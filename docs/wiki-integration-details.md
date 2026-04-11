@@ -2,7 +2,9 @@
 
 ## 概述
 
-将 VitePress 知识库项目（`wiki/`）深度集成到 Docmost 中，作为 Docmost 的**公开只读前端**。Docmost 中创建和管理的文档内容可以在 Wiki 中免登录浏览、搜索和 AI 问答，Wiki 保持原有的 UI 样式和交互体验。
+将 VitePress 知识库项目（`wiki/`）深度集成到 Docmost 中，作为 Docmost 的**只读前端**。Docmost 中创建和管理的文档内容可以在 Wiki 中浏览、搜索和 AI 问答，Wiki 保持原有的 UI 样式和交互体验。
+
+访问 Wiki 需要持有有效的 Docmost JWT（DingTalk 或普通登录），后端通过 `space_members` + `resource_permissions` + `ResourceAbilityFactory` 三级权限引擎控制可见内容。对于 `visibility='open'` 的空间，系统会通过 `resolveUserSpaceAccess()` 为非成员用户授予 reader 权限。
 
 ## 核心架构
 
@@ -13,8 +15,8 @@
 ```
 
 **关键特性**：
-- 免登录公开访问（访问者无需 Docmost 账号）
-- 侧边栏和内容由 Docmost API 动态驱动
+- 基于 Docmost JWT 的认证访问（访问者须持有有效 cookie）
+- 侧边栏和内容由 Docmost API 动态驱动，权限由后端统一过滤
 - AI 问答使用 Docmost AI（RAG + 向量检索）
 - 搜索使用 Docmost 全文搜索（PostgreSQL tsvector）
 - 保持 Wiki 现有 UI、主题、多语言支持
@@ -35,10 +37,12 @@
 
 ### Docmost 后端 `.env`
 ```env
-# 逗号分隔的公开空间 slug
-# 留空 = 自动公开所有空间（自动发现模式）
-# 填值 = 白名单模式，只公开指定空间
-WIKI_PUBLIC_SPACE_SLUGS=
+# Wiki 可见空间由 space_members + resource_permissions 权限引擎控制，
+# 不再通过 WIKI_PUBLIC_SPACE_SLUGS 白名单配置。
+# visibility='open' 的空间对所有已登录用户开放（resolveUserSpaceAccess 授予 reader 权限）。
+
+# 生产环境跨子域 cookie 共享（如 docmost.forcome.com 与 wiki.forcome.com）
+COOKIE_DOMAIN=.forcome.com
 ```
 
 ### Wiki 前端 `.env`（位于 `wiki/docs/.env`）
@@ -73,22 +77,23 @@ VITE_DOCMOST_API_URL=http://localhost:3000/api/public-wiki
 
 ### API 端点
 
-所有端点使用 `@Public()` 装饰器免认证，通过 `@AuthWorkspace()` 获取工作区上下文。
+除 `settings` 端点外，其余端点均需要有效的 Docmost JWT（通过 cookie 携带）。`settings` 端点使用 `@Public()` 装饰器，无需认证。
 
-| 端点 | 请求体 | 说明 |
-|------|--------|------|
-| `POST /api/public-wiki/spaces` | 无 | 返回公开空间列表 |
-| `POST /api/public-wiki/sidebar` | `{ spaceSlug }` | 返回空间的递归页面树 |
-| `POST /api/public-wiki/page` | `{ slugId?, pageId?, format? }` | 返回页面 HTML/Markdown 内容 |
-| `POST /api/public-wiki/search` | `{ query, spaceSlug?, limit? }` | 全文搜索公开页面 |
-| `POST /api/public-wiki/ai/answers` | `{ query, pageSlugId? }` | AI 问答（SSE 流式响应，可指定当前页面上下文） |
+| 端点 | 认证 | 请求体 | 说明 |
+|------|------|--------|------|
+| `POST /api/public-wiki/settings` | 无（`@Public()`） | 无 | 返回 Wiki 公开设置（renderFormat 等） |
+| `POST /api/public-wiki/spaces` | JWT (cookie) | 无 | 返回当前用户有权访问的空间列表 |
+| `POST /api/public-wiki/sidebar` | JWT (cookie) | `{ spaceSlug }` | 返回空间的递归页面树（按权限过滤） |
+| `POST /api/public-wiki/page` | JWT (cookie) | `{ slugId?, pageId?, format? }` | 返回页面 HTML/Markdown 内容 |
+| `POST /api/public-wiki/search` | JWT (cookie) | `{ query, spaceSlug?, limit? }` | 全文搜索可见页面 |
+| `POST /api/public-wiki/ai/answers` | JWT (cookie) | `{ query, pageSlugId? }` | AI 问答（SSE 流式响应，可指定当前页面上下文） |
 
 ### 服务层核心逻辑
 
 **`PublicWikiService`** 主要方法：
 
-- **`getPublicSpaces()`** — 查询 `spaces` 表。slugs 为空时返回所有空间（自动发现），有值时按白名单过滤（大小写不敏感）
-- **`getSidebarTree()`** — 查询空间全部页面，`buildTree()` 递归构建树结构（按 `position` 排序）
+- **`getPublicSpaces()`** — 通过 `resolveUserSpaceAccess()` 查询当前用户有权访问的空间，`visibility='open'` 的空间对所有已登录用户开放（授予 reader 权限）
+- **`getSidebarTree()`** — 查询空间全部页面，经 `ResourceAbilityFactory` 按用户权限过滤后，`buildTree()` 递归构建树结构（按 `position` 排序）
 - **`getPage()`** — 查找页面并验证属于公开空间，处理附件公开 URL，生成 HTML/Markdown
 - **`searchPublicPages()`** — 遍历公开空间调用 `SearchService.searchPage()`，合并排序
 - **`aiAnswers(query, workspaceId, pageSlugId?)`** — 通过 `ModuleRef` 动态获取 EE 的 `AiSearchService`，传递可选的当前页面 slugId，yield SSE 流
