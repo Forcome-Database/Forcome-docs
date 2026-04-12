@@ -69,14 +69,21 @@ export class DirectoryController {
       );
 
       const allowedDirectoryIds = new Set<string>();
+      // Map directoryId -> effective role for direct directory overrides
+      const directoryRoles = new Map<string, string>();
       for (const override of overrides) {
         if (override.role === 'none') continue;
         if (override.resourceType === 'directory') {
           allowedDirectoryIds.add(override.resourceId);
+          directoryRoles.set(override.resourceId, override.role);
         }
         // Page override: also show its parent directory as a navigation container
         if (override.resourceType === 'page' && override.directoryId) {
           allowedDirectoryIds.add(override.directoryId);
+          // Navigation container: user has no direct directory permission, mark as reader
+          if (!directoryRoles.has(override.directoryId)) {
+            directoryRoles.set(override.directoryId, 'reader');
+          }
         }
       }
 
@@ -86,9 +93,9 @@ export class DirectoryController {
         pagination,
       );
 
-      result.items = result.items.filter((dir) =>
-        allowedDirectoryIds.has(dir.id),
-      );
+      result.items = result.items
+        .filter((dir) => allowedDirectoryIds.has(dir.id))
+        .map((dir) => ({ ...dir, effectiveRole: directoryRoles.get(dir.id) }));
 
       return result;
     }
@@ -105,16 +112,19 @@ export class DirectoryController {
     );
 
     // Deny-override filtering: hide directories with explicit role='none' override
-    const noneOverrides = await this.resourcePermRepo.getUserOverridesInSpace(
+    const allOverrides = await this.resourcePermRepo.getUserOverridesInSpace(
       user.id,
       dto.spaceId,
       workspace.id,
     );
     const deniedDirectoryIds = new Set<string>();
-    for (const override of noneOverrides) {
-      if (override.role !== 'none') continue;
-      if (override.resourceType === 'directory') {
+    const directoryRoleOverrides = new Map<string, string>();
+    for (const override of allOverrides) {
+      if (override.resourceType !== 'directory') continue;
+      if (override.role === 'none') {
         deniedDirectoryIds.add(override.resourceId);
+      } else {
+        directoryRoleOverrides.set(override.resourceId, override.role);
       }
     }
     if (deniedDirectoryIds.size > 0) {
@@ -122,6 +132,12 @@ export class DirectoryController {
         (dir) => !deniedDirectoryIds.has(dir.id),
       );
     }
+
+    // Attach effectiveRole: directory override takes priority, fallback to space role
+    result.items = result.items.map((dir) => ({
+      ...dir,
+      effectiveRole: directoryRoleOverrides.get(dir.id) || spaceRole,
+    }));
 
     return result;
   }
@@ -180,7 +196,7 @@ export class DirectoryController {
       user, 'directory', directory.id,
       { spaceId: directory.spaceId },
     );
-    if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Settings)) {
+    if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Directory)) {
       throw new ForbiddenException();
     }
     return this.directoryService.updateDirectory(dto, workspace.id);

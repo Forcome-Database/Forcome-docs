@@ -72,7 +72,7 @@ VITE_DOCMOST_API_URL=http://localhost:3000/api/public-wiki
 |------|---------|
 | `apps/server/src/core/core.module.ts` | imports 添加 `PublicWikiModule` |
 | `apps/server/src/core/search/search.module.ts` | exports 添加 `SearchService`（供 PublicWikiModule 注入） |
-| `apps/server/src/integrations/environment/environment.service.ts` | 新增 `getWikiPublicSpaceSlugs()` 方法 |
+| `apps/server/src/integrations/environment/environment.service.ts` | 新增 `getCookieDomain()` 方法（生产跨域 cookie 配置） |
 | `apps/server/src/main.ts` | 直接 `await` 注册 `@fastify/cors` + `/api/public-wiki` 加入 excludedPaths |
 
 ### API 端点
@@ -94,8 +94,8 @@ VITE_DOCMOST_API_URL=http://localhost:3000/api/public-wiki
 
 - **`getPublicSpaces()`** — 通过 `resolveUserSpaceAccess()` 查询当前用户有权访问的空间，`visibility='open'` 的空间对所有已登录用户开放（授予 reader 权限）
 - **`getSidebarTree()`** — 查询空间全部页面，经 `ResourceAbilityFactory` 按用户权限过滤后，`buildTree()` 递归构建树结构（按 `position` 排序）
-- **`getPage()`** — 查找页面并验证属于公开空间，处理附件公开 URL，生成 HTML/Markdown
-- **`searchPublicPages()`** — 遍历公开空间调用 `SearchService.searchPage()`，合并排序
+- **`getPage()`** — 查找页面并验证用户有读取权限，处理附件公开 URL，生成 HTML/Markdown
+- **`searchPublicPages()`** — 遍历用户有权访问的空间调用 `SearchService.searchPage()`，合并排序
 - **`aiAnswers(query, workspaceId, pageSlugId?)`** — 通过 `ModuleRef` 动态获取 EE 的 `AiSearchService`，传递可选的当前页面 slugId，yield SSE 流
 - **`updatePublicAttachments()`** — 为页面附件生成临时签名 token（复用 `TokenService`）
 - **`getPageBreadcrumbs()`** — PostgreSQL 递归 CTE 查询页面祖先链
@@ -103,13 +103,17 @@ VITE_DOCMOST_API_URL=http://localhost:3000/api/public-wiki
 ### 权限与安全模型
 
 ```
-@Public() 装饰器
-    → JwtAuthGuard 跳过认证
-    → DomainMiddleware 仍解析 workspaceId
-    → @AuthWorkspace() 获取工作区上下文
-    → PublicWikiService 限制只返回公开空间数据
+JWT (cookie) 认证（settings 端点除外）
+    → JwtAuthGuard 验证 cookie 中的 JWT
+    → DomainMiddleware 解析 workspaceId
+    → @AuthUser() 获取当前用户上下文
+    → PublicWikiService 通过 resolveUserSpaceAccess() 解析空间访问权限
+    → ResourceAbilityFactory 三级权限解析（space_members → resource_permissions）
+    → 返回当前用户有权访问的内容
     → 附件通过签名 token 临时授权访问
 ```
+
+> **注意**：Wiki 前端所有 API 请求必须携带 `credentials: 'include'`，以确保浏览器自动发送 cookie。
 
 ---
 
@@ -197,8 +201,8 @@ const isLoaded = ref(false)
 ### API 服务层
 
 `DocmostService` 封装所有 API 调用：
-- `post<T>()` — 通用 POST 方法，自动解包 `TransformHttpResponseInterceptor` 的 `{ data, success, status }` 响应包装
-- `aiAnswers(query, pageSlugId?)` — AsyncGenerator 模式消费 SSE 流，可传递当前页面 slugId 以获取精准上下文
+- `post<T>()` — 通用 POST 方法，自动解包 `TransformHttpResponseInterceptor` 的 `{ data, success, status }` 响应包装；所有请求携带 `credentials: 'include'` 以发送认证 cookie
+- `aiAnswers(query, pageSlugId?)` — AsyncGenerator 模式消费 SSE 流，同样携带 `credentials: 'include'`，可传递当前页面 slugId 以获取精准上下文
 - `abort()` — AbortController 取消进行中的请求
 
 ### AI 聊天 Markdown 渲染
@@ -231,7 +235,7 @@ AI 聊天会话按页面路径隔离存储，每个文档页面有独立的对�
 
 2. 侧边栏流程：
    Layout.onMounted → useDocmostSidebar().loadSpaces()
-   → 并行请求所有公开空间的页面树
+   → 并行请求所有用户有权访问的空间的页面树
    → sidebarData 更新
    → SideBar watch(docmostLoaded) 触发
    → buildSidebarForRoute() 构建 SidebarItem[]
@@ -285,9 +289,21 @@ server {
 
 同域部署时 `.env` 设置：`VITE_DOCMOST_API_URL=/api/public-wiki`
 
-### 方案 B：跨域部署
+### 方案 B：跨域部署（子域名共享 cookie）
 
-Wiki 和 Docmost 不同域，需要 Docmost 启用 CORS（已在 `main.ts` 中配置 `origin: true`）。
+Wiki 和 Docmost 部署在同一顶级域名的不同子域（如 `wiki.forcome.com` 和 `docmost.forcome.com`），需要：
+
+1. Docmost 启用 CORS（已在 `main.ts` 中配置 `origin: true`）
+2. 在 Docmost 后端 `.env` 中设置 `COOKIE_DOMAIN=.forcome.com`，确保认证 cookie 在子域间共享
+3. Wiki 前端 API 请求携带 `credentials: 'include'`（`DocmostService` 已内置）
+
+```env
+# Docmost 生产环境 .env（跨子域场景）
+COOKIE_DOMAIN=.forcome.com
+APP_URL=https://docmost.forcome.com
+```
+
+当 Wiki 收到 API 401 响应时，前端会自动跳转到 Docmost 登录页（`APP_URL/auth/login`），登录后重定向回 Wiki。
 
 ---
 
@@ -376,7 +392,7 @@ iframe 安全属性：`sandbox="allow-scripts allow-same-origin allow-forms allo
 
 ## Wiki 渲染格式可切换（HTML / Markdown）
 
-管理员可在 Docmost 工作区设置中切换 Wiki 前台的渲染格式（HTML 或 Markdown），所有匿名访客都受此设置影响。
+管理员可在 Docmost 工作区设置中切换 Wiki 前台的渲染格式（HTML 或 Markdown），所有 Wiki 访问者都受此设置影响。
 
 ### 数据流
 
@@ -401,9 +417,9 @@ iframe 安全属性：`sandbox="allow-scripts allow-same-origin allow-forms allo
 
 ### 新增 API 端点
 
-| 端点 | 请求体 | 说明 |
-|------|--------|------|
-| `POST /api/public-wiki/settings` | 无 | 返回 Wiki 公开设置（目前仅 `wiki.renderFormat`） |
+| 端点 | 认证 | 请求体 | 说明 |
+|------|------|--------|------|
+| `POST /api/public-wiki/settings` | 无（`@Public()`） | 无 | 返回 Wiki 公开设置（目前仅 `wiki.renderFormat`） |
 
 ### Docmost 前端修改文件（3 个）
 
@@ -443,7 +459,7 @@ iframe 安全属性：`sandbox="allow-scripts allow-same-origin allow-forms allo
 
 | 决策 | 选择 | 原因 |
 |------|------|------|
-| 设置级别 | 工作区级别 | Wiki 是公开匿名访问，无法识别用户偏好 |
+| 设置级别 | 工作区级别 | Wiki 渲染格式是全局展示决策，与用户身份无关 |
 | 默认值 | `html` | 向后兼容，不改变现有行为 |
 | 权限 | 仅管理员 | 影响所有访客，需要管理员权限 |
 | 设置缓存 | Wiki 前台模块级变量 | 避免每个页面都请求 settings API |

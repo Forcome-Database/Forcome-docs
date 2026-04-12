@@ -133,6 +133,42 @@ PydanticAI 双 Agent（Creation + Editing）+ 5 工具 + 选区编辑 + Redis �
 - **NONE 角色**：在 space 级表示"受限访问"（可进入空间但默认无内容权限），在 resource 级表示"显式拒绝"
 - **解析链**：page override → directory override → space_members fallback
 
+### 分级守卫模型（方案 D，2026-04-12）
+
+目录级 admin 和 writer 使用**不同 CASL Subject 守卫**实现能力差异：
+
+- **内容管理操作**用 `Manage Directory` 守卫 → admin 和 writer 都能做
+- **结构性/破坏性操作**保留 `Manage Settings` 守卫 → 仅 admin 能做
+
+| 能力 | admin | writer | reader | none |
+|------|-------|--------|--------|------|
+| 读取内容 | 能 | 能 | 能 | 不能 |
+| 创建/编辑/软删除页面 | 能 | 能 | 不能 | 不能 |
+| 修改目录名称 | 能 | 能 | 不能 | 不能 |
+| 管理 Topic（CRUD） | 能 | 能 | 不能 | 不能 |
+| 创建/删除目录 | 能 | 不能 | 不能 | 不能 |
+| 永久删除页面 | 能 | 不能 | 不能 | 不能 |
+| 管理权限覆盖 | 能 | 不能 | 不能 | 不能 |
+| 删除他人评论 | 能 | 不能 | 不能 | 不能 |
+
+**关键守卫分布：**
+- `directory.update` → `Manage Directory`（ResourceAbilityFactory）
+- `directory.create / delete` → `Manage Settings`（SpaceAbilityFactory / ResourceAbilityFactory）
+- `topic.info / create / update / delete` → `Manage Directory` / `Read Directory`（ResourceAbilityFactory，基于所属 directory）
+- `page.create`（有 directoryId 时）→ `Manage Page`（ResourceAbilityFactory，基于 directory）
+- `page.create`（无 directoryId）→ `Manage Page`（SpaceAbilityFactory）
+- `page.delete` 永久删除 → `Manage Settings`（ResourceAbilityFactory）
+- 所有页面移动操作（move / moveToSpace / duplicate / categorize）→ 增加目标目录 `Edit Page` 检查
+
+**前端 effectiveRole 传播：**
+- `directory.list` API 为每个目录返回 `effectiveRole`（space=none 从 overrides 提取，正常角色用覆盖或回退到 spaceRole）
+- 侧边栏树 `DirectoryNode` 组件根据 effectiveRole 控制"..."菜单（Rename / Permissions）和"+"按钮
+- Page 节点从父 directory 节点获取 effectiveRole，控制 NodeMenu 写操作和 EmojiPicker 编辑状态
+
+**已知限制：**
+- space=none 用户的拖拽操作被全局禁用（react-arborist 不支持节点级 drag 控制）
+- SpaceSettingsModal 是空间级管理界面，space=none + dir=writer 用户无法从中管理 Topic（需通过侧边栏"+"）
+
 ### 关键文件
 
 | 文件 | 作用 |
@@ -144,6 +180,7 @@ PydanticAI 双 Agent（Creation + Editing）+ 5 工具 + 选区编辑 + Redis �
 | `resource-permission.service.ts` | 业务逻辑 + 事件监听 + 自动添加 space 成员 |
 | `resource-permission-modal.tsx` | 前端权限管理弹窗（3列布局：成员+类型badge / 角色 / 删除） |
 | `settings-modal.tsx` | 空间设置弹窗（4 tabs：设置/成员/目录/主题，统一 panelStyle） |
+| `space-tree.tsx` | 侧边栏树（DirectoryNode 组件：内联重命名 + 权限管理入口 + effectiveRole 驱动的"+"按钮） |
 | `space-members.tsx` | 成员列表（搜索+添加同行、直接删除图标替代 ... 菜单） |
 | `directory-list.tsx` | 目录列表（hover 显示操作按钮、Code slug 样式） |
 | `topic-list.tsx` | 主题列表（与目录列表交互模式一致） |
@@ -156,6 +193,10 @@ PydanticAI 双 Agent（Creation + Editing）+ 5 工具 + 选区编辑 + Redis �
 - 侧边栏双模式过滤：restricted 用户加法模式 + 普通用户减法模式
 - 设置 resource_permission 时自动添加目标用户为空间 NONE 成员
 - page info API 返回 `effectiveRole`，前端据此控制 UI
+- directory list API 返回 `effectiveRole`，前端侧边栏据此控制目录节点的菜单和创建按钮
+- 分级守卫：内容操作用 `Manage Directory`，结构/破坏性操作用 `Manage Settings`
+- Topic controller 使用 ResourceAbilityFactory（基于所属 directory），而非 SpaceAbilityFactory
+- 所有页面移动路径（move / moveToSpace / duplicate / categorize）均检查目标目录权限
 
 ### 设计文档
 

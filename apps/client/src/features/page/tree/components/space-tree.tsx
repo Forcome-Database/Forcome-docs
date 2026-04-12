@@ -24,10 +24,12 @@ import {
   IconChevronRight,
   IconCopy,
   IconDotsVertical,
+  IconEdit,
   IconFileDescription,
   IconFileExport,
   IconFolder,
   IconLink,
+  IconLock,
   IconPlus,
   IconPointFilled,
   IconTag,
@@ -79,7 +81,8 @@ import { useToggleSidebar } from "@/components/layouts/global/hooks/hooks/use-to
 import CopyPageModal from "../../components/copy-page-modal.tsx";
 import CategorizePageModal from "../../components/categorize-page-modal.tsx";
 import { duplicatePage } from "../../services/page-service.ts";
-import { useGetDirectoriesQuery } from "@/features/directory/queries/directory-query.ts";
+import { useUpdateDirectoryMutation, useGetDirectoriesQuery } from "@/features/directory/queries/directory-query.ts";
+import { ResourcePermissionModal } from "@/features/resource-permission/components/resource-permission-modal";
 import { getTopics } from "@/features/topic/services/topic-service.ts";
 import { IDirectory } from "@/features/directory/types/directory.types.ts";
 import { ITopic } from "@/features/topic/types/topic.types.ts";
@@ -96,6 +99,7 @@ function directoryToTreeNode(dir: IDirectory): SpaceTreeNode {
     hasChildren: true,
     children: [],
     nodeType: 'directory',
+    effectiveRole: dir.effectiveRole,
   };
 }
 
@@ -492,52 +496,42 @@ function Node({ node, style, dragHandle, tree }: NodeRendererProps<any>) {
 
   // Directory and Topic nodes: no navigation, click toggles expand
   if (nodeType === 'directory' || nodeType === 'topic') {
+    // For directory/topic nodes, allow creation if the user has write access
+    // via resource-level override, even when the global tree is readOnly.
+    // Directory nodes carry effectiveRole from the API; topic nodes inherit
+    // from their parent directory node.
+    const nodeRole = nodeType === 'directory'
+      ? node.data.effectiveRole
+      : (node.parent?.data as SpaceTreeNode)?.effectiveRole;
+    const canCreateInNode = !tree.props.disableEdit
+      || nodeRole === 'admin' || nodeRole === 'writer';
+
     return (
-      <>
-        <Box
-          style={style}
-          className={clsx(classes.node, node.state)}
-          // @ts-ignore
-          ref={dragHandle}
-          onClick={() => {
-            node.toggle();
-            handleLoadChildren(node);
-          }}
-        >
-          <PageArrow node={node} onExpandTree={() => handleLoadChildren(node)} />
-
-          <ActionIcon
-            variant="transparent"
-            c="gray"
-            style={{ marginRight: "4px" }}
-          >
-            {node.data.icon ? (
-              node.data.icon
-            ) : nodeType === 'directory' ? (
-              <IconFolder size={18} />
-            ) : (
-              <IconTag size={18} />
-            )}
-          </ActionIcon>
-
-          <span className={classes.text}>{node.data.name || t("untitled")}</span>
-
-          <div className={classes.actions}>
-            {!tree.props.disableEdit && (
-              <CreateNode
-                node={node}
-                treeApi={tree}
-                onExpandTree={() => handleLoadChildren(node)}
-              />
-            )}
-          </div>
-        </Box>
-      </>
+      <DirectoryNode
+        node={node}
+        tree={tree}
+        style={style}
+        dragHandle={dragHandle}
+        nodeType={nodeType}
+        nodeRole={nodeRole}
+        canCreateInNode={canCreateInNode}
+        onLoadChildren={() => handleLoadChildren(node)}
+        t={t}
+      />
     );
   }
 
   // Page nodes: full behavior with navigation, emoji picker, node menu
   const pageUrl = buildPageUrl(spaceSlug, node.data.slugId, node.data.name);
+
+  // Determine if this page is editable: either via global space permission,
+  // or via directory-level override (find the directory ancestor's effectiveRole).
+  const dirNode = node.data.directoryId
+    ? treeData.find((n) => n.id === node.data.directoryId)
+    : undefined;
+  const dirRole = dirNode?.effectiveRole;
+  const pageCanEdit = !tree.props.disableEdit
+    || dirRole === 'admin' || dirRole === 'writer';
 
   return (
     <>
@@ -568,7 +562,7 @@ function Node({ node, style, dragHandle, tree }: NodeRendererProps<any>) {
                 <IconFileDescription size="18" />
               )
             }
-            readOnly={tree.props.disableEdit as boolean}
+            readOnly={!pageCanEdit}
             removeEmojiAction={handleRemoveEmoji}
           />
         </div>
@@ -576,9 +570,9 @@ function Node({ node, style, dragHandle, tree }: NodeRendererProps<any>) {
         <span className={classes.text}>{node.data.name || t("untitled")}</span>
 
         <div className={classes.actions}>
-          <NodeMenu node={node} treeApi={tree} spaceId={node.data.spaceId} />
+          <NodeMenu node={node} treeApi={tree} spaceId={node.data.spaceId} canEdit={pageCanEdit} />
 
-          {!tree.props.disableEdit && (
+          {pageCanEdit && (
             <CreateNode
               node={node}
               treeApi={tree}
@@ -630,9 +624,10 @@ interface NodeMenuProps {
   node: NodeApi<SpaceTreeNode>;
   treeApi: TreeApi<SpaceTreeNode>;
   spaceId: string;
+  canEdit?: boolean;
 }
 
-function NodeMenu({ node, treeApi, spaceId }: NodeMenuProps) {
+function NodeMenu({ node, treeApi, spaceId, canEdit }: NodeMenuProps) {
   const { t } = useTranslation();
   const clipboard = useClipboard({ timeout: 500 });
   const { spaceSlug } = useParams();
@@ -765,7 +760,7 @@ function NodeMenu({ node, treeApi, spaceId }: NodeMenuProps) {
             {t("Export page")}
           </Menu.Item>
 
-          {!(treeApi.props.disableEdit as boolean) && (
+          {canEdit && (
             <>
               <Menu.Item
                 leftSection={<IconCopy size={16} />}
@@ -857,6 +852,187 @@ function NodeMenu({ node, treeApi, spaceId }: NodeMenuProps) {
         id={node.id}
         open={exportOpened}
         onClose={closeExportModal}
+      />
+    </>
+  );
+}
+
+interface DirectoryNodeProps {
+  node: NodeApi<SpaceTreeNode>;
+  tree: TreeApi<SpaceTreeNode>;
+  style: React.CSSProperties;
+  dragHandle: any;
+  nodeType: string;
+  nodeRole: string | undefined;
+  canCreateInNode: boolean;
+  onLoadChildren: () => void;
+  t: (key: string) => string;
+}
+
+function DirectoryNode({
+  node, tree, style, dragHandle, nodeType, nodeRole, canCreateInNode, onLoadChildren, t,
+}: DirectoryNodeProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [name, setName] = useState(node.data.name);
+  const updateDirectoryMutation = useUpdateDirectoryMutation();
+  const [, setTreeData] = useAtom(treeDataAtom);
+  const [
+    permissionOpened,
+    { open: openPermission, close: closePermission },
+  ] = useDisclosure(false);
+
+  const canEdit = nodeRole === "admin" || nodeRole === "writer";
+  const canManagePermissions = nodeRole === "admin";
+
+  const handleRename = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === node.data.name) {
+      setName(node.data.name);
+      setIsEditing(false);
+      return;
+    }
+    try {
+      await updateDirectoryMutation.mutateAsync({
+        directoryId: node.data.id,
+        name: trimmed,
+      });
+      setTreeData((prev) =>
+        prev.map((n) => (n.id === node.data.id ? { ...n, name: trimmed } : n)),
+      );
+      setIsEditing(false);
+    } catch (err) {
+      notifications.show({
+        message: err.response?.data?.message || "Failed to rename",
+        color: "red",
+      });
+      setName(node.data.name);
+      setIsEditing(false);
+    }
+  };
+
+  return (
+    <>
+      <Box
+        style={style}
+        className={clsx(classes.node, node.state)}
+        // @ts-ignore
+        ref={dragHandle}
+        onClick={() => {
+          if (!isEditing) {
+            node.toggle();
+            onLoadChildren();
+          }
+        }}
+      >
+        <PageArrow node={node} onExpandTree={onLoadChildren} />
+
+        <ActionIcon
+          variant="transparent"
+          c="gray"
+          style={{ marginRight: "4px" }}
+        >
+          {node.data.icon ? (
+            node.data.icon
+          ) : nodeType === 'directory' ? (
+            <IconFolder size={18} />
+          ) : (
+            <IconTag size={18} />
+          )}
+        </ActionIcon>
+
+        {isEditing ? (
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={handleRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleRename();
+              if (e.key === "Escape") {
+                setName(node.data.name);
+                setIsEditing(false);
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className={classes.text}
+            style={{
+              border: "1px solid var(--mantine-color-blue-5)",
+              borderRadius: 4,
+              padding: "1px 4px",
+              fontSize: "inherit",
+              fontFamily: "inherit",
+              outline: "none",
+              minWidth: 0,
+              flex: 1,
+            }}
+          />
+        ) : (
+          <span className={classes.text}>{node.data.name || t("untitled")}</span>
+        )}
+
+        <div className={classes.actions}>
+          {nodeType === 'directory' && (canEdit || canManagePermissions) && (
+            <Menu shadow="md" width={200}>
+              <Menu.Target>
+                <ActionIcon
+                  variant="transparent"
+                  c="gray"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  <IconDotsVertical
+                    style={{ width: rem(20), height: rem(20) }}
+                    stroke={2}
+                  />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                {canEdit && (
+                  <Menu.Item
+                    leftSection={<IconEdit size={16} />}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setName(node.data.name);
+                      setIsEditing(true);
+                    }}
+                  >
+                    {t("Rename")}
+                  </Menu.Item>
+                )}
+                {canManagePermissions && (
+                  <Menu.Item
+                    leftSection={<IconLock size={16} />}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openPermission();
+                    }}
+                  >
+                    {t("Permissions")}
+                  </Menu.Item>
+                )}
+              </Menu.Dropdown>
+            </Menu>
+          )}
+          {canCreateInNode && (
+            <CreateNode
+              node={node}
+              treeApi={tree}
+              onExpandTree={onLoadChildren}
+            />
+          )}
+        </div>
+      </Box>
+
+      <ResourcePermissionModal
+        resourceId={node.data.id}
+        resourceType="directory"
+        resourceName={node.data.name}
+        opened={permissionOpened}
+        onClose={closePermission}
       />
     </>
   );

@@ -131,17 +131,32 @@ export class DingTalkService {
         throw new BadRequestException('User account is disabled');
       }
 
-      await this.userRepo.updateUser(
-        {
-          lastLoginAt: new Date(),
-          ...(info.name && { name: info.name }),
-          ...(info.avatarUrl && { avatarUrl: info.avatarUrl }),
-        },
-        user.id,
-        workspaceId,
-      );
+      const updateData: Partial<Pick<User, 'lastLoginAt' | 'name' | 'avatarUrl' | 'email'>> = {
+        lastLoginAt: new Date(),
+        ...(info.name && { name: info.name }),
+        ...(info.avatarUrl && { avatarUrl: info.avatarUrl }),
+      };
 
-      return { ...user, lastLoginAt: new Date() };
+      if (info.email && user.email?.endsWith('@dingtalk.local')) {
+        const conflict = await this.userRepo.findByEmail(
+          info.email,
+          workspaceId,
+        );
+        if (!conflict) {
+          updateData.email = info.email;
+          this.logger.log(
+            `Syncing real email for user ${user.id}: ${user.email} → ${info.email}`,
+          );
+        } else {
+          this.logger.warn(
+            `Cannot sync email ${info.email} for user ${user.id}: already taken by user ${conflict.id}`,
+          );
+        }
+      }
+
+      await this.userRepo.updateUser(updateData, user.id, workspaceId);
+
+      return { ...user, ...updateData };
     }
 
     if (!provider.allowSignup) {

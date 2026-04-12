@@ -11,4 +11,5 @@ export type SpaceTreeNode = {
   nodeType?: "directory" | "topic" | "page";
   directoryId?: string;
   topicId?: string;
+  effectiveRole?: string;
 };

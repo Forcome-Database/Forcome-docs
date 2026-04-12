@@ -308,8 +308,8 @@ export class EnvironmentService {
   getWikiPublicSpaceSlugs(): string[] | undefined {
     const slugs = this.configService.get<string>('WIKI_PUBLIC_SPACE_SLUGS');
     if (slugs === undefined || slugs === null) return undefined;
-    if (slugs.trim() === '') return [];
-    return slugs.split(',').map((s) => s.trim());
+    if (slugs.trim() === '') return undefined; // empty string = not configured
+    return slugs.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
   }
 
   isPublicWikiAiEnabled(): boolean {

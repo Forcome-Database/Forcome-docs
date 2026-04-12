@@ -106,12 +106,24 @@ export class PageController {
     @AuthUser() user: User,
     @AuthWorkspace() workspace: Workspace,
   ) {
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      createPageDto.spaceId,
-    );
-    if (ability.cannot(SpaceCaslAction.Create, SpaceCaslSubject.Page)) {
-      throw new ForbiddenException();
+    // When directoryId is provided, use ResourceAbilityFactory to honor
+    // directory-level permission overrides (e.g. space=none + dir=writer).
+    if (createPageDto.directoryId) {
+      const ability = await this.resourceAbility.createForUser(
+        user, 'directory', createPageDto.directoryId,
+        { spaceId: createPageDto.spaceId },
+      );
+      if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Page)) {
+        throw new ForbiddenException();
+      }
+    } else {
+      const ability = await this.spaceAbility.createForUser(
+        user,
+        createPageDto.spaceId,
+      );
+      if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Page)) {
+        throw new ForbiddenException();
+      }
     }
 
     const page = await this.pageService.create(
@@ -521,6 +533,17 @@ export class PageController {
       throw new ForbiddenException();
     }
 
+    // Check target directory permission in the destination space
+    if (dto.directoryId) {
+      const targetAbility = await this.resourceAbility.createForUser(
+        user, 'directory', dto.directoryId,
+        { spaceId: dto.spaceId },
+      );
+      if (targetAbility.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
+        throw new ForbiddenException();
+      }
+    }
+
     return this.pageService.movePageToSpace(movedPage, dto.spaceId, dto.directoryId, dto.topicId);
   }
 
@@ -550,6 +573,17 @@ export class PageController {
         throw new ForbiddenException();
       }
 
+      // Check target directory permission in the destination space
+      if (dto.directoryId) {
+        const targetAbility = await this.resourceAbility.createForUser(
+          user, 'directory', dto.directoryId,
+          { spaceId: dto.spaceId },
+        );
+        if (targetAbility.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
+          throw new ForbiddenException();
+        }
+      }
+
       return this.pageService.duplicatePage(copiedPage, dto.spaceId, user, dto.directoryId, dto.topicId);
     } else {
       // If no spaceId, it's a duplicate in same space
@@ -559,6 +593,17 @@ export class PageController {
       );
       if (ability.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
         throw new ForbiddenException();
+      }
+
+      // Check target directory permission when duplicating to a different directory
+      if (dto.directoryId && dto.directoryId !== copiedPage.directoryId) {
+        const targetAbility = await this.resourceAbility.createForUser(
+          user, 'directory', dto.directoryId,
+          { spaceId: copiedPage.spaceId },
+        );
+        if (targetAbility.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
+          throw new ForbiddenException();
+        }
       }
 
       return this.pageService.duplicatePage(copiedPage, undefined, user, dto.directoryId, dto.topicId);
@@ -584,6 +629,17 @@ export class PageController {
       throw new ForbiddenException();
     }
 
+    // Check target directory permission when categorizing to a different directory
+    if (dto.directoryId && dto.directoryId !== page.directoryId) {
+      const targetAbility = await this.resourceAbility.createForUser(
+        user, 'directory', dto.directoryId,
+        { spaceId: page.spaceId },
+      );
+      if (targetAbility.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
+        throw new ForbiddenException();
+      }
+    }
+
     await this.pageService.categorizePage(dto.pageId, dto.directoryId, dto.topicId);
     return this.pageRepo.findById(dto.pageId, { includeSpace: true });
   }
@@ -596,12 +652,24 @@ export class PageController {
       throw new NotFoundException('Moved page not found');
     }
 
+    // Check source permission
     const ability = await this.resourceAbility.createForUser(
       user, 'page', movedPage.id,
       { directoryId: movedPage.directoryId, spaceId: movedPage.spaceId },
     );
     if (ability.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
       throw new ForbiddenException();
+    }
+
+    // Check target directory permission when moving to a different directory
+    if (dto.directoryId && dto.directoryId !== movedPage.directoryId) {
+      const targetAbility = await this.resourceAbility.createForUser(
+        user, 'directory', dto.directoryId,
+        { spaceId: movedPage.spaceId },
+      );
+      if (targetAbility.cannot(SpaceCaslAction.Edit, SpaceCaslSubject.Page)) {
+        throw new ForbiddenException();
+      }
     }
 
     return this.pageService.movePage(dto, movedPage);

@@ -10,4 +10,5 @@ export interface IDirectory {
   creatorId: string;
   createdAt: string;
   updatedAt: string;
+  effectiveRole?: string;
 }

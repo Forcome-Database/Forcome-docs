@@ -14,6 +14,7 @@ import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator'
 import { TopicService } from './topic.service';
 import { DirectoryRepo } from '@docmost/db/repos/directory/directory.repo';
 import SpaceAbilityFactory from '../casl/abilities/space-ability.factory';
+import { ResourceAbilityFactory } from '../casl/abilities/resource-ability.factory';
 import {
   SpaceCaslAction,
   SpaceCaslSubject,
@@ -37,6 +38,7 @@ export class TopicController {
     private readonly topicService: TopicService,
     private readonly directoryRepo: DirectoryRepo,
     private readonly spaceAbility: SpaceAbilityFactory,
+    private readonly resourceAbility: ResourceAbilityFactory,
     private readonly spaceMemberRepo: SpaceMemberRepo,
     private readonly resourcePermRepo: ResourcePermissionRepo,
   ) {}
@@ -108,11 +110,11 @@ export class TopicController {
     );
     if (!topic) throw new NotFoundException('Topic not found');
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      topic.spaceId,
+    const ability = await this.resourceAbility.createForUser(
+      user, 'directory', topic.directoryId,
+      { spaceId: topic.spaceId },
     );
-    if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Settings)) {
+    if (ability.cannot(SpaceCaslAction.Read, SpaceCaslSubject.Directory)) {
       throw new ForbiddenException();
     }
     return topic;
@@ -132,11 +134,11 @@ export class TopicController {
     );
     if (!directory) throw new NotFoundException('Directory not found');
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      directory.spaceId,
+    const ability = await this.resourceAbility.createForUser(
+      user, 'directory', directory.id,
+      { spaceId: directory.spaceId },
     );
-    if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Settings)) {
+    if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Directory)) {
       throw new ForbiddenException();
     }
     return this.topicService.createTopic(dto, user, workspace);
@@ -155,11 +157,11 @@ export class TopicController {
     );
     if (!topic) throw new NotFoundException('Topic not found');
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      topic.spaceId,
+    const ability = await this.resourceAbility.createForUser(
+      user, 'directory', topic.directoryId,
+      { spaceId: topic.spaceId },
     );
-    if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Settings)) {
+    if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Directory)) {
       throw new ForbiddenException();
     }
     return this.topicService.updateTopic(dto, workspace.id);
@@ -178,11 +180,11 @@ export class TopicController {
     );
     if (!topic) throw new NotFoundException('Topic not found');
 
-    const ability = await this.spaceAbility.createForUser(
-      user,
-      topic.spaceId,
+    const ability = await this.resourceAbility.createForUser(
+      user, 'directory', topic.directoryId,
+      { spaceId: topic.spaceId },
     );
-    if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Settings)) {
+    if (ability.cannot(SpaceCaslAction.Manage, SpaceCaslSubject.Directory)) {
       throw new ForbiddenException();
     }
     await this.topicService.deleteTopic(dto.topicId, workspace.id);

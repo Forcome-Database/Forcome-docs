@@ -122,7 +122,7 @@ export default function SpaceSettingsModal({
                       spaceId={space?.id}
                       readOnly={spaceAbility.cannot(
                         SpaceCaslAction.Manage,
-                        SpaceCaslSubject.Settings,
+                        SpaceCaslSubject.Directory,
                       )}
                     />
                   </div>
