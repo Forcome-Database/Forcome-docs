@@ -96,6 +96,12 @@ svg {
   height: auto;
 }
 
+/* Icon SVG 使用固定尺寸，不受全局 height: auto 影响 */
+svg.icon {
+  height: initial;
+  flex-shrink: 0;
+}
+
 /* 表单元素继承字体 */
 input,
 textarea,

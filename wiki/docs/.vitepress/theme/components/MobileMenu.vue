@@ -30,6 +30,8 @@ const {
   directories: docmostDirectories,
   selectedDirectoryId,
   selectDirectory,
+  isLoaded: docmostLoaded,
+  isDocmostRoute,
 } = useDocmostSidebar()
 
 // 从路由路径中提取当前语言
@@ -234,48 +236,49 @@ onUnmounted(() => {
           </button>
         </header>
 
-        <!-- 主导航链接 -->
-        <nav class="mobile-menu-nav" aria-label="主导航">
-          <template v-for="item in navItems" :key="item.text">
-            <!-- 带子菜单的导航项 -->
-            <div v-if="item.items && item.items.length" class="mobile-nav-group">
+        <!-- 统一可滚动区域：主导航 + 侧边栏内容 -->
+        <div class="mobile-menu-content">
+          <!-- 主导航链接 -->
+          <nav class="mobile-menu-nav" aria-label="主导航">
+            <template v-for="item in navItems" :key="item.text">
+              <!-- 带子菜单的导航项 -->
+              <div v-if="item.items && item.items.length" class="mobile-nav-group">
+                <a
+                  :href="item.link"
+                  class="mobile-nav-link"
+                  @click="handleNavigate"
+                >
+                  {{ item.text }}
+                </a>
+                <div class="mobile-nav-sub">
+                  <a
+                    v-for="child in item.items"
+                    :key="child.directoryId || child.text"
+                    :href="child.link"
+                    class="mobile-nav-sub-link"
+                    :class="{ 'is-active': child.directoryId && selectedDirectoryId[child.spaceSlug] === child.directoryId }"
+                    @click="handleDirectoryClick($event, child)"
+                  >
+                    {{ child.text }}
+                  </a>
+                </div>
+              </div>
+              <!-- 普通导航项 -->
               <a
+                v-else
                 :href="item.link"
                 class="mobile-nav-link"
                 @click="handleNavigate"
               >
                 {{ item.text }}
               </a>
-              <div class="mobile-nav-sub">
-                <a
-                  v-for="child in item.items"
-                  :key="child.directoryId || child.text"
-                  :href="child.link"
-                  class="mobile-nav-sub-link"
-                  :class="{ 'is-active': child.directoryId && selectedDirectoryId[child.spaceSlug] === child.directoryId }"
-                  @click="handleDirectoryClick($event, child)"
-                >
-                  {{ child.text }}
-                </a>
-              </div>
-            </div>
-            <!-- 普通导航项 -->
-            <a
-              v-else
-              :href="item.link"
-              class="mobile-nav-link"
-              @click="handleNavigate"
-            >
-              {{ item.text }}
-            </a>
-          </template>
-        </nav>
+            </template>
+          </nav>
 
-        <!-- 分隔线 -->
-        <div class="mobile-menu-divider" />
+          <!-- 分隔线 -->
+          <div class="mobile-menu-divider" />
 
-        <!-- 侧边栏内容 -->
-        <div class="mobile-menu-content">
+          <!-- 侧边栏内容 -->
           <nav class="mobile-sidebar-nav">
             <!-- 渲染侧边栏分组 -->
             <template v-for="(group, index) in sidebarGroups" :key="group.text || index">
@@ -302,8 +305,15 @@ onUnmounted(() => {
               />
             </template>
 
+            <!-- 加载骨架屏（仅 Docmost 路由等待 API 时显示） -->
+            <div v-if="sidebarGroups.length === 0 && isDocmostRoute(route.path) && !docmostLoaded" class="mobile-sidebar-skeleton">
+              <div v-for="i in 4" :key="i" class="skeleton-item">
+                <div class="skeleton-line" :style="{ width: `${50 + (i % 3) * 20}%` }" />
+              </div>
+            </div>
+
             <!-- 空状态 -->
-            <div v-if="sidebarGroups.length === 0" class="mobile-sidebar-empty">
+            <div v-else-if="sidebarGroups.length === 0" class="mobile-sidebar-empty">
               暂无导航内容
             </div>
           </nav>
@@ -431,8 +441,7 @@ onUnmounted(() => {
 .mobile-menu-nav {
   display: flex;
   flex-direction: column;
-  padding: var(--spacing-3) var(--spacing-4);
-  flex-shrink: 0;
+  padding: var(--spacing-3) 0;
 }
 
 .mobile-nav-link {
@@ -496,9 +505,8 @@ onUnmounted(() => {
 
 .mobile-menu-divider {
   height: 1px;
-  margin: 0 var(--spacing-4);
+  margin: var(--spacing-2) 0;
   background-color: var(--c-border);
-  flex-shrink: 0;
 }
 
 /* ===== 侧边栏内容 ===== */
@@ -535,7 +543,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
-  padding-left: var(--spacing-3);
 }
 
 /* ===== 分组样式 ===== */
@@ -562,6 +569,32 @@ onUnmounted(() => {
 .mobile-sidebar-group-items {
   display: flex;
   flex-direction: column;
+}
+
+/* ===== 加载骨架屏 ===== */
+
+.mobile-sidebar-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) 0;
+}
+
+.mobile-sidebar-skeleton .skeleton-item {
+  padding: 0 var(--spacing-2);
+}
+
+.mobile-sidebar-skeleton .skeleton-line {
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--c-border) 25%, var(--c-bg-mute) 50%, var(--c-border) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 /* ===== 空状态 ===== */

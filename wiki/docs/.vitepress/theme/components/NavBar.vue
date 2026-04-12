@@ -5,7 +5,7 @@
  * 
  * 需求: 2.1-2.8
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useData, useRoute } from 'vitepress'
 import MenuIcon from './icons/MenuIcon.vue'
 import SearchIcon from './icons/SearchIcon.vue'
@@ -29,7 +29,13 @@ const {
   directories: docmostDirectories,
   selectedDirectoryId,
   selectDirectory,
+  isLoaded: docmostLoaded,
+  isAvailable: hasDocmost,
 } = useDocmostSidebar()
+
+// 客户端标记（避免 SSR hydration mismatch）
+const isMounted = ref(false)
+onMounted(() => { isMounted.value = true })
 
 // 当前打开的下拉菜单
 const openDropdown = ref<string | null>(null)
@@ -245,6 +251,13 @@ const isDropdownActive = (item: any) => {
               {{ item.text }}
             </a>
           </template>
+
+          <!-- 导航骨架占位（Docmost 数据加载中，登录页排除） -->
+          <template v-if="isMounted && hasDocmost && !docmostLoaded && !route.path.startsWith('/login')">
+            <span v-for="i in 2" :key="'nav-skel-' + i" class="nav-skeleton">
+              <span class="nav-skeleton-line" />
+            </span>
+          </template>
         </nav>
       </div>
 
@@ -424,6 +437,28 @@ const isDropdownActive = (item: any) => {
   color: rgba(235, 86, 0, 1);
   font-weight: 400;
   position: relative;
+}
+
+/* 导航骨架占位 */
+.nav-skeleton {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+}
+
+.nav-skeleton-line {
+  display: block;
+  width: 48px;
+  height: 14px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--c-border) 25%, var(--c-bg-mute) 50%, var(--c-border) 75%);
+  background-size: 200% 100%;
+  animation: nav-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes nav-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 /* 激活状态下划线 */
@@ -640,6 +675,10 @@ const isDropdownActive = (item: any) => {
 @media (max-width: 1023px) {
   .menu-button {
     display: flex;
+  }
+
+  .navbar-left {
+    gap: var(--spacing-2);
   }
 
   .navbar-nav {

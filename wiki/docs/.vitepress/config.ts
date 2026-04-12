@@ -58,7 +58,6 @@ export default withMermaid(defineConfig({
       description: '企业知识管理平台',
       themeConfig: {
         nav: [
-          { text: '首页', link: '/zh/', activeMatch: '^/zh/$' },
         //   {
         //     text: '企业应用',
         //     activeMatch: '^/zh/docs/(kingdee|crm|oa)',
@@ -94,7 +93,6 @@ export default withMermaid(defineConfig({
       description: 'Enterprise Knowledge Management Platform',
       themeConfig: {
         nav: [
-          { text: 'Home', link: '/en/', activeMatch: '^/en/$' },
           {
             text: 'Enterprise',
             activeMatch: '^/en/docs/(kingdee|crm|oa)',
@@ -128,7 +126,6 @@ export default withMermaid(defineConfig({
       description: 'Nền tảng quản lý tri thức doanh nghiệp',
       themeConfig: {
         nav: [
-          { text: 'Trang chủ', link: '/vi/', activeMatch: '^/vi/$' },
           {
             text: 'Doanh nghiệp',
             activeMatch: '^/vi/docs/(kingdee|crm|oa)',

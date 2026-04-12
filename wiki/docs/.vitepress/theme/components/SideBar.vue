@@ -198,8 +198,15 @@ const sidebarStyle = computed(() => {
           />
         </template>
 
-        <!-- 空状态 -->
-        <div v-if="sidebarGroups.length === 0" class="sidebar-empty">
+        <!-- 加载骨架屏（仅 Docmost 路由等待 API 时显示） -->
+        <div v-if="sidebarGroups.length === 0 && isDocmostRoute(route.path) && !docmostLoaded" class="sidebar-skeleton">
+          <div v-for="i in 4" :key="i" class="skeleton-item">
+            <div class="skeleton-line" :style="{ width: `${50 + (i % 3) * 20}%` }" />
+          </div>
+        </div>
+
+        <!-- 空状态（数据已加载完，确实没有内容） -->
+        <div v-else-if="sidebarGroups.length === 0" class="sidebar-empty">
           暂无导航内容
         </div>
       </nav>
@@ -325,6 +332,12 @@ const sidebarStyle = computed(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
+  animation: sidebar-fade-in 0.2s ease;
+}
+
+@keyframes sidebar-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* ===== 分组样式 ===== */
@@ -357,6 +370,32 @@ const sidebarStyle = computed(() => {
 .sidebar-group-items {
   display: flex;
   flex-direction: column;
+}
+
+/* ===== 加载骨架屏 ===== */
+
+.sidebar-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) 0;
+}
+
+.skeleton-item {
+  padding: 0 var(--spacing-2);
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--c-border) 25%, var(--c-bg-mute) 50%, var(--c-border) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 /* ===== 空状态 ===== */

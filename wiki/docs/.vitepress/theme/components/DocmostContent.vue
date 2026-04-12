@@ -18,7 +18,7 @@ const docmostService = createDocmostService()
 const { spaces, sidebarData } = useDocmostSidebar()
 
 const page = ref<DocmostPage | null>(null)
-const isLoading = ref(false)
+const isLoading = ref(true)
 const error = ref<string | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
 const renderFormat = ref<'html' | 'markdown'>('html')
@@ -308,6 +308,7 @@ async function loadPage() {
     // 空间根路径：尝试跳转到第一篇文章
     page.value = null
     error.value = null
+    isLoading.value = false
 
     const nodes = sidebarData.value[spaceSlug]
     if (nodes?.length) {
@@ -397,10 +398,23 @@ onUnmounted(() => {
 
 <template>
   <div class="docmost-content">
-    <!-- 加载状态 -->
-    <div v-if="isLoading" class="docmost-loading">
-      <div class="loading-spinner" />
-      <span>加载中...</span>
+    <!-- 加载骨架屏 -->
+    <div v-if="isLoading" class="docmost-skeleton">
+      <!-- 标题骨架 -->
+      <div class="skeleton-title" />
+      <!-- 段落骨架 -->
+      <div class="skeleton-paragraph">
+        <div class="skeleton-line" style="width: 100%" />
+        <div class="skeleton-line" style="width: 92%" />
+        <div class="skeleton-line" style="width: 85%" />
+        <div class="skeleton-line" style="width: 60%" />
+      </div>
+      <!-- 第二段骨架 -->
+      <div class="skeleton-paragraph">
+        <div class="skeleton-line" style="width: 100%" />
+        <div class="skeleton-line" style="width: 95%" />
+        <div class="skeleton-line" style="width: 78%" />
+      </div>
     </div>
 
     <!-- 错误状态 -->
@@ -479,6 +493,12 @@ onUnmounted(() => {
 <style scoped>
 .docmost-content {
   min-height: 200px;
+  animation: content-fade-in 0.2s ease;
+}
+
+@keyframes content-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* 全局取消 footer 区域所有链接的下划线 */
@@ -490,28 +510,39 @@ onUnmounted(() => {
   text-decoration: none;
 }
 
-/* 加载状态 */
-.docmost-loading {
+/* 加载骨架屏 */
+.docmost-skeleton {
+  padding: 32px 0;
+}
+
+.skeleton-title {
+  height: 28px;
+  width: 45%;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--c-border) 25%, var(--c-bg-mute) 50%, var(--c-border) 75%);
+  background-size: 200% 100%;
+  animation: content-shimmer 1.5s ease-in-out infinite;
+  margin-bottom: 32px;
+}
+
+.skeleton-paragraph {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  color: var(--c-text-3);
   gap: 12px;
+  margin-bottom: 24px;
 }
 
-.loading-spinner {
-  width: 24px;
-  height: 24px;
-  border: 2px solid var(--c-border);
-  border-top-color: var(--c-accent);
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
+.skeleton-line {
+  height: 14px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--c-border) 25%, var(--c-bg-mute) 50%, var(--c-border) 75%);
+  background-size: 200% 100%;
+  animation: content-shimmer 1.5s ease-in-out infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+@keyframes content-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 /* 错误状态 */

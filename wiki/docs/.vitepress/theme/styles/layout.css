@@ -140,6 +140,12 @@
   max-width: var(--content-max-width);
   margin: 0 auto;
   width: 100%;
+  animation: content-enter 0.2s ease;
+}
+
+@keyframes content-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* 为右侧目录预留空间（宽度 > 1280px 时显示目录） */
