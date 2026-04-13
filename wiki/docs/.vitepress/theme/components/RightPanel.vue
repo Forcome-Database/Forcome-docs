@@ -5,6 +5,7 @@
  */
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useData } from 'vitepress'
+import { isInDingTalk } from '../utils/dingtalk'
 
 // 获取页面数据
 const { page } = useData()
@@ -130,7 +131,11 @@ const copyLink = async () => {
  */
 const shareFeedback = () => {
   const feedbackUrl = `https://github.com/your-repo/issues/new?title=Feedback: ${encodeURIComponent(page.value.title || '')}`
-  window.open(feedbackUrl, '_blank')
+  if (isInDingTalk()) {
+    window.location.href = feedbackUrl
+  } else {
+    window.open(feedbackUrl, '_blank')
+  }
 }
 
 /**

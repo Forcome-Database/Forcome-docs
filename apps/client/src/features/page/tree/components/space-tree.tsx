@@ -258,7 +258,8 @@ export default function SpaceTree({ spaceId, readOnly }: SpaceTreeProps) {
 
             setTimeout(() => {
               // focus on node and open all parents
-              treeApiRef.current?.select(currentPage.id);
+              treeApiRef.current?.openParents(currentPage.id);
+              treeApiRef.current?.select(currentPage.id, { align: "auto" });
             }, 100);
           });
         }
@@ -271,7 +272,8 @@ export default function SpaceTree({ spaceId, readOnly }: SpaceTreeProps) {
   useEffect(() => {
     if (currentPage?.id) {
       setTimeout(() => {
-        // focus on node and open all parents
+        // expand ancestor directories/pages, then select and scroll into view
+        treeApiRef.current?.openParents(currentPage.id);
         treeApiRef.current?.select(currentPage.id, { align: "auto" });
       }, 200);
     } else {

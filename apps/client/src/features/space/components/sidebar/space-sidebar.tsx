@@ -196,12 +196,13 @@ export function SpaceSidebar() {
 
                   <Tooltip label={t("Create page")} withArrow position="right">
                     <ActionIcon
-                      variant="default"
+                      variant="subtle"
                       size={18}
+                      c="dimmed"
                       onClick={handleCreatePage}
                       aria-label={t("Create page")}
                     >
-                      <IconPlus />
+                      <IconPlus size={16} />
                     </ActionIcon>
                   </Tooltip>
                 </>
@@ -252,11 +253,12 @@ function SpaceMenu({ spaceId, onSpaceSettings }: SpaceMenuProps) {
             position="top"
           >
             <ActionIcon
-              variant="default"
+              variant="subtle"
               size={18}
+              c="dimmed"
               aria-label={t("Space menu")}
             >
-              <IconDots />
+              <IconDots size={16} />
             </ActionIcon>
           </Tooltip>
         </Menu.Target>

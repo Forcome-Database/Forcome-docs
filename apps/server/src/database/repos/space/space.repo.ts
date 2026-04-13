@@ -155,6 +155,17 @@ export class SpaceRepo {
     });
   }
 
+  async getSpacesOrdered(workspaceId: string) {
+    return this.db
+      .selectFrom('spaces')
+      .selectAll('spaces')
+      .select((eb) => [this.withMemberCount(eb)])
+      .where('workspaceId', '=', workspaceId)
+      .orderBy(sql`position collate "C" asc nulls last`)
+      .orderBy('id', 'asc')
+      .execute();
+  }
+
   withMemberCount(eb: ExpressionBuilder<DB, 'spaces'>) {
     const subquery = eb
       .selectFrom('spaceMembers')

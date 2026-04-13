@@ -10,6 +10,7 @@ import { useDocmostSidebar } from '../composables/useDocmostSidebar'
 import { rewriteAttachmentUrls, processSpecialBlocks } from '../composables/useContentProcessor'
 import { useCodeCopy } from '../composables/useCodeCopy'
 import { renderMarkdownToHtml } from '../utils/markdown'
+import { linkTarget } from '../utils/dingtalk'
 import type { DocmostPage, DocmostSidebarNode } from '../types'
 
 const route = useRoute()
@@ -115,6 +116,8 @@ function formatDateTime(dateStr: string): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
+
+const editTarget = linkTarget()
 
 /**
  * Docmost 编辑页面链接
@@ -463,7 +466,7 @@ onUnmounted(() => {
             </span>
           </div>
           <div class="footer-info-right">
-            <a v-if="editPageUrl" :href="editPageUrl" target="_blank" rel="noopener noreferrer" class="edit-link">
+            <a v-if="editPageUrl" :href="editPageUrl" :target="editTarget" :rel="editTarget ? 'noopener noreferrer' : undefined" class="edit-link">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               {{ i18nLabels.editPage }}
             </a>

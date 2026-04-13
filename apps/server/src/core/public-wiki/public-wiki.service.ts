@@ -218,7 +218,7 @@ export class PublicWikiService {
     // Member spaces
     const memberSpaces = await this.db
       .selectFrom('spaces')
-      .select(['id', 'name', 'slug', 'description'])
+      .select(['id', 'name', 'slug', 'description', 'position'])
       .where('workspaceId', '=', workspaceId)
       .where('id', 'in', this.spaceMemberRepo.getUserSpaceIdsQuery(user.id))
       .execute();
@@ -226,7 +226,7 @@ export class PublicWikiService {
     // Open-visibility spaces
     const openSpaces = await this.db
       .selectFrom('spaces')
-      .select(['id', 'name', 'slug', 'description'])
+      .select(['id', 'name', 'slug', 'description', 'position'])
       .where('workspaceId', '=', workspaceId)
       .where('visibility', '=', 'open')
       .execute();
@@ -234,13 +234,17 @@ export class PublicWikiService {
     // Deduplicate by id using Map
     const spaceMap = new Map<
       string,
-      { id: string; name: string; slug: string; description: string | null }
+      { id: string; name: string; slug: string; description: string | null; position: string | null }
     >();
     for (const s of memberSpaces) spaceMap.set(s.id, s);
     for (const s of openSpaces) {
       if (!spaceMap.has(s.id)) spaceMap.set(s.id, s);
     }
-    const spaces = [...spaceMap.values()];
+    const spaces = [...spaceMap.values()].sort((a, b) => {
+      const pa = a.position ?? '\uffff';
+      const pb = b.position ?? '\uffff';
+      return pa < pb ? -1 : pa > pb ? 1 : a.id < b.id ? -1 : 1;
+    });
 
     // Count directories (no visibility filter — user-based access handles this)
     const spaceIds = spaces.map((s) => s.id);

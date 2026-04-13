@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAuth } from '../composables/useAuth'
+import { linkTarget } from '../utils/dingtalk'
 
 const { currentUser, isAdmin, isAuthenticated, logout, hasCookie } = useAuth()
 const showDropdown = ref(false)
 
 const adminUrl = import.meta.env.VITE_ADMIN_URL || ''
+const adminTarget = linkTarget()
+
+const backendUrl = computed(() => {
+  if (!adminUrl) return ''
+  return isAdmin.value ? adminUrl : `${adminUrl}/home`
+})
+const backendLabel = computed(() => isAdmin.value ? '后台管理' : '知识管理')
 
 async function handleLogout() {
   await logout()
@@ -33,12 +41,12 @@ async function handleLogout() {
       </div>
       <div class="user-dropdown-divider"></div>
       <a
-        v-if="isAdmin && adminUrl"
-        :href="adminUrl"
-        target="_blank"
+        v-if="backendUrl"
+        :href="backendUrl"
+        :target="adminTarget"
         class="user-dropdown-item"
       >
-        后台管理
+        {{ backendLabel }}
       </a>
       <button class="user-dropdown-item" @click="handleLogout">
         退出登录

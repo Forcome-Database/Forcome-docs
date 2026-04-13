@@ -53,6 +53,11 @@ export class SpaceController {
     pagination: PaginationOptions,
     @AuthUser() user: User,
   ) {
+    // When no cursor/search is active, return position-ordered list for consistent UI ordering.
+    if (!pagination.cursor && !pagination.beforeCursor && !pagination.query) {
+      const items = await this.spaceMemberRepo.getUserSpacesOrdered(user.id);
+      return { items, meta: { limit: items.length, hasNextPage: false, hasPrevPage: false, nextCursor: null, prevCursor: null } };
+    }
     return this.spaceMemberService.getUserSpaces(user.id, pagination);
   }
 

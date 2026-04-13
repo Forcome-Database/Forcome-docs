@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute } from 'vitepress'
+import { linkTarget } from '../utils/dingtalk'
 import type { AiCitation, AiSource } from '../types'
 
 const props = defineProps<{
@@ -10,6 +11,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const expanded = ref(false)
+const sourceTarget = linkTarget()
 
 const getCurrentLang = (): string => {
   const match = route.path.match(/^\/(zh|en|vi)\//)
@@ -77,8 +79,8 @@ const normalizedItems = computed(() => {
         v-for="item in normalizedItems"
         :key="item.key"
         :href="item.href"
-        target="_blank"
-        rel="noopener noreferrer"
+        :target="sourceTarget"
+        :rel="sourceTarget ? 'noopener noreferrer' : undefined"
         class="ai-chat-source-card"
         :class="{ 'uncited': item.cited === false }"
       >

@@ -21,6 +21,7 @@ import { CursorPaginationResult } from '@docmost/db/pagination/cursor-pagination
 import { ShareRepo } from '@docmost/db/repos/share/share.repo';
 import { WorkspaceRepo } from '@docmost/db/repos/workspace/workspace.repo';
 import { LicenseCheckService } from '../../../integrations/environment/license-check.service';
+import { generateJitteredKeyBetween } from 'fractional-indexing-jittered';
 
 @Injectable()
 export class SpaceService {
@@ -83,6 +84,8 @@ export class SpaceService {
       );
     }
 
+    const position = generateJitteredKeyBetween(null, null);
+
     return await this.spaceRepo.insertSpace(
       {
         name: createSpaceDto.name ?? 'untitled space',
@@ -90,6 +93,7 @@ export class SpaceService {
         creatorId: userId,
         workspaceId: workspaceId,
         slug: createSpaceDto.slug,
+        position,
       },
       trx,
     );
@@ -144,6 +148,9 @@ export class SpaceService {
         slug: updateSpaceDto.slug,
         ...(typeof updateSpaceDto.visibility !== 'undefined'
           ? { visibility: updateSpaceDto.visibility }
+          : {}),
+        ...(typeof updateSpaceDto.position !== 'undefined'
+          ? { position: updateSpaceDto.position }
           : {}),
       },
       updateSpaceDto.spaceId,

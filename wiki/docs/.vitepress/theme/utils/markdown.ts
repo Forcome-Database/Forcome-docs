@@ -6,6 +6,7 @@ import MarkdownIt from 'markdown-it'
 import container from 'markdown-it-container'
 import taskLists from 'markdown-it-task-lists'
 import DOMPurify from 'dompurify'
+import { isInDingTalk } from './dingtalk'
 import hljs from 'highlight.js/lib/core'
 
 // 注册常用语言
@@ -118,15 +119,17 @@ for (const [type, { cssClass, title }] of Object.entries(calloutTypes)) {
 // 任务列表插件
 md.use(taskLists, { enabled: false, label: true, labelAfter: true })
 
-// 链接默认在新标签页打开
+// 链接在新标签页打开（钉钉内置浏览器除外，避免跳到外部浏览器）
 const defaultRender = md.renderer.rules.link_open ||
   function (tokens, idx, options, _env, self) {
     return self.renderToken(tokens, idx, options)
   }
 
 md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
-  tokens[idx].attrSet('target', '_blank')
-  tokens[idx].attrSet('rel', 'noopener noreferrer')
+  if (!isInDingTalk()) {
+    tokens[idx].attrSet('target', '_blank')
+    tokens[idx].attrSet('rel', 'noopener noreferrer')
+  }
   return defaultRender(tokens, idx, options, env, self)
 }
 

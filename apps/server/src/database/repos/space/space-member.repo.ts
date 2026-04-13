@@ -308,4 +308,15 @@ export class SpaceMemberRepo {
       parseCursor: (cursor) => ({ id: cursor.id }),
     });
   }
+
+  async getUserSpacesOrdered(userId: string) {
+    return this.db
+      .selectFrom('spaces')
+      .selectAll()
+      .select((eb) => [this.spaceRepo.withMemberCount(eb)])
+      .where('id', 'in', this.getUserSpaceIdsQuery(userId))
+      .orderBy(sql`position collate "C" asc nulls last`)
+      .orderBy('id', 'asc')
+      .execute();
+  }
 }

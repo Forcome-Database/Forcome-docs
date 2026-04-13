@@ -18,6 +18,7 @@ import {
   getSpaceById,
   getSpaceMembers,
   getSpaces,
+  getSpacesOrdered,
   removeSpaceMember,
   createSpace,
   updateSpace,
@@ -38,6 +39,14 @@ export function useGetSpacesQuery(
     queryKey: ["spaces", params],
     queryFn: () => getSpaces(params),
     placeholderData: keepPreviousData,
+    refetchOnMount: true,
+  });
+}
+
+export function useGetSpacesOrderedQuery(): UseQueryResult<ISpace[], Error> {
+  return useQuery({
+    queryKey: ["spaces-ordered"],
+    queryFn: () => getSpacesOrdered(),
     refetchOnMount: true,
   });
 }

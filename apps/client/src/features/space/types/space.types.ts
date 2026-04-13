@@ -24,6 +24,7 @@ export interface ISpace {
   createdAt: Date;
   updatedAt: Date;
   memberCount?: number;
+  position?: string;
   spaceId?: string;
   membership?: IMembership;
   settings?: ISpaceSettings;
