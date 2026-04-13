@@ -1,6 +1,27 @@
-node_modules
-.git
-dist
-/data
-.env*
+# Dependencies & build caches
+**/node_modules
+**/.pnpm-store
 .nx
+
+# Build output (rebuilt in Docker)
+**/dist
+
+# Git
+.git
+
+# Environment files
+.env*
+
+# Agent service (builds with its own context)
+agent-service/
+
+# Documentation (not needed for build)
+docs/
+.claude/
+
+# Data
+/data
+
+# IDE & tooling
+.vscode/
+.idea/

@@ -1,8 +1,12 @@
 FROM node:22-slim AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends git \
+# China apt + npm mirror
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g pnpm@10.4.0
+    && npm config set registry https://registry.npmmirror.com \
+    && npm install -g pnpm@10.4.0 \
+    && pnpm config set registry https://registry.npmmirror.com
 
 WORKDIR /app
 
@@ -29,6 +33,9 @@ ENV VITE_DOCMOST_API_URL=$VITE_DOCMOST_API_URL \
 RUN pnpm docs:build
 
 FROM nginx:alpine
+
+# China apk mirror
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
 
 COPY --from=builder /app/docs/.vitepress/dist /usr/share/nginx/html
 COPY docker/wiki-nginx.conf /etc/nginx/conf.d/default.conf

@@ -1,24 +1,39 @@
 FROM node:22-slim AS base
 LABEL org.opencontainers.image.source="https://github.com/docmost/docmost"
 
-RUN npm install -g pnpm@10.4.0
+# China npm mirror
+RUN npm config set registry https://registry.npmmirror.com \
+  && npm install -g pnpm@10.4.0 \
+  && pnpm config set registry https://registry.npmmirror.com
 
 FROM base AS builder
 
 WORKDIR /app
 
-COPY . .
+# ---- Dependency layer (cached unless package files change) ----
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY patches/ patches/
+COPY apps/server/package.json apps/server/package.json
+COPY apps/client/package.json apps/client/package.json
+COPY packages/editor-ext/package.json packages/editor-ext/package.json
+
+RUN pnpm install --frozen-lockfile
+
+# ---- Source & build layer ----
+COPY apps/ apps/
+COPY packages/ packages/
 
 # VITE_* vars must be available at build time (baked into static client bundle)
 ARG VITE_WIKI_URL
 ENV VITE_WIKI_URL=$VITE_WIKI_URL
 
-RUN pnpm install --frozen-lockfile
 RUN pnpm build
 
 FROM base AS installer
 
-RUN apt-get update \
+# China apt mirror
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
   && apt-get install -y --no-install-recommends curl bash \
   && rm -rf /var/lib/apt/lists/*
 
