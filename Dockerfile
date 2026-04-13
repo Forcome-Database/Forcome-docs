@@ -15,13 +15,14 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY patches/ patches/
 COPY apps/server/package.json apps/server/package.json
 COPY apps/client/package.json apps/client/package.json
-COPY packages/editor-ext/package.json packages/editor-ext/package.json
+# editor-ext is a workspace package with no external deps;
+# copy full source so pnpm workspace link resolves correctly
+COPY packages/ packages/
 
 RUN pnpm install --frozen-lockfile
 
 # ---- Source & build layer ----
 COPY apps/ apps/
-COPY packages/ packages/
 
 # VITE_* vars must be available at build time (baked into static client bundle)
 ARG VITE_WIKI_URL
