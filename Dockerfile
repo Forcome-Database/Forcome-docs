@@ -28,7 +28,8 @@ COPY apps/ apps/
 ARG VITE_WIKI_URL
 ENV VITE_WIKI_URL=$VITE_WIKI_URL
 
-RUN pnpm build
+# Build editor-ext first — its dist/index.d.ts is required by client & server
+RUN pnpm --filter @docmost/editor-ext build && pnpm build
 
 FROM base AS installer
 

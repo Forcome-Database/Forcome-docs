@@ -3,8 +3,10 @@
 **/.pnpm-store
 .nx
 
-# Build output (rebuilt in Docker)
-**/dist
+# Build output (exclude root-level dist only;
+# packages/editor-ext/dist must be included for workspace type resolution)
+/dist
+apps/*/dist
 
 # Git
 .git
